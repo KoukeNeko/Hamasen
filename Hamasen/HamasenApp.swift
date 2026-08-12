@@ -4,7 +4,7 @@ import SwiftUI
 struct HamasenApp: App {
     var body: some Scene {
         WindowGroup {
-            ServerListView()
+            HamasenMainView()
         }
     }
 }

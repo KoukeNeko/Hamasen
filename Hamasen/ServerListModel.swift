@@ -138,6 +138,34 @@ final class ServerListModel {
         }
     }
 
+    // MARK: - Connection test
+
+    /// Tries a real SFTP connection with the given draft configuration.
+    /// Returns nil on success, or a user-facing error message.
+    /// An empty passwordOverride falls back to the stored password.
+    func testConnection(config: ServerConfig, passwordOverride: String) async -> String? {
+        let password: String
+        if !passwordOverride.isEmpty {
+            password = passwordOverride
+        } else {
+            do {
+                password = try credentialStore.loadPassword(for: config.id)
+            } catch {
+                return "沒有已儲存的密碼，請先輸入密碼再測試"
+            }
+        }
+
+        let service = SFTPFileService(config: config, credentials: .password(password))
+        defer { Task { try? await service.disconnect() } }
+        do {
+            try await service.connect()
+            _ = try await service.listDirectory(at: RemotePath.root)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     // MARK: - Domain helpers
 
     private func persistMountedSet() {
