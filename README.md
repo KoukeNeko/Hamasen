@@ -27,7 +27,7 @@ App Store compatible.
 ## Why "Hamasen" 哈瑪星?
 
 **哈瑪星 (Hamasen)** is the historic harbor district of Kaohsiung, Taiwan.
-The name is a Taiwanese rendering of the Japanese **濱線 (hamasen)** — the
+The name is a Taiwanese rendering of the Japanese **浜線 (hamasen)** — the
 shoreline railway that once carried cargo between the docks and the city.
 
 This app plays the same role: a short line that brings remote servers
