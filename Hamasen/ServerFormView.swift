@@ -76,6 +76,11 @@ struct ServerFormView: View {
                 }
             }
             .formStyle(.grouped)
+            // Lay the form out at its natural height so the sheet grows to
+            // fit instead of scrolling; the height changes with the selected
+            // authentication method.
+            .scrollDisabled(true)
+            .fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 Button("取消") { dismiss() }
@@ -89,7 +94,7 @@ struct ServerFormView: View {
             }
             .padding()
         }
-        .frame(width: 440, height: 460)
+        .frame(width: 440)
     }
 
     private func save() {
