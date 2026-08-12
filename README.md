@@ -7,10 +7,10 @@
 **Your servers, docked in Finder.**\
 Mount remote SFTP servers as native Finder locations — browse, edit, and drag files like local folders.
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue?logo=apple)](https://github.com/KoukeNeko/Hamasen)
-[![Swift](https://img.shields.io/badge/Swift-5-orange?logo=swift)](https://github.com/KoukeNeko/Hamasen)
-[![File Provider](https://img.shields.io/badge/File%20Provider-no%20kexts%2C%20no%20macFUSE-green)](https://developer.apple.com/documentation/fileprovider)
-[![Stars](https://img.shields.io/github/stars/KoukeNeko/Hamasen?logo=github)](https://github.com/KoukeNeko/Hamasen/stargazers)
+[![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue?style=flat-square&logo=apple)](https://github.com/KoukeNeko/Hamasen)
+[![Swift](https://img.shields.io/badge/Swift-5-orange?style=flat-square&logo=swift)](https://github.com/KoukeNeko/Hamasen)
+[![File Provider](https://img.shields.io/badge/File%20Provider-no%20kexts%2C%20no%20macFUSE-green?style=flat-square)](https://developer.apple.com/documentation/fileprovider)
+[![Stars](https://img.shields.io/github/stars/KoukeNeko/Hamasen?style=flat-square&logo=github)](https://github.com/KoukeNeko/Hamasen/stargazers)
 
 [Why "Hamasen"?](#why-hamasen-哈瑪星) · [Architecture](#architecture) · [Development](#development)
 
@@ -59,7 +59,7 @@ Hamasen.xcodeproj
 │   ├── SFTPFileService          Citadel (SwiftNIO SSH) implementation
 │   ├── ServerConfigStore        JSON config in the App Group container
 │   ├── MountedServersStore      Which servers are currently mounted
-│   └── KeychainCredentialStore  Passwords live in the Keychain only
+│   └── KeychainCredentialStore  Passwords and keys live in the Keychain only
 └── Config/                  Entitlements and extension Info.plist
 ```
 
@@ -72,9 +72,11 @@ Key design points:
 - The app and the extension share configuration through an **App Group**
   (`group.dev.hamasen.shared`); credentials are shared via the Data
   Protection Keychain using the same group.
-- Mount, unmount, and rename changes reach Finder immediately: the root
-  sync anchor is a hash of the mounted-server list, and the app signals the
-  enumerator whenever the list changes.
+- Mount, unmount, and rename changes reach Finder through the **working
+  set**, the only container a replicated extension receives change signals
+  for. The previous server list is encoded into the sync anchor, so the
+  change enumerator can report an exact diff without keeping state between
+  calls.
 - Server folders cannot be renamed, moved, or deleted from Finder — they are
   managed in the app. Cross-server moves fall back to copy + delete.
 
@@ -89,15 +91,18 @@ Development signing certificate.
 ```
 
 Tests need no external infrastructure: `HamasenCoreTests` spins up an
-in-process SFTP server (Citadel's server API over a local temp directory).
-17 tests cover connection, authentication failure, directory listing,
-upload/download content integrity, create/delete/rename, and the
-`remotePath` base directory.
+in-process SFTP server (Citadel's server API over a local temp directory)
+that accepts both password and public key authentication. 39 tests cover
+connecting with either credential type, authentication failures, key
+parsing, directory listing, upload/download content integrity,
+create/delete/rename, the `remotePath` base directory, and the
+mounted-server diffing that drives Finder updates.
 
 ## Manual end-to-end check
 
 1. Open the project in Xcode and run the **Hamasen** scheme (⌘R).
-2. Add an SFTP server (host, username, password) and press **掛載** (Mount).
+2. Add an SFTP server (host, username, and either a password or an SSH key)
+   and press **掛載** (Mount).
 3. The **Hamasen** location appears in the Finder sidebar; the server shows
    up inside as a folder.
 4. On-disk storage lives under `~/Library/CloudStorage/`.
