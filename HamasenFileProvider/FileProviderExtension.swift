@@ -7,6 +7,16 @@ import UniformTypeIdentifiers
 /// domain: the root lists mounted servers as folders, and everything below a
 /// server folder is translated into RemoteFileService operations.
 final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
+    /// The item fields this provider can actually persist. Anything else is
+    /// echoed back as still-pending, which is how the system is told a field
+    /// is unsupported; reporting an error instead would mark the item as
+    /// broken in Finder.
+    private static let modifiableFields: NSFileProviderItemFields = [
+        .filename,
+        .parentItemIdentifier,
+        .contents,
+    ]
+
     private let domain: NSFileProviderDomain
     private let registry = ConnectionRegistry()
 
@@ -151,10 +161,31 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         Task {
             defer { progress.completedUnitCount = 1 }
 
-            guard case .item(let serverID, let currentPath) = ItemIdentifierMapper.entity(for: item.itemIdentifier) else {
+            let serverID: UUID
+            let currentPath: String
+            switch ItemIdentifierMapper.entity(for: item.itemIdentifier) {
+            case .item(let itemServerID, let itemPath):
+                serverID = itemServerID
+                currentPath = itemPath
+            case .serverRoot(let folderServerID):
+                // Server folders are configured in the app, but Finder still
+                // stamps metadata such as lastUsedDate on them when they are
+                // opened. Accept the call and report the fields as unsupported.
+                do {
+                    let config = try ConnectionRegistry.config(for: folderServerID)
+                    completionHandler(ServerFolderItem(config: config), changedFields, false, nil)
+                } catch {
+                    completionHandler(nil, changedFields, false, FileProviderErrorMapper.map(error))
+                }
+                return
+            case .root:
+                completionHandler(RootItem(), changedFields, false, nil)
+                return
+            case nil:
                 completionHandler(nil, changedFields, false, NSFileProviderError(.noSuchItem))
                 return
             }
+
             do {
                 let service = try await registry.service(for: serverID)
                 var effectivePath = currentPath
@@ -188,7 +219,12 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 }
 
                 let info = try await service.itemInfo(at: effectivePath)
-                completionHandler(RemoteFileItem(serverID: serverID, remoteItem: info), [], false, nil)
+                completionHandler(
+                    RemoteFileItem(serverID: serverID, remoteItem: info),
+                    changedFields.subtracting(Self.modifiableFields),
+                    false,
+                    nil
+                )
             } catch {
                 completionHandler(nil, changedFields, false, FileProviderErrorMapper.map(error))
             }

@@ -37,7 +37,16 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
-        let configs = Self.mountedConfigs()
+        // Read errors must not reach the diff: an empty list would be reported
+        // as "every server was deleted" and wipe them from Finder.
+        let configs: [ServerConfig]
+        do {
+            configs = try ConnectionRegistry.mountedConfigs()
+        } catch {
+            observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
+            return
+        }
+
         let diff = ServerListChangeTracker.diff(
             previous: ServerListChangeTracker.decode(anchor.rawValue),
             current: configs
