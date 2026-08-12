@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 /// The replicated File Provider extension for the single "Hamasen"
 /// domain: the root lists mounted servers as folders, and everything below a
 /// server folder is translated into RemoteFileService operations.
-final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
+final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
+    NSFileProviderPartialContentFetching {
     /// The item fields this provider can actually persist. Anything else is
     /// echoed back as still-pending, which is how the system is told a field
     /// is unsupported; reporting an error instead would mark the item as
@@ -98,6 +99,81 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             }
         }
         return progress
+    }
+
+    // MARK: - Partial contents
+
+    /// Fetches only the byte range the system asked for, so opening a large
+    /// file does not download all of it. SFTP reads at an offset natively,
+    /// so the range maps straight onto the protocol.
+    func fetchPartialContents(
+        for itemIdentifier: NSFileProviderItemIdentifier,
+        version requestedVersion: NSFileProviderItemVersion,
+        request: NSFileProviderRequest,
+        minimalRange requestedRange: NSRange,
+        aligningTo alignment: Int,
+        options: NSFileProviderFetchContentsOptions = [],
+        completionHandler: @escaping (
+            URL?, NSFileProviderItem?, NSRange, NSFileProviderMaterializationFlags, Error?
+        ) -> Void
+    ) -> Progress {
+        let progress = Progress(totalUnitCount: 1)
+        let registry = registry
+        let domain = domain
+
+        guard case .item(let serverID, let path) = ItemIdentifierMapper.entity(for: itemIdentifier) else {
+            completionHandler(nil, nil, NSRange(location: 0, length: 0), [], NSFileProviderError(.noSuchItem))
+            progress.completedUnitCount = 1
+            return progress
+        }
+
+        let task = Task {
+            defer { progress.completedUnitCount = 1 }
+            do {
+                let service = try await registry.service(for: serverID)
+                let info = try await service.itemInfo(at: path)
+                let range = ByteRangeAlignment.align(
+                    offset: Int64(requestedRange.location),
+                    length: requestedRange.length,
+                    alignment: alignment,
+                    fileSize: info.size
+                )
+
+                let contents = try await service.downloadRange(
+                    at: path,
+                    offset: range.offset,
+                    length: range.length
+                )
+                try Task.checkCancellation()
+
+                let localURL = try Self.makeTemporaryFileURL(for: domain)
+                try Self.write(contents, at: range.offset, to: localURL)
+
+                completionHandler(
+                    localURL,
+                    RemoteFileItem(serverID: serverID, remoteItem: info),
+                    NSRange(location: Int(range.offset), length: contents.count),
+                    [],
+                    nil
+                )
+            } catch is CancellationError {
+                completionHandler(nil, nil, requestedRange, [], CocoaError(.userCancelled))
+            } catch {
+                completionHandler(nil, nil, requestedRange, [], FileProviderErrorMapper.map(error))
+            }
+        }
+        progress.cancellationHandler = { task.cancel() }
+        return progress
+    }
+
+    /// Writes a fetched range at its own offset, leaving the rest of the file
+    /// sparse: the system only reads the range that was reported.
+    private static func write(_ contents: Data, at offset: Int64, to url: URL) throws {
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let file = try FileHandle(forWritingTo: url)
+        defer { try? file.close() }
+        try file.seek(toOffset: UInt64(offset))
+        try file.write(contentsOf: contents)
     }
 
     // MARK: - Create / Modify / Delete

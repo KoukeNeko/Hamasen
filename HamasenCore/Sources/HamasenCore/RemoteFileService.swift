@@ -22,6 +22,12 @@ public protocol RemoteFileService: Sendable {
     /// Downloads a whole file to a local URL (overwriting any existing file).
     func downloadFile(at path: String, to localURL: URL) async throws
 
+    /// Downloads a byte range of a file.
+    ///
+    /// Returns fewer bytes than requested only when the range runs past the
+    /// end of the file.
+    func downloadRange(at path: String, offset: Int64, length: Int) async throws -> Data
+
     /// Uploads a local file to the remote path (overwriting any existing file).
     func uploadFile(from localURL: URL, to path: String) async throws
 

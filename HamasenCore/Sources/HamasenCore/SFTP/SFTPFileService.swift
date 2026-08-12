@@ -14,6 +14,10 @@ public actor SFTPFileService: RemoteFileService {
     private static let directoryTypeBits: UInt32 = 0o040000
     private static let symlinkTypeBits: UInt32 = 0o120000
 
+    /// Bytes requested per SFTP read. Kept at 32 KiB because a single read
+    /// has to fit in one SSH channel packet; larger requests stall.
+    private static let transferChunkSize = 32 * 1024
+
     private static let log = HamasenLog(category: "sftp")
 
     private let config: ServerConfig
@@ -117,22 +121,67 @@ public actor SFTPFileService: RemoteFileService {
 
     public func downloadFile(at path: String, to localURL: URL) async throws {
         let sftp = try activeSFTPClient()
-        // The MVP reads whole files into memory; streaming for large files is
-        // a Phase 2 item.
-        let buffer: ByteBuffer
+
+        // Streamed in chunks straight to disk: a whole file never has to fit
+        // in memory.
+        FileManager.default.createFile(atPath: localURL.path, contents: nil)
+        let localFile: FileHandle
         do {
-            buffer = try await sftp.withFile(
+            localFile = try FileHandle(forWritingTo: localURL)
+        } catch {
+            throw RemoteFileServiceError.localFileUnreadable(url: localURL)
+        }
+        defer { try? localFile.close() }
+
+        do {
+            try await sftp.withFile(
                 filePath: remoteAbsolutePath(for: path),
                 flags: .read
             ) { file in
-                try await file.readAll()
+                var offset: UInt64 = 0
+                while true {
+                    let chunk = try await file.read(from: offset, length: UInt32(Self.transferChunkSize))
+                    let byteCount = chunk.readableBytes
+                    guard byteCount > 0 else { break }
+                    let bytes = chunk.getBytes(at: chunk.readerIndex, length: byteCount) ?? []
+                    try localFile.write(contentsOf: Data(bytes))
+                    offset += UInt64(byteCount)
+                }
             }
         } catch {
             throw Self.mapError(error, operation: "下載", path: path)
         }
+    }
 
-        let fileBytes = buffer.getBytes(at: buffer.readerIndex, length: buffer.readableBytes) ?? []
-        try Data(fileBytes).write(to: localURL, options: .atomic)
+    public func downloadRange(at path: String, offset: Int64, length: Int) async throws -> Data {
+        let sftp = try activeSFTPClient()
+        guard length > 0 else { return Data() }
+
+        do {
+            return try await sftp.withFile(
+                filePath: remoteAbsolutePath(for: path),
+                flags: .read
+            ) { file in
+                var collected = Data()
+                collected.reserveCapacity(length)
+
+                // A single SFTP read returns at most what the server allows,
+                // so keep asking until the range is filled or the file ends.
+                while collected.count < length {
+                    let remaining = length - collected.count
+                    let chunk = try await file.read(
+                        from: UInt64(offset) + UInt64(collected.count),
+                        length: UInt32(min(remaining, Self.transferChunkSize))
+                    )
+                    let byteCount = chunk.readableBytes
+                    guard byteCount > 0 else { break }
+                    collected.append(contentsOf: chunk.getBytes(at: chunk.readerIndex, length: byteCount) ?? [])
+                }
+                return collected
+            }
+        } catch {
+            throw Self.mapError(error, operation: "下載區間", path: path)
+        }
     }
 
     public func uploadFile(from localURL: URL, to path: String) async throws {

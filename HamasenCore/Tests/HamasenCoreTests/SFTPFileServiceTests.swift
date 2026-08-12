@@ -189,6 +189,70 @@ struct SFTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    @Test("讀取指定區間")
+    func downloadsByteRange() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let content = "0123456789ABCDEF"
+        try Data(content.utf8).write(to: server.rootDirectory.appendingPathComponent("ranged.txt"))
+
+        let middle = try await service.downloadRange(at: "/ranged.txt", offset: 4, length: 6)
+        #expect(String(decoding: middle, as: UTF8.self) == "456789")
+
+        let head = try await service.downloadRange(at: "/ranged.txt", offset: 0, length: 4)
+        #expect(String(decoding: head, as: UTF8.self) == "0123")
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("區間超過檔尾時只回傳實際存在的位元組")
+    func clampsRangeAtEndOfFile() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        try Data("short".utf8).write(to: server.rootDirectory.appendingPathComponent("short.txt"))
+
+        let tail = try await service.downloadRange(at: "/short.txt", offset: 3, length: 100)
+        #expect(String(decoding: tail, as: UTF8.self) == "rt")
+
+        let past = try await service.downloadRange(at: "/short.txt", offset: 50, length: 10)
+        #expect(past.isEmpty)
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("大於單次讀取上限的區間會補滿")
+    func fillsRangeAcrossMultipleReads() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        // Larger than any single SFTP read the server will answer, so the
+        // client has to loop to satisfy the request.
+        let payload = Data((0..<600_000).map { UInt8($0 % 251) })
+        try payload.write(to: server.rootDirectory.appendingPathComponent("large.bin"))
+
+        let ranged = try await service.downloadRange(at: "/large.bin", offset: 1000, length: 500_000)
+        #expect(ranged.count == 500_000)
+        #expect(ranged == payload.subdata(in: 1000..<501_000))
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("整檔下載大檔案內容正確")
+    func downloadsLargeFileWhole() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let payload = Data((0..<600_000).map { UInt8($0 % 251) })
+        try payload.write(to: server.rootDirectory.appendingPathComponent("large.bin"))
+
+        let localURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("large-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: localURL) }
+
+        try await service.downloadFile(at: "/large.bin", to: localURL)
+        #expect(try Data(contentsOf: localURL) == payload)
+
+        try await Self.tearDown(service, server)
+    }
+
     @Test("上傳檔案後遠端內容正確")
     func uploadFileWritesRemoteContent() async throws {
         let (service, server) = try await Self.makeConnectedService()
