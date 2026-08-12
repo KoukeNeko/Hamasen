@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="Docs/hamasen-iOS-Default-1024@1x.png" width="160" alt="Hamasen app icon">
+
 # Hamasen 哈瑪星
 
 ---
@@ -92,11 +94,11 @@ Development signing certificate.
 
 Tests need no external infrastructure: `HamasenCoreTests` spins up an
 in-process SFTP server (Citadel's server API over a local temp directory)
-that accepts both password and public key authentication. 39 tests cover
+that accepts both password and public key authentication. 50 tests cover
 connecting with either credential type, authentication failures, key
-parsing, directory listing, upload/download content integrity,
-create/delete/rename, the `remotePath` base directory, and the
-mounted-server diffing that drives Finder updates.
+parsing, directory listing, upload/download content integrity, range
+requests across chunk boundaries, create/delete/rename, the `remotePath`
+base directory, and the mounted-server diffing that drives Finder updates.
 
 ## Manual end-to-end check
 
@@ -114,16 +116,17 @@ mounted-server diffing that drives Finder updates.
 - [x] Finder integration: browse, download on open, upload, new folders,
       rename, move, delete
 - [x] Per-server folders under a single Finder location
+- [x] Range requests: opening a large file fetches only the bytes the system
+      asks for, rather than downloading the whole thing
 - [ ] Planned: FTP/FTPS, WebDAV, host key verification (TOFU), streaming
-      transfers for large files, remote change tracking
+      uploads, remote change tracking
 
 Known limitations:
 
 - SSH keys must be in OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`);
   ECDSA keys and older PKCS#1 PEM keys are not supported. Convert with
   `ssh-keygen -p -f <key>`.
-- Transfers are whole-file in memory; multi-GB files will be hungry until
-  streaming lands.
+- Uploads are read into memory before being sent; downloads stream.
 - Host keys are currently accepted blindly (`acceptAnything`); TOFU pinning
   is planned.
 - Remote changes are picked up on re-enumeration (Finder refresh), not
