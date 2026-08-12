@@ -155,6 +155,15 @@ final class ServerListModel {
         guard let manager = NSFileProviderManager(for: Self.mainDomain) else { return }
         do {
             let url = try await manager.getUserVisibleURL(for: .rootContainer)
+            // getUserVisibleURL vends a security-scoped URL: a sandboxed app
+            // has no standing access to ~/Library/CloudStorage and must claim
+            // it before handing the location to Finder.
+            let hasScopedAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasScopedAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
             NSWorkspace.shared.open(url)
         } catch {
             errorMessage = "無法開啟 Finder 位置：\(error.localizedDescription)"
