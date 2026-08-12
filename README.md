@@ -1,12 +1,37 @@
+<div align="center">
+
 # Hamasen 哈瑪星
 
-A macOS app that mounts remote SFTP servers into the Finder sidebar, the same
-way iCloud Drive and OneDrive appear — browse, open, edit, and drag files
+---
+
+**Your servers, docked in Finder.**\
+Mount remote SFTP servers as native Finder locations — browse, edit, and drag files like local folders.
+
+[![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue?logo=apple)](https://github.com/KoukeNeko/Hamasen)
+[![Swift](https://img.shields.io/badge/Swift-5-orange?logo=swift)](https://github.com/KoukeNeko/Hamasen)
+[![File Provider](https://img.shields.io/badge/File%20Provider-no%20kexts%2C%20no%20macFUSE-green)](https://developer.apple.com/documentation/fileprovider)
+[![Stars](https://img.shields.io/github/stars/KoukeNeko/Hamasen?logo=github)](https://github.com/KoukeNeko/Hamasen/stargazers)
+
+[Why "Hamasen"?](#why-hamasen-哈瑪星) · [Architecture](#architecture) · [Development](#development)
+
+</div>
+
+Hamasen mounts remote SFTP servers into the Finder sidebar, the same way
+iCloud Drive and OneDrive appear — browse, open, edit, and drag files
 without a separate client window.
 
-Built on Apple's official **File Provider** framework
-(`NSFileProviderReplicatedExtension`) — no macFUSE, no kernel extensions,
+It is built on Apple's official **File Provider** framework
+(`NSFileProviderReplicatedExtension`): no macFUSE, no kernel extensions,
 App Store compatible.
+
+## Why "Hamasen" 哈瑪星?
+
+**哈瑪星 (Hamasen)** is the historic harbor district of Kaohsiung, Taiwan.
+The name is a Taiwanese rendering of the Japanese **濱線 (hamasen)** — the
+shoreline railway that once carried cargo between the docks and the city.
+
+This app plays the same role: a short line that brings remote servers
+ashore, docking each one in Finder like a ship at the pier.
 
 ## How it looks
 
