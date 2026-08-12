@@ -2,13 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "ServerPathCore",
+    name: "HamasenCore",
     platforms: [
         .macOS(.v15),
         .iOS(.v18),
     ],
     products: [
-        .library(name: "ServerPathCore", targets: ["ServerPathCore"]),
+        .library(name: "HamasenCore", targets: ["HamasenCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.7.0"),
@@ -18,15 +18,15 @@ let package = Package(
         // strict concurrency; access is serialized by the SFTPFileService
         // actor, so these targets stay on language mode 5 for now.
         .target(
-            name: "ServerPathCore",
+            name: "HamasenCore",
             dependencies: [
                 .product(name: "Citadel", package: "Citadel"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "ServerPathCoreTests",
-            dependencies: ["ServerPathCore"],
+            name: "HamasenCoreTests",
+            dependencies: ["HamasenCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

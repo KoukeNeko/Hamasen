@@ -1,12 +1,12 @@
 import FileProvider
 import Foundation
 import Observation
-import ServerPathCore
+import HamasenCore
 
 /// View model for the server list: persistence, credentials, and management
-/// of the single "Server Path" File Provider domain. Mounting a server means
+/// of the single "Hamasen" File Provider domain. Mounting a server means
 /// adding it to the mounted set; it then appears as a top-level folder inside
-/// the Server Path location in Finder.
+/// the Hamasen location in Finder.
 @MainActor
 @Observable
 final class ServerListModel {

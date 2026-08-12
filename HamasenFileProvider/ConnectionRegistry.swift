@@ -1,6 +1,6 @@
 import FileProvider
 import Foundation
-import ServerPathCore
+import HamasenCore
 
 /// Owns one connection per server for the lifetime of the extension and
 /// resolves server configurations from the shared stores.

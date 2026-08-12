@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ServerPathApp: App {
+struct HamasenApp: App {
     var body: some Scene {
         WindowGroup {
             ServerListView()

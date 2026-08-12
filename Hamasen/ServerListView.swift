@@ -1,4 +1,4 @@
-import ServerPathCore
+import HamasenCore
 import SwiftUI
 
 /// Main window: the list of configured servers with mount controls.

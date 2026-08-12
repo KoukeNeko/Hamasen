@@ -5,10 +5,10 @@ import Foundation
 public enum SharedConstants {
     /// App Group: both the config file and Keychain sharing hang off this
     /// group. Must match the entitlements of both targets.
-    public static let appGroupIdentifier = "group.dev.serverpath.shared"
+    public static let appGroupIdentifier = "group.dev.hamasen.shared"
 
     /// Service name for Keychain items.
-    public static let keychainService = "dev.serverpath.credentials"
+    public static let keychainService = "dev.hamasen.credentials"
 
     /// File name of the server config store inside the App Group container.
     public static let serverConfigFileName = "servers.json"
@@ -17,7 +17,10 @@ public enum SharedConstants {
     public static let mountedServersFileName = "mounted-servers.json"
 
     /// The single File Provider domain. Every server appears as a top-level
-    /// folder inside it, so Finder shows one "Server Path" location.
-    public static let mainDomainIdentifier = "dev.serverpath.main"
-    public static let mainDomainDisplayName = "Server Path"
+    /// folder inside it, so Finder shows one Hamasen location. The sidebar
+    /// label comes from the app's localized display name (哈瑪星 / Hamasen);
+    /// this constant stays ASCII because it also names the CloudStorage
+    /// folder on disk.
+    public static let mainDomainIdentifier = "dev.hamasen.main"
+    public static let mainDomainDisplayName = "Hamasen"
 }

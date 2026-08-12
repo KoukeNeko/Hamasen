@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ServerPathCore
+@testable import HamasenCore
 
 /// End-to-end tests for SFTPFileService against the in-process SFTP server.
 @Suite("SFTPFileService")
@@ -82,7 +82,7 @@ struct SFTPFileServiceTests {
     func downloadFileMatchesContent() async throws {
         let (service, server) = try await Self.makeConnectedService()
 
-        let expectedContent = "端到端下載測試內容 — Server Path"
+        let expectedContent = "端到端下載測試內容 — Hamasen"
         try Data(expectedContent.utf8).write(
             to: server.rootDirectory.appendingPathComponent("download-me.txt")
         )

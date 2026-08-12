@@ -1,9 +1,9 @@
 import FileProvider
 import Foundation
-import ServerPathCore
+import HamasenCore
 import UniformTypeIdentifiers
 
-/// The domain root ("Server Path" itself).
+/// The domain root ("Hamasen" itself).
 final class RootItem: NSObject, NSFileProviderItem {
     var itemIdentifier: NSFileProviderItemIdentifier { .rootContainer }
     var parentItemIdentifier: NSFileProviderItemIdentifier { .rootContainer }

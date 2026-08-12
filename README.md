@@ -1,4 +1,4 @@
-# Server Path
+# 哈瑪星 Hamasen
 
 把遠端 SFTP 伺服器像 CloudStorage（iCloud Drive / OneDrive）一樣掛載到 Finder 側邊欄的 macOS App。
 
@@ -7,12 +7,12 @@
 ## 架構
 
 ```
-Server Path.xcodeproj
-├── Server Path（主 App，SwiftUI）
+Hamasen.xcodeproj
+├── Hamasen（主 App，SwiftUI）
 │   └── 伺服器清單、新增/編輯連線、掛載/卸載（NSFileProviderManager）
-├── ServerPathFileProvider（File Provider Extension）
+├── HamasenFileProvider（File Provider Extension）
 │   └── NSFileProviderReplicatedExtension：enumerate / fetch / create / modify / delete
-├── ServerPathCore（本地 Swift Package）
+├── HamasenCore（本地 Swift Package）
 │   ├── RemoteFileService  — 協定抽象層（SFTP 之外未來可插入 FTP）
 │   ├── SFTPFileService    — Citadel（SwiftNIO SSH）實作
 │   ├── ServerConfigStore  — 設定檔（App Group 容器內的 JSON）
@@ -20,8 +20,8 @@ Server Path.xcodeproj
 └── Config/ — entitlements 與 extension Info.plist
 ```
 
-- App 與 Extension 透過 **App Group**（`group.dev.serverpath.shared`）共享伺服器設定與 Keychain 憑證。
-- **單一 File Provider domain**：Finder 側邊欄只有一個「Server Path」，
+- App 與 Extension 透過 **App Group**（`group.dev.hamasen.shared`）共享伺服器設定與 Keychain 憑證。
+- **單一 File Provider domain**：Finder 側邊欄只有一個「Hamasen」，
   點進去後每台已掛載的伺服器是一個以伺服器命名的資料夾。
 - 掛載狀態存於 `MountedServersStore`（App Group 內 JSON）；掛載/卸載/改名
   透過 sync anchor 變化即時反映到 Finder。
@@ -35,13 +35,13 @@ Server Path.xcodeproj
 ./scripts/verify.sh
 ```
 
-測試不需要外部伺服器：`ServerPathCoreTests` 內建 in-process SFTP 伺服器
+測試不需要外部伺服器：`HamasenCoreTests` 內建 in-process SFTP 伺服器
 （Citadel server + 本機暫存目錄），16 個測試涵蓋連線、認證、列目錄、
 上傳下載、建立/刪除/改名與 remotePath 基準目錄。
 
 ## 手動驗證掛載（Finder 端到端）
 
-1. 用 Xcode 開啟專案，執行「Server Path」scheme（⌘R）。
+1. 用 Xcode 開啟專案，執行「Hamasen」scheme（⌘R）。
 2. 在 App 中新增一台 SFTP 伺服器（主機、帳號、密碼）。
 3. 按「掛載」— 伺服器會出現在 Finder 側邊欄「位置」區。
 4. 掛載內容實際位於 `~/Library/CloudStorage/`。

@@ -1,4 +1,4 @@
-import ServerPathCore
+import HamasenCore
 import SwiftUI
 
 /// Add / edit form for a server configuration.

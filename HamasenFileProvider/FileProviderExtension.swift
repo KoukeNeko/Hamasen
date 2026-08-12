@@ -1,9 +1,9 @@
 import FileProvider
 import Foundation
-import ServerPathCore
+import HamasenCore
 import UniformTypeIdentifiers
 
-/// The replicated File Provider extension for the single "Server Path"
+/// The replicated File Provider extension for the single "Hamasen"
 /// domain: the root lists mounted servers as folders, and everything below a
 /// server folder is translated into RemoteFileService operations.
 final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {

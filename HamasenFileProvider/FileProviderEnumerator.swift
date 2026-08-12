@@ -1,6 +1,6 @@
 import FileProvider
 import Foundation
-import ServerPathCore
+import HamasenCore
 
 /// Enumerates the domain root: one folder per mounted server.
 ///
@@ -48,7 +48,7 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
 final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
     /// No server-side change tracking in the MVP: a constant anchor plus
     /// "no changes" responses; Finder refreshes re-enumerate directories.
-    private static let staticSyncAnchor = NSFileProviderSyncAnchor(Data("server-path-static-anchor".utf8))
+    private static let staticSyncAnchor = NSFileProviderSyncAnchor(Data("hamasen-static-anchor".utf8))
 
     private let serverID: UUID
     private let directoryPath: String

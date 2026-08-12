@@ -3,7 +3,7 @@ import Crypto
 import Foundation
 import NIOCore
 import NIOSSH
-@testable import ServerPathCore
+@testable import HamasenCore
 
 /// In-process SFTP server for tests: a local temp directory as its root and
 /// fixed username/password authentication.

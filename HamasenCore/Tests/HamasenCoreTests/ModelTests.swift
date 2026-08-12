@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ServerPathCore
+@testable import HamasenCore
 
 @Suite("RemotePath")
 struct RemotePathTests {

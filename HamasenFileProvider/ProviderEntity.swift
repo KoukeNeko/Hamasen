@@ -1,6 +1,6 @@
 import FileProvider
 import Foundation
-import ServerPathCore
+import HamasenCore
 
 /// What an NSFileProviderItemIdentifier points at in the single-domain world:
 /// the domain root (listing all servers), one server's root folder, or an
