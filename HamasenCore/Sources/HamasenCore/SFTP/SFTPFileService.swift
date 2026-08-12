@@ -13,14 +13,22 @@ public actor SFTPFileService: RemoteFileService {
     private static let directoryTypeBits: UInt32 = 0o040000
     private static let symlinkTypeBits: UInt32 = 0o120000
 
+    private static let log = HamasenLog(category: "sftp")
+
     private let config: ServerConfig
     private let credentials: ServerCredentials
+    private let connectTimeoutSeconds: Int
     private var sshClient: SSHClient?
     private var sftpClient: SFTPClient?
 
-    public init(config: ServerConfig, credentials: ServerCredentials) {
+    public init(
+        config: ServerConfig,
+        credentials: ServerCredentials,
+        connectTimeoutSeconds: Int = AppSettings.defaultConnectTimeoutSeconds
+    ) {
         self.config = config
         self.credentials = credentials
+        self.connectTimeoutSeconds = connectTimeoutSeconds
     }
 
     // MARK: - Connection lifecycle
@@ -28,6 +36,7 @@ public actor SFTPFileService: RemoteFileService {
     public func connect() async throws {
         guard sftpClient == nil else { return }
 
+        Self.log.debug("Connecting to \(config.host):\(config.port) as \(config.username)")
         let client: SSHClient
         do {
             // Host keys are accepted blindly for the MVP (TOFU pinning is a
@@ -38,16 +47,20 @@ public actor SFTPFileService: RemoteFileService {
                 port: config.port,
                 authenticationMethod: makeAuthenticationMethod(),
                 hostKeyValidator: .acceptAnything(),
-                reconnect: .never
+                reconnect: .never,
+                connectTimeout: .seconds(Int64(connectTimeoutSeconds))
             )
         } catch {
+            Self.log.error("SSH connection to \(config.host):\(config.port) failed: \(String(describing: error))")
             throw RemoteFileServiceError.connectionFailed(underlying: String(describing: error))
         }
 
         do {
             sftpClient = try await client.openSFTP()
             sshClient = client
+            Self.log.debug("SFTP session established with \(config.host)")
         } catch {
+            Self.log.error("Opening SFTP subsystem on \(config.host) failed: \(String(describing: error))")
             try? await client.close()
             throw RemoteFileServiceError.connectionFailed(underlying: String(describing: error))
         }
@@ -230,8 +243,10 @@ public actor SFTPFileService: RemoteFileService {
 
     private static func mapError(_ error: Error, operation: String, path: String) -> Error {
         if let status = error as? SFTPMessage.Status, status.errorCode == .noSuchFile {
+            log.debug("\(operation) at \(path): no such file")
             return RemoteFileServiceError.itemNotFound(path: path)
         }
+        log.error("\(operation) at \(path) failed: \(String(describing: error))")
         return RemoteFileServiceError.operationFailed(
             operation: operation,
             path: path,

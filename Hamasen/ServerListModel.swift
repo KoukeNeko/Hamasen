@@ -1,7 +1,8 @@
+import AppKit
 import FileProvider
 import Foundation
-import Observation
 import HamasenCore
+import Observation
 
 /// View model for the server list: persistence, credentials, and management
 /// of the single "Hamasen" File Provider domain. Mounting a server means
@@ -41,7 +42,16 @@ final class ServerListModel {
 
     // MARK: - Loading
 
+    private var hasLoaded = false
+
+    /// Loads once, no matter how many scenes (window, menu bar) appear.
+    func loadIfNeeded() async {
+        guard !hasLoaded else { return }
+        await load()
+    }
+
     func load() async {
+        hasLoaded = true
         guard let configStore, let mountedStore else { return }
         do {
             servers = try configStore.loadServers()
@@ -138,6 +148,19 @@ final class ServerListModel {
         }
     }
 
+    // MARK: - Finder integration
+
+    /// Opens the mounted Hamasen location in Finder.
+    func revealInFinder() async {
+        guard let manager = NSFileProviderManager(for: Self.mainDomain) else { return }
+        do {
+            let url = try await manager.getUserVisibleURL(for: .rootContainer)
+            NSWorkspace.shared.open(url)
+        } catch {
+            errorMessage = "無法開啟 Finder 位置：\(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Connection test
 
     /// Tries a real SFTP connection with the given draft configuration.
@@ -155,7 +178,11 @@ final class ServerListModel {
             }
         }
 
-        let service = SFTPFileService(config: config, credentials: .password(password))
+        let service = SFTPFileService(
+            config: config,
+            credentials: .password(password),
+            connectTimeoutSeconds: AppSettings.connectTimeoutSeconds()
+        )
         defer { Task { try? await service.disconnect() } }
         do {
             try await service.connect()

@@ -20,7 +20,7 @@ struct ServerFormView: View {
         self.onSave = onSave
         _name = State(initialValue: existingServer?.name ?? "")
         _host = State(initialValue: existingServer?.host ?? "")
-        _portText = State(initialValue: String(existingServer?.port ?? ServerConfig.defaultSFTPPort))
+        _portText = State(initialValue: String(existingServer?.port ?? AppSettings.defaultServerPort()))
         _username = State(initialValue: existingServer?.username ?? "")
         _remotePath = State(initialValue: existingServer?.remotePath ?? ServerConfig.defaultRemotePath)
     }

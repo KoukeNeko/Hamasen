@@ -49,6 +49,40 @@ struct ServerConfigTests {
     }
 }
 
+@Suite("AppSettings")
+struct AppSettingsTests {
+    private func makeEphemeralStore() -> UserDefaults {
+        let suiteName = "test-settings-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suiteName)!
+        store.removePersistentDomain(forName: suiteName)
+        return store
+    }
+
+    @Test("連線逾時：未設定與超出範圍時回預設值")
+    func connectTimeoutFallsBackToDefault() {
+        let store = makeEphemeralStore()
+        #expect(AppSettings.connectTimeoutSeconds(from: store) == AppSettings.defaultConnectTimeoutSeconds)
+
+        store.set(2, forKey: AppSettings.Keys.connectTimeoutSeconds)
+        #expect(AppSettings.connectTimeoutSeconds(from: store) == AppSettings.defaultConnectTimeoutSeconds)
+
+        store.set(60, forKey: AppSettings.Keys.connectTimeoutSeconds)
+        #expect(AppSettings.connectTimeoutSeconds(from: store) == 60)
+    }
+
+    @Test("預設連接埠：無效值回 22")
+    func defaultPortFallsBackToSFTPPort() {
+        let store = makeEphemeralStore()
+        #expect(AppSettings.defaultServerPort(from: store) == ServerConfig.defaultSFTPPort)
+
+        store.set(2222, forKey: AppSettings.Keys.defaultServerPort)
+        #expect(AppSettings.defaultServerPort(from: store) == 2222)
+
+        store.set(0, forKey: AppSettings.Keys.defaultServerPort)
+        #expect(AppSettings.defaultServerPort(from: store) == ServerConfig.defaultSFTPPort)
+    }
+}
+
 @Suite("MountedServersStore")
 struct MountedServersStoreTests {
     @Test("掛載集合儲存與讀回")

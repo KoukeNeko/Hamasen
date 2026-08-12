@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Main window: site-manager layout with a server sidebar and a detail pane.
 struct HamasenMainView: View {
-    @State private var model = ServerListModel()
+    let model: ServerListModel
+
     @State private var selectedServerID: UUID?
     @State private var isShowingAddSheet = false
 
@@ -49,7 +50,7 @@ struct HamasenMainView: View {
             Text(model.errorMessage ?? "")
         }
         .task {
-            await model.load()
+            await model.loadIfNeeded()
             if selectedServerID == nil {
                 selectedServerID = model.servers.first?.id
             }
@@ -158,5 +159,5 @@ private struct ServerSidebarRow: View {
 }
 
 #Preview {
-    HamasenMainView()
+    HamasenMainView(model: ServerListModel())
 }

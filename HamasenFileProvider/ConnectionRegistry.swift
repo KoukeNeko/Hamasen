@@ -18,7 +18,11 @@ actor ConnectionRegistry {
         }
         let config = try Self.config(for: serverID)
         let password = try KeychainCredentialStore().loadPassword(for: serverID)
-        let service = SFTPFileService(config: config, credentials: .password(password))
+        let service = SFTPFileService(
+            config: config,
+            credentials: .password(password),
+            connectTimeoutSeconds: AppSettings.connectTimeoutSeconds()
+        )
         try await service.connect()
         services[serverID] = service
         return service
