@@ -31,9 +31,9 @@ struct HamasenMainView: View {
             }
         }
         .sheet(isPresented: $isShowingAddSheet) {
-            ServerFormView(existingServer: nil) { config, password in
+            ServerFormView(existingServer: nil) { config, credentials in
                 Task {
-                    await model.saveServer(config, password: password)
+                    await model.saveServer(config, credentials: credentials)
                     selectedServerID = config.id
                 }
             }

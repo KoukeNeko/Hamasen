@@ -53,6 +53,96 @@ struct SFTPFileServiceTests {
         try await server.stop()
     }
 
+    @Test("以 SSH 金鑰連線並操作檔案")
+    func connectsWithPrivateKey() async throws {
+        let server = try await TestSFTPServer.start()
+        let config = ServerConfig(
+            name: "測試伺服器",
+            host: "127.0.0.1",
+            port: server.port,
+            username: TestSFTPServer.username,
+            authenticationMethod: .privateKey
+        )
+        let service = SFTPFileService(
+            config: config,
+            credentials: .privateKey(openSSHKey: server.authorizedClientKey, passphrase: nil)
+        )
+        try await service.connect()
+
+        try Data("key auth".utf8).write(to: server.rootDirectory.appendingPathComponent("keyed.txt"))
+        let items = try await service.listDirectory(at: RemotePath.root)
+        #expect(items.map(\.name) == ["keyed.txt"])
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("金鑰不被伺服器接受時連線失敗")
+    func rejectsUnauthorizedPrivateKey() async throws {
+        let server = try await TestSFTPServer.start()
+        let config = ServerConfig(
+            name: "測試伺服器",
+            host: "127.0.0.1",
+            port: server.port,
+            username: TestSFTPServer.username,
+            authenticationMethod: .privateKey
+        )
+        // A well-formed key the server has never authorized.
+        let service = SFTPFileService(
+            config: config,
+            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Plain, passphrase: nil)
+        )
+
+        await #expect(throws: RemoteFileServiceError.self) {
+            try await service.connect()
+        }
+
+        try await server.stop()
+    }
+
+    @Test("加密金鑰未提供密碼時明確回報")
+    func reportsMissingPassphrase() async throws {
+        let server = try await TestSFTPServer.start()
+        let config = ServerConfig(
+            name: "測試伺服器",
+            host: "127.0.0.1",
+            port: server.port,
+            username: TestSFTPServer.username,
+            authenticationMethod: .privateKey
+        )
+        let service = SFTPFileService(
+            config: config,
+            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Encrypted, passphrase: nil)
+        )
+
+        await #expect(throws: RemoteFileServiceError.privateKeyPassphraseRequired) {
+            try await service.connect()
+        }
+
+        try await server.stop()
+    }
+
+    @Test("加密金鑰密碼錯誤時明確回報")
+    func reportsWrongPassphrase() async throws {
+        let server = try await TestSFTPServer.start()
+        let config = ServerConfig(
+            name: "測試伺服器",
+            host: "127.0.0.1",
+            port: server.port,
+            username: TestSFTPServer.username,
+            authenticationMethod: .privateKey
+        )
+        let service = SFTPFileService(
+            config: config,
+            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Encrypted, passphrase: "wrong")
+        )
+
+        await #expect(throws: RemoteFileServiceError.self) {
+            try await service.connect()
+        }
+
+        try await server.stop()
+    }
+
     @Test("列出目錄內容並回報正確型別")
     func listDirectoryReturnsFilesAndDirectories() async throws {
         let (service, server) = try await Self.makeConnectedService()

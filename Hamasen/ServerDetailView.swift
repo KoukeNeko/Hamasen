@@ -22,6 +22,9 @@ struct ServerDetailView: View {
     @State private var draftUsername: String
     @State private var draftPassword: String = ""
     @State private var draftRemotePath: String
+    @State private var draftAuthenticationMethod: ServerConfig.AuthenticationMethod
+    @State private var importedKey: PrivateKeyImporter.ImportedKey?
+    @State private var draftKeyPassphrase: String = ""
 
     @State private var testState: ConnectionTestState = .idle
     @State private var isConfirmingDelete = false
@@ -36,6 +39,7 @@ struct ServerDetailView: View {
         _draftPortText = State(initialValue: String(server.port))
         _draftUsername = State(initialValue: server.username)
         _draftRemotePath = State(initialValue: server.remotePath)
+        _draftAuthenticationMethod = State(initialValue: server.authenticationMethod)
     }
 
     // MARK: - Draft state
@@ -57,13 +61,32 @@ struct ServerDetailView: View {
             host: host,
             port: port,
             username: username,
+            authenticationMethod: draftAuthenticationMethod,
             remotePath: draftRemotePath
         )
     }
 
+    private var draftCredentials: CredentialUpdate {
+        CredentialUpdate(
+            password: draftPassword,
+            privateKey: importedKey?.text,
+            keyPassphrase: draftKeyPassphrase
+        )
+    }
+
+    /// Switching to key authentication needs a key from somewhere.
+    private var hasUsableCredential: Bool {
+        draftAuthenticationMethod == .password
+            || importedKey != nil
+            || model.hasStoredPrivateKey(for: server.id)
+    }
+
     private var hasUnsavedChanges: Bool {
-        guard let draftConfig else { return false }
-        return draftConfig != server || !draftPassword.isEmpty
+        guard let draftConfig, hasUsableCredential else { return false }
+        return draftConfig != server
+            || !draftPassword.isEmpty
+            || importedKey != nil
+            || !draftKeyPassphrase.isEmpty
     }
 
     // MARK: - Body
@@ -106,6 +129,7 @@ struct ServerDetailView: View {
                     .font(.title2.bold())
                 HStack(spacing: 6) {
                     badge("SFTP", tint: .blue)
+                    badge(server.authenticationMethod.displayName, tint: .purple)
                     badge(
                         isMounted ? "已掛載" : "未掛載",
                         tint: isMounted ? .green : .gray
@@ -158,11 +182,16 @@ struct ServerDetailView: View {
                 TextField("名稱", text: $draftName)
                 TextField("主機", text: $draftHost, prompt: Text("example.com"))
                 TextField("連接埠", text: $draftPortText)
-            }
-            Section("登入") {
                 TextField("使用者名稱", text: $draftUsername)
-                SecureField("密碼", text: $draftPassword, prompt: Text("留空表示不變更"))
             }
+            AuthenticationFields(
+                method: $draftAuthenticationMethod,
+                password: $draftPassword,
+                importedKey: $importedKey,
+                keyPassphrase: $draftKeyPassphrase,
+                hasStoredKey: model.hasStoredPrivateKey(for: server.id),
+                allowsBlankPassword: true
+            )
             Section("掛載") {
                 TextField("遠端路徑", text: $draftRemotePath, prompt: Text("/"))
             }
@@ -208,8 +237,10 @@ struct ServerDetailView: View {
             Button("儲存變更") {
                 guard let draftConfig else { return }
                 Task {
-                    await model.saveServer(draftConfig, password: draftPassword)
+                    await model.saveServer(draftConfig, credentials: draftCredentials)
                     draftPassword = ""
+                    draftKeyPassphrase = ""
+                    importedKey = nil
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -223,11 +254,11 @@ struct ServerDetailView: View {
     private func runConnectionTest() {
         guard let draftConfig else { return }
         testState = .testing
-        let passwordOverride = draftPassword
+        let credentials = draftCredentials
         Task {
             let failureMessage = await model.testConnection(
                 config: draftConfig,
-                passwordOverride: passwordOverride
+                credentials: credentials
             )
             testState = failureMessage.map { .failure($0) } ?? .success
         }

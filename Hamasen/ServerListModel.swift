@@ -85,7 +85,7 @@ final class ServerListModel {
 
     // MARK: - CRUD
 
-    func saveServer(_ config: ServerConfig, password: String) async {
+    func saveServer(_ config: ServerConfig, credentials: CredentialUpdate) async {
         guard let configStore else { return }
         do {
             var updatedServers = servers
@@ -95,9 +95,7 @@ final class ServerListModel {
                 updatedServers.append(config)
             }
             try configStore.saveServers(updatedServers)
-            if !password.isEmpty {
-                try credentialStore.savePassword(password, for: config.id)
-            }
+            try credentials.apply(to: config.id, using: credentialStore)
             servers = updatedServers
         } catch {
             errorMessage = "儲存伺服器失敗：\(error.localizedDescription)"
@@ -117,7 +115,7 @@ final class ServerListModel {
         do {
             let remainingServers = servers.filter { $0.id != config.id }
             try configStore.saveServers(remainingServers)
-            try credentialStore.deletePassword(for: config.id)
+            try credentialStore.deleteAllCredentials(for: config.id)
             servers = remainingServers
         } catch {
             errorMessage = "刪除伺服器失敗：\(error.localizedDescription)"
@@ -172,24 +170,28 @@ final class ServerListModel {
 
     // MARK: - Connection test
 
+    /// Whether a private key is already stored for this server, so the UI can
+    /// tell "keep the existing key" apart from "no key yet".
+    func hasStoredPrivateKey(for serverID: UUID) -> Bool {
+        (try? credentialStore.load(kind: .privateKey, for: serverID)) != nil
+    }
+
     /// Tries a real SFTP connection with the given draft configuration.
-    /// Returns nil on success, or a user-facing error message.
-    /// An empty passwordOverride falls back to the stored password.
-    func testConnection(config: ServerConfig, passwordOverride: String) async -> String? {
-        let password: String
-        if !passwordOverride.isEmpty {
-            password = passwordOverride
-        } else {
-            do {
-                password = try credentialStore.loadPassword(for: config.id)
-            } catch {
-                return "沒有已儲存的密碼，請先輸入密碼再測試"
-            }
+    /// Returns nil on success, or a user-facing error message. Credentials
+    /// the user has not re-entered fall back to what is stored.
+    func testConnection(config: ServerConfig, credentials draft: CredentialUpdate) async -> String? {
+        let credentials: ServerCredentials
+        do {
+            credentials = try draft.resolve(for: config, using: credentialStore)
+        } catch {
+            return config.authenticationMethod == .password
+                ? "沒有已儲存的密碼，請先輸入密碼再測試"
+                : "沒有可用的 SSH 金鑰，請先選擇金鑰檔案"
         }
 
         let service = SFTPFileService(
             config: config,
-            credentials: .password(password),
+            credentials: credentials,
             connectTimeoutSeconds: AppSettings.connectTimeoutSeconds()
         )
         defer { Task { try? await service.disconnect() } }
@@ -240,7 +242,10 @@ final class ServerListModel {
     private func signalServerListChanged() async {
         guard let manager = NSFileProviderManager(for: Self.mainDomain) else { return }
         do {
-            try await manager.signalEnumerator(for: .rootContainer)
+            // A replicated extension only honours working-set signals; the
+            // system ignores signals for any other container and propagates
+            // working-set changes to the UI itself.
+            try await manager.signalEnumerator(for: .workingSet)
         } catch {
             // The domain may still be initializing; the next enumeration
             // picks up the change anyway.

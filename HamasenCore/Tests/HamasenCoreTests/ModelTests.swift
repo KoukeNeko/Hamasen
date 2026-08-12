@@ -34,6 +34,25 @@ struct ServerConfigTests {
         #expect(ServerConfig.normalizedRemotePath("/") == "/")
     }
 
+    @Test("舊版設定檔沒有認證方式欄位時解為密碼認證")
+    func decodesLegacyConfigWithoutAuthenticationMethod() throws {
+        let legacyJSON = """
+        {
+          "id": "6E1B2C1E-4E4B-4C0E-9E4A-2F5B6D7C8A90",
+          "name": "企劃端的ftp",
+          "transferProtocol": "sftp",
+          "host": "sftpd.example.com",
+          "port": 2222,
+          "username": "user",
+          "remotePath": "/"
+        }
+        """
+        let config = try JSONDecoder().decode(ServerConfig.self, from: Data(legacyJSON.utf8))
+        #expect(config.authenticationMethod == .password)
+        #expect(config.name == "企劃端的ftp")
+        #expect(config.port == 2222)
+    }
+
     @Test("Codable round-trip")
     func codableRoundTrip() throws {
         let original = ServerConfig(
@@ -41,6 +60,7 @@ struct ServerConfigTests {
             host: "nas.local",
             port: 2222,
             username: "doeshing",
+            authenticationMethod: .privateKey,
             remotePath: "/volume1/homes"
         )
         let data = try JSONEncoder().encode(original)

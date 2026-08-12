@@ -26,21 +26,32 @@ final class TestSFTPServer {
 
     let port: Int
     let rootDirectory: URL
+    /// The client key the server accepts, in OpenSSH private key format.
+    let authorizedClientKey: String
     private let server: SSHServer
 
-    private init(port: Int, rootDirectory: URL, server: SSHServer) {
+    private init(port: Int, rootDirectory: URL, authorizedClientKey: String, server: SSHServer) {
         self.port = port
         self.rootDirectory = rootDirectory
+        self.authorizedClientKey = authorizedClientKey
         self.server = server
     }
 
     /// Starts the server; its root is a freshly created temp directory.
+    ///
+    /// A fresh client key pair is generated per server: the public half is
+    /// the only one accepted for key authentication, and the private half is
+    /// handed to tests through `authorizedClientKey`.
     static func start() async throws -> TestSFTPServer {
         let rootDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("sftp-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
 
         let hostKey = NIOSSHPrivateKey(ed25519Key: Curve25519.Signing.PrivateKey())
+        let clientKey = Curve25519.Signing.PrivateKey()
+        let authorizedKey = try NIOSSHPublicKey(
+            openSSHPublicKey: makeOpenSSHPublicKey(clientKey.publicKey)
+        )
 
         var lastError: Error?
         for _ in 0..<maxBindAttempts {
@@ -50,10 +61,15 @@ final class TestSFTPServer {
                     host: "127.0.0.1",
                     port: candidatePort,
                     hostKeys: [hostKey],
-                    authenticationDelegate: FixedCredentialAuthDelegate()
+                    authenticationDelegate: FixedCredentialAuthDelegate(authorizedKey: authorizedKey)
                 )
                 server.enableSFTP(withDelegate: DirectoryBackedSFTPDelegate(root: rootDirectory))
-                return TestSFTPServer(port: candidatePort, rootDirectory: rootDirectory, server: server)
+                return TestSFTPServer(
+                    port: candidatePort,
+                    rootDirectory: rootDirectory,
+                    authorizedClientKey: clientKey.makeSSHRepresentation(),
+                    server: server
+                )
             } catch {
                 lastError = error
             }
@@ -69,22 +85,45 @@ final class TestSFTPServer {
 
 // MARK: - Authentication
 
+/// Encodes an Ed25519 public key in the OpenSSH `authorized_keys` form:
+/// the algorithm name and the key blob, each a length-prefixed SSH string.
+private func makeOpenSSHPublicKey(_ publicKey: Curve25519.Signing.PublicKey) -> String {
+    let algorithm = "ssh-ed25519"
+    var blob = Data()
+    for field in [Data(algorithm.utf8), publicKey.rawRepresentation] {
+        var length = UInt32(field.count).bigEndian
+        withUnsafeBytes(of: &length) { blob.append(contentsOf: $0) }
+        blob.append(field)
+    }
+    return "\(algorithm) \(blob.base64EncodedString()) hamasen-test"
+}
+
 private final class FixedCredentialAuthDelegate: NIOSSHServerUserAuthenticationDelegate {
-    let supportedAuthenticationMethods: NIOSSHAvailableUserAuthenticationMethods = .password
+    let supportedAuthenticationMethods: NIOSSHAvailableUserAuthenticationMethods = [.password, .publicKey]
+
+    private let authorizedKey: NIOSSHPublicKey
+
+    init(authorizedKey: NIOSSHPublicKey) {
+        self.authorizedKey = authorizedKey
+    }
 
     func requestReceived(
         request: NIOSSHUserAuthenticationRequest,
         responsePromise: EventLoopPromise<NIOSSHUserAuthenticationOutcome>
     ) {
-        guard
-            case .password(let passwordRequest) = request.request,
-            request.username == TestSFTPServer.username,
-            passwordRequest.password == TestSFTPServer.password
-        else {
+        guard request.username == TestSFTPServer.username else {
             responsePromise.succeed(.failure)
             return
         }
-        responsePromise.succeed(.success)
+
+        switch request.request {
+        case .password(let passwordRequest):
+            responsePromise.succeed(passwordRequest.password == TestSFTPServer.password ? .success : .failure)
+        case .publicKey(let publicKeyRequest):
+            responsePromise.succeed(publicKeyRequest.publicKey == authorizedKey ? .success : .failure)
+        case .hostBased, .none:
+            responsePromise.succeed(.failure)
+        }
     }
 }
 

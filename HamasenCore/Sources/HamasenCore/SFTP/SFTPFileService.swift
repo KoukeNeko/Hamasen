@@ -1,4 +1,5 @@
 import Citadel
+import Crypto
 import Foundation
 import NIOCore
 
@@ -37,6 +38,10 @@ public actor SFTPFileService: RemoteFileService {
         guard sftpClient == nil else { return }
 
         Self.log.debug("Connecting to \(config.host):\(config.port) as \(config.username)")
+        // Built before the do/catch so an unusable key reports its own
+        // reason instead of being flattened into a connection failure.
+        let authenticationMethod = try makeAuthenticationMethod()
+
         let client: SSHClient
         do {
             // Host keys are accepted blindly for the MVP (TOFU pinning is a
@@ -45,7 +50,7 @@ public actor SFTPFileService: RemoteFileService {
             client = try await SSHClient.connect(
                 host: config.host,
                 port: config.port,
-                authenticationMethod: makeAuthenticationMethod(),
+                authenticationMethod: authenticationMethod,
                 hostKeyValidator: .acceptAnything(),
                 reconnect: .never,
                 connectTimeout: .seconds(Int64(connectTimeoutSeconds))
@@ -200,10 +205,54 @@ public actor SFTPFileService: RemoteFileService {
         return sftpClient
     }
 
-    private func makeAuthenticationMethod() -> SSHAuthenticationMethod {
+    private func makeAuthenticationMethod() throws -> SSHAuthenticationMethod {
         switch credentials {
         case .password(let password):
             return .passwordBased(username: config.username, password: password)
+        case .privateKey(let openSSHKey, let passphrase):
+            return try Self.makeKeyAuthentication(
+                openSSHKey: openSSHKey,
+                passphrase: passphrase,
+                username: config.username
+            )
+        }
+    }
+
+    /// Builds key-based authentication, dispatching on the key algorithm read
+    /// from the file so the failure for an unusable key is reported before
+    /// any network traffic.
+    private static func makeKeyAuthentication(
+        openSSHKey: String,
+        passphrase: String?,
+        username: String
+    ) throws -> SSHAuthenticationMethod {
+        let keyInfo = try OpenSSHPrivateKey.parse(openSSHKey)
+        let decryptionKey = passphrase.map { Data($0.utf8) }
+        guard !keyInfo.isEncrypted || decryptionKey != nil else {
+            throw RemoteFileServiceError.privateKeyPassphraseRequired
+        }
+
+        do {
+            switch keyInfo.keyType {
+            case .ed25519:
+                let privateKey = try Curve25519.Signing.PrivateKey(
+                    sshEd25519: openSSHKey,
+                    decryptionKey: decryptionKey
+                )
+                return .ed25519(username: username, privateKey: privateKey)
+            case .rsa:
+                let privateKey = try Insecure.RSA.PrivateKey(
+                    sshRsa: openSSHKey,
+                    decryptionKey: decryptionKey
+                )
+                return .rsa(username: username, privateKey: privateKey)
+            }
+        } catch {
+            // The parser already validated the container, so a failure here
+            // means the key material could not be decrypted.
+            throw RemoteFileServiceError.privateKeyUnreadable(
+                underlying: String(describing: error)
+            )
         }
     }
 

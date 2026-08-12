@@ -39,13 +39,17 @@ public protocol RemoteFileService: Sendable {
 
 /// Shared error type for RemoteFileService implementations so upper layers
 /// can map failures consistently.
-public enum RemoteFileServiceError: Error, Sendable {
+public enum RemoteFileServiceError: Error, Equatable, Sendable {
     case notConnected
     case connectionFailed(underlying: String)
     case authenticationFailed
     case itemNotFound(path: String)
     case operationFailed(operation: String, path: String, underlying: String)
     case localFileUnreadable(url: URL)
+    /// The stored private key is encrypted but no passphrase was supplied.
+    case privateKeyPassphraseRequired
+    /// The private key could not be decoded — usually a wrong passphrase.
+    case privateKeyUnreadable(underlying: String)
 }
 
 extension RemoteFileServiceError: LocalizedError {
@@ -63,6 +67,10 @@ extension RemoteFileServiceError: LocalizedError {
             return "\(operation) 失敗（\(path)）：\(underlying)"
         case .localFileUnreadable(let url):
             return "無法讀取本地檔案：\(url.path)"
+        case .privateKeyPassphraseRequired:
+            return "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼"
+        case .privateKeyUnreadable(let underlying):
+            return "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：\(underlying)"
         }
     }
 }

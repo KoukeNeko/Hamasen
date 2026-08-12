@@ -2,21 +2,28 @@ import FileProvider
 import Foundation
 import HamasenCore
 
-/// Enumerates the domain root: one folder per mounted server.
+/// Enumerates the mounted servers as folders.
 ///
-/// The sync anchor is a hash of the mounted server list (IDs + names), so
-/// mounting, unmounting, or renaming a server invalidates the anchor and the
-/// system re-enumerates after the app signals this enumerator.
+/// Used for both the domain root (what Finder shows when the location is
+/// opened) and the working set. The working set matters because a replicated
+/// extension only receives change signals for that container — signals for
+/// any other container are ignored by the system — so mount, unmount, and
+/// rename changes have to be reported here to reach Finder.
+///
+/// The previous server list is carried inside the sync anchor, which is what
+/// lets `enumerateChanges` report a precise diff without keeping state
+/// between calls.
 final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     func invalidate() {}
 
-    private static func currentAnchor() -> NSFileProviderSyncAnchor {
-        let configs = (try? ConnectionRegistry.mountedConfigs()) ?? []
-        let stateToken = configs
-            .map { "\($0.id.uuidString):\($0.name)" }
-            .sorted()
-            .joined(separator: "|")
-        return NSFileProviderSyncAnchor(Data(stateToken.utf8))
+    private static func mountedConfigs() -> [ServerConfig] {
+        (try? ConnectionRegistry.mountedConfigs()) ?? []
+    }
+
+    private static func anchor(for configs: [ServerConfig]) -> NSFileProviderSyncAnchor {
+        NSFileProviderSyncAnchor(
+            ServerListChangeTracker.encode(ServerListChangeTracker.snapshot(of: configs))
+        )
     }
 
     func enumerateItems(for observer: NSFileProviderEnumerationObserver, startingAt page: NSFileProviderPage) {
@@ -30,17 +37,29 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
-        let currentAnchor = Self.currentAnchor()
-        if anchor.rawValue == currentAnchor.rawValue {
-            observer.finishEnumeratingChanges(upTo: currentAnchor, moreComing: false)
-        } else {
-            // The server list changed: force a full re-enumeration.
-            observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
+        let configs = Self.mountedConfigs()
+        let diff = ServerListChangeTracker.diff(
+            previous: ServerListChangeTracker.decode(anchor.rawValue),
+            current: configs
+        )
+
+        if !diff.updated.isEmpty {
+            observer.didUpdate(diff.updated.map(ServerFolderItem.init))
         }
+        if !diff.removedServerIDs.isEmpty {
+            observer.didDeleteItems(
+                withIdentifiers: diff.removedServerIDs.compactMap { serverID in
+                    UUID(uuidString: serverID).map {
+                        ItemIdentifierMapper.identifier(for: .serverRoot($0))
+                    }
+                }
+            )
+        }
+        observer.finishEnumeratingChanges(upTo: Self.anchor(for: configs), moreComing: false)
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        completionHandler(Self.currentAnchor())
+        completionHandler(Self.anchor(for: Self.mountedConfigs()))
     }
 }
 

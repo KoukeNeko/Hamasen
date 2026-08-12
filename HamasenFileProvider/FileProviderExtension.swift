@@ -236,9 +236,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         request: NSFileProviderRequest
     ) throws -> NSFileProviderEnumerator {
         switch containerItemIdentifier {
-        case .workingSet, .trashContainer:
+        case .trashContainer:
             return EmptyEnumerator()
-        case .rootContainer:
+        case .rootContainer, .workingSet:
+            // The working set is how a replicated extension propagates
+            // changes, so it enumerates the same server folders as the root.
             return ServerListEnumerator()
         default:
             switch ItemIdentifierMapper.entity(for: containerItemIdentifier) {

@@ -104,15 +104,19 @@ upload/download content integrity, create/delete/rename, and the
 
 ## Status
 
-- [x] SFTP with password authentication
+- [x] SFTP with password or SSH key authentication (Ed25519 / RSA, OpenSSH
+      format, encrypted keys supported)
 - [x] Finder integration: browse, download on open, upload, new folders,
       rename, move, delete
 - [x] Per-server folders under a single Finder location
-- [ ] Planned: FTP/FTPS, SSH key authentication, host key verification
-      (TOFU), streaming transfers for large files, remote change tracking
+- [ ] Planned: FTP/FTPS, WebDAV, host key verification (TOFU), streaming
+      transfers for large files, remote change tracking
 
 Known limitations:
 
+- SSH keys must be in OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`);
+  ECDSA keys and older PKCS#1 PEM keys are not supported. Convert with
+  `ssh-keygen -p -f <key>`.
 - Transfers are whole-file in memory; multi-GB files will be hungry until
   streaming lands.
 - Host keys are currently accepted blindly (`acceptAnything`); TOFU pinning
