@@ -234,7 +234,14 @@ final class ServerListModel {
     /// least one server is mounted.
     private func syncDomainRegistration() async {
         do {
-            try await FinderDomain.synchronize(hasMountedServers: !mountedServerIDs.isEmpty)
+            let preservedLocation = try await FinderDomain.synchronize(
+                hasMountedServers: !mountedServerIDs.isEmpty
+            )
+            // Content that never made it to the server survives the unmount;
+            // showing it is the only way the user learns it is there.
+            if let preservedLocation {
+                NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
+            }
         } catch {
             errorMessage = "更新 Finder 位置失敗：\(error.localizedDescription)"
         }

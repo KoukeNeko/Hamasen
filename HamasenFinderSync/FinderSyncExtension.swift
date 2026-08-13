@@ -93,7 +93,14 @@ final class FinderSyncExtension: FIFinderSync {
             guard mounted.remove(target.server.id) != nil else { return }
 
             try store.saveMountedServerIDs(mounted)
-            try await FinderDomain.synchronize(hasMountedServers: !mounted.isEmpty)
+            let preservedLocation = try await FinderDomain.synchronize(
+                hasMountedServers: !mounted.isEmpty
+            )
+            // Content that never made it to the server survives the unmount;
+            // showing it is the only way the user learns it is there.
+            if let preservedLocation {
+                NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
+            }
         }
     }
 }

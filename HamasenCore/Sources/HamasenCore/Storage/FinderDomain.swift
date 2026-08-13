@@ -17,13 +17,19 @@ public enum FinderDomain {
     ///
     /// Removing the domain already tears the location down, so the signal is
     /// only meaningful while at least one server remains.
-    public static func synchronize(hasMountedServers: Bool) async throws {
+    ///
+    /// Returns where locally modified content was preserved, if there was
+    /// any: removing a domain deletes its local replica, and unmounting is a
+    /// single click, so edits that never reached the server must not go with
+    /// it. Nothing on the server is touched either way.
+    @discardableResult
+    public static func synchronize(hasMountedServers: Bool) async throws -> URL? {
         guard hasMountedServers else {
-            try await NSFileProviderManager.remove(domain)
-            return
+            return try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData)
         }
         try await register()
         try await signalServerListChanged()
+        return nil
     }
 
     /// Adds the domain unless it is already registered.
