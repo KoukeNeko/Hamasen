@@ -18,6 +18,8 @@ struct AuthenticationFields: View {
     let allowsPrivateKey: Bool
 
     @State private var importError: String?
+    /// Remembers a key selection while a password-only protocol is chosen.
+    @State private var methodBeforeDowngrade: ServerConfig.AuthenticationMethod?
 
     var body: some View {
         Section("登入") {
@@ -54,12 +56,18 @@ struct AuthenticationFields: View {
             }
         }
         .onChange(of: allowsPrivateKey) { _, isAllowed in
-            // Switching to a protocol without key support falls back to a
-            // password rather than leaving an unusable selection.
-            if !isAllowed {
+            // A protocol without key support falls back to a password rather
+            // than leaving an unusable selection, but the choice and the
+            // imported key are remembered so switching back restores them
+            // instead of silently discarding what the user selected.
+            if isAllowed {
+                if let remembered = methodBeforeDowngrade {
+                    method = remembered
+                    methodBeforeDowngrade = nil
+                }
+            } else {
+                methodBeforeDowngrade = method
                 method = .password
-                importedKey = nil
-                keyPassphrase = ""
             }
         }
     }

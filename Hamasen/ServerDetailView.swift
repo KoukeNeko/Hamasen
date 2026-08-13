@@ -76,10 +76,14 @@ struct ServerDetailView: View {
     }
 
     private var draftCredentials: CredentialUpdate {
-        CredentialUpdate(
-            password: draftPassword,
-            privateKey: importedKey?.text,
-            keyPassphrase: draftKeyPassphrase
+        // Only the secret the chosen method actually uses is written, so a
+        // key kept for a possible switch back never lands in the Keychain of
+        // a password-authenticated server.
+        let usesKey = draftAuthenticationMethod == .privateKey
+        return CredentialUpdate(
+            password: usesKey ? "" : draftPassword,
+            privateKey: usesKey ? importedKey?.text : nil,
+            keyPassphrase: usesKey ? draftKeyPassphrase : ""
         )
     }
 
@@ -259,10 +263,13 @@ struct ServerDetailView: View {
             Button("儲存變更") {
                 guard let draftConfig else { return }
                 Task {
-                    await model.saveServer(draftConfig, credentials: draftCredentials)
-                    draftPassword = ""
-                    draftKeyPassphrase = ""
-                    importedKey = nil
+                    // Clearing the fields before knowing the secret was
+                    // stored would leave no way to retry a failed save.
+                    if await model.saveServer(draftConfig, credentials: draftCredentials) {
+                        draftPassword = ""
+                        draftKeyPassphrase = ""
+                        importedKey = nil
+                    }
                     refreshStoredCredentials()
                 }
             }

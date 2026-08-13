@@ -65,8 +65,8 @@ struct PropfindResponseParserTests {
         #expect(!entries[0].isCollection)
     }
 
-    @Test("缺少屬性時給安全的預設值")
-    func toleratesMissingProperties() throws {
+    @Test("缺少屬性時長度為未知而非零")
+    func reportsMissingLengthAsUnknown() throws {
         let sparse = """
         <?xml version="1.0"?>
         <D:multistatus xmlns:D="DAV:">
@@ -75,8 +75,60 @@ struct PropfindResponseParserTests {
         """
         let entries = try PropfindResponseParser.parse(Data(sparse.utf8))
 
-        #expect(entries[0].contentLength == 0)
+        #expect(entries[0].contentLength == nil)
         #expect(entries[0].lastModified == nil)
+    }
+
+
+    @Test("RFC 850 與 asctime 日期也能解析")
+    func parsesLegacyDateFormats() throws {
+        for date in ["Tuesday, 12-Aug-26 10:00:00 GMT", "Tue Aug 12 10:00:00 2026"] {
+            let xml = """
+            <?xml version="1.0"?>
+            <D:multistatus xmlns:D="DAV:">
+              <D:response>
+                <D:href>/a.txt</D:href>
+                <D:propstat><D:prop>
+                  <D:getlastmodified>\(date)</D:getlastmodified>
+                </D:prop></D:propstat>
+              </D:response>
+            </D:multistatus>
+            """
+            let entries = try PropfindResponseParser.parse(Data(xml.utf8))
+            #expect(entries[0].lastModified != nil, "failed to parse \(date)")
+        }
+    }
+
+    @Test("CDATA 包住的 href 不會讓項目消失")
+    func keepsEntriesWithCDATAHrefs() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <D:multistatus xmlns:D="DAV:">
+          <D:response>
+            <D:href><![CDATA[/dav/a&b.txt]]></D:href>
+            <D:propstat><D:prop><D:getcontentlength>7</D:getcontentlength></D:prop></D:propstat>
+          </D:response>
+        </D:multistatus>
+        """
+        let entries = try PropfindResponseParser.parse(Data(xml.utf8))
+
+        #expect(entries.count == 1)
+        #expect(PropfindResponseParser.path(fromHref: entries[0].href) == "/dav/a&b.txt")
+    }
+
+    @Test("負數長度視為未知")
+    func treatsNegativeLengthAsUnknown() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <D:multistatus xmlns:D="DAV:">
+          <D:response>
+            <D:href>/a.bin</D:href>
+            <D:propstat><D:prop><D:getcontentlength>-1</D:getcontentlength></D:prop></D:propstat>
+          </D:response>
+        </D:multistatus>
+        """
+        let entries = try PropfindResponseParser.parse(Data(xml.utf8))
+        #expect(entries[0].contentLength == nil)
     }
 
     @Test("非 XML 內容回報錯誤")

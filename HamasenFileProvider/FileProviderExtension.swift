@@ -104,8 +104,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
     // MARK: - Partial contents
 
     /// Fetches only the byte range the system asked for, so opening a large
-    /// file does not download all of it. SFTP reads at an offset natively,
-    /// so the range maps straight onto the protocol.
+    /// file does not download all of it. Both protocols read at an offset:
+    /// SFTP natively, WebDAV through a Range request.
     func fetchPartialContents(
         for itemIdentifier: NSFileProviderItemIdentifier,
         version requestedVersion: NSFileProviderItemVersion,
@@ -132,6 +132,25 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             do {
                 let service = try await registry.service(for: serverID)
                 let info = try await service.itemInfo(at: path)
+
+                // A server that does not report a size leaves no way to align
+                // a range; fetching the whole item is the only way to avoid
+                // handing back an empty file that looks correctly versioned.
+                guard info.size > 0 else {
+                    let localURL = try Self.makeTemporaryFileURL(for: domain)
+                    try await service.downloadFile(at: path, to: localURL)
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: localURL.path)
+                    let byteCount = (attributes?[.size] as? NSNumber)?.intValue ?? 0
+                    completionHandler(
+                        localURL,
+                        RemoteFileItem(serverID: serverID, remoteItem: info),
+                        NSRange(location: 0, length: byteCount),
+                        [],
+                        nil
+                    )
+                    return
+                }
+
                 let range = ByteRangeAlignment.align(
                     offset: Int64(requestedRange.location),
                     length: requestedRange.length,

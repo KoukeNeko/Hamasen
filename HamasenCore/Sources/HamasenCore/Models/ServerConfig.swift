@@ -58,6 +58,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
 
     public static let defaultSFTPPort = TransferProtocol.sftp.defaultPort
     public static let defaultRemotePath = RemotePath.root
+    public static let validPortRange = 1...65535
 
     public let id: UUID
     public var name: String
@@ -98,13 +99,20 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.name = try container.decode(String.self, forKey: .name)
         self.transferProtocol = try container.decode(TransferProtocol.self, forKey: .transferProtocol)
         self.host = try container.decode(String.self, forKey: .host)
-        self.port = try container.decode(Int.self, forKey: .port)
+        // Clamped on the way in: an out-of-range port reaches URLComponents,
+        // which traps rather than throwing, crashing the extension.
+        let decodedPort = try container.decode(Int.self, forKey: .port)
+        self.port = ServerConfig.validPortRange.contains(decodedPort)
+            ? decodedPort
+            : ServerConfig.defaultSFTPPort
         self.username = try container.decode(String.self, forKey: .username)
         self.authenticationMethod = try container.decodeIfPresent(
             AuthenticationMethod.self,
             forKey: .authenticationMethod
         ) ?? .password
-        self.remotePath = try container.decode(String.self, forKey: .remotePath)
+        self.remotePath = ServerConfig.normalizedRemotePath(
+            try container.decode(String.self, forKey: .remotePath)
+        )
     }
 
     /// Normalizes remotePath: always starts with "/" and, except for the

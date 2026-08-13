@@ -85,8 +85,9 @@ final class ServerListModel {
 
     // MARK: - CRUD
 
-    func saveServer(_ config: ServerConfig, credentials: CredentialUpdate) async {
-        guard let configStore else { return }
+    @discardableResult
+    func saveServer(_ config: ServerConfig, credentials: CredentialUpdate) async -> Bool {
+        guard let configStore else { return false }
         do {
             var updatedServers = servers
             if let existingIndex = updatedServers.firstIndex(where: { $0.id == config.id }) {
@@ -99,7 +100,7 @@ final class ServerListModel {
             servers = updatedServers
         } catch {
             errorMessage = "儲存伺服器失敗：\(error.localizedDescription)"
-            return
+            return false
         }
 
         // A rename shows up as the folder name in Finder; tell the system to
@@ -107,6 +108,7 @@ final class ServerListModel {
         if isMounted(config) {
             await signalServerListChanged()
         }
+        return true
     }
 
     func removeServer(_ config: ServerConfig) async {
@@ -173,16 +175,35 @@ final class ServerListModel {
     /// Whether a private key is already stored for this server, so the UI can
     /// tell "keep the existing key" apart from "no key yet".
     func hasStoredPrivateKey(for serverID: UUID) -> Bool {
-        (try? credentialStore.load(kind: .privateKey, for: serverID)) != nil
+        hasStoredCredential(kind: .privateKey, for: serverID)
     }
 
     /// Whether a password is already stored, so an edit form can leave the
     /// field blank without implying the server has no credential.
     func hasStoredPassword(for serverID: UUID) -> Bool {
-        (try? credentialStore.load(kind: .password, for: serverID)) != nil
+        hasStoredCredential(kind: .password, for: serverID)
     }
 
-    /// Tries a real SFTP connection with the given draft configuration.
+    /// Only a definite "no such item" counts as absent. Any other Keychain
+    /// failure — locked, interaction not allowed, access-group mismatch — is
+    /// reported as present, because treating it as absent would disable the
+    /// form's Save button with nothing on screen explaining why.
+    private func hasStoredCredential(
+        kind: KeychainCredentialStore.CredentialKind,
+        for serverID: UUID
+    ) -> Bool {
+        do {
+            _ = try credentialStore.load(kind: kind, for: serverID)
+            return true
+        } catch KeychainCredentialStore.KeychainError.itemNotFound {
+            return false
+        } catch {
+            return true
+        }
+    }
+
+    /// Tries a real connection with the given draft configuration, using
+    /// whichever protocol it names.
     /// Returns nil on success, or a user-facing error message. Credentials
     /// the user has not re-entered fall back to what is stored.
     func testConnection(config: ServerConfig, credentials draft: CredentialUpdate) async -> String? {

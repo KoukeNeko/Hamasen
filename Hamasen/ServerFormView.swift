@@ -113,10 +113,11 @@ struct ServerFormView: View {
             authenticationMethod: authenticationMethod,
             remotePath: remotePath
         )
+        let usesKey = authenticationMethod == .privateKey
         let credentials = CredentialUpdate(
-            password: password,
-            privateKey: importedKey?.text,
-            keyPassphrase: keyPassphrase
+            password: usesKey ? "" : password,
+            privateKey: usesKey ? importedKey?.text : nil,
+            keyPassphrase: usesKey ? keyPassphrase : ""
         )
         onSave(config, credentials)
         dismiss()

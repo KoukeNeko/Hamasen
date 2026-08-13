@@ -10,7 +10,8 @@ public enum PropfindResponseParser {
     public struct Entry: Equatable, Sendable {
         public let href: String
         public let isCollection: Bool
-        public let contentLength: Int64
+        /// nil when the server did not report a usable length.
+        public let contentLength: Int64?
         public let lastModified: Date?
     }
 
@@ -52,17 +53,31 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
 
     private var href: String?
     private var isCollection = false
-    private var contentLength: Int64 = 0
+    private var contentLength: Int64?
     private var lastModified: Date?
 
-    /// RFC 1123, the format WebDAV mandates for getlastmodified.
-    private static let modificationFormatter: DateFormatter = {
+    /// Every HTTP-date form: RFC 1123 is what WebDAV mandates, but RFC 850
+    /// and asctime are still emitted by older servers. A date that fails to
+    /// parse would collapse the item version onto the file size alone, so
+    /// remote edits that preserve size would never be noticed.
+    private static let modificationFormatters: [DateFormatter] = [
+        "EEE, dd MMM yyyy HH:mm:ss zzz",
+        "EEEE, dd-MMM-yy HH:mm:ss zzz",
+        "EEE MMM d HH:mm:ss yyyy",
+    ].map { format in
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        formatter.dateFormat = format
         return formatter
-    }()
+    }
+
+    private static func parseModificationDate(_ text: String) -> Date? {
+        for formatter in modificationFormatters {
+            if let date = formatter.date(from: text) { return date }
+        }
+        return nil
+    }
 
     func parser(
         _ parser: XMLParser,
@@ -77,7 +92,7 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
         case "response":
             href = nil
             isCollection = false
-            contentLength = 0
+            contentLength = nil
             lastModified = nil
         case "collection":
             isCollection = true
@@ -88,6 +103,12 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         text += string
+    }
+
+    /// CDATA sections bypass foundCharacters entirely; without this an href
+    /// wrapped in CDATA would be empty and the entry would be dropped.
+    func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
+        text += String(decoding: CDATABlock, as: UTF8.self)
     }
 
     func parser(
@@ -103,9 +124,10 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
             // discovery, for instance) arrive after it and are ignored.
             if href == nil { href = trimmed }
         case "getcontentlength":
-            contentLength = Int64(trimmed) ?? 0
+            // A negative length is as unusable as a missing one.
+            contentLength = Int64(trimmed).flatMap { $0 >= 0 ? $0 : nil }
         case "getlastmodified":
-            lastModified = Self.modificationFormatter.date(from: trimmed)
+            lastModified = Self.parseModificationDate(trimmed)
         case "response":
             if let href, !href.isEmpty {
                 entries.append(
