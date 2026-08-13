@@ -14,17 +14,21 @@ struct AuthenticationFields: View {
     let hasStoredKey: Bool
     /// Passwords may be left blank when editing an existing server.
     let allowsBlankPassword: Bool
+    /// Only SSH-based protocols can authenticate with a key.
+    let allowsPrivateKey: Bool
 
     @State private var importError: String?
 
     var body: some View {
         Section("登入") {
-            Picker("認證方式", selection: $method) {
-                ForEach(ServerConfig.AuthenticationMethod.allCases, id: \.self) { method in
-                    Text(method.displayName).tag(method)
+            if allowsPrivateKey {
+                Picker("認證方式", selection: $method) {
+                    ForEach(ServerConfig.AuthenticationMethod.allCases, id: \.self) { method in
+                        Text(method.displayName).tag(method)
+                    }
                 }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
 
             switch method {
             case .password:
@@ -47,6 +51,15 @@ struct AuthenticationFields: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+            }
+        }
+        .onChange(of: allowsPrivateKey) { _, isAllowed in
+            // Switching to a protocol without key support falls back to a
+            // password rather than leaving an unusable selection.
+            if !isAllowed {
+                method = .password
+                importedKey = nil
+                keyPassphrase = ""
             }
         }
     }

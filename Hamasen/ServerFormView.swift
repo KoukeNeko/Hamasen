@@ -9,6 +9,7 @@ struct ServerFormView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
+    @State private var transferProtocol: ServerConfig.TransferProtocol
     @State private var host: String
     @State private var portText: String
     @State private var username: String
@@ -23,6 +24,7 @@ struct ServerFormView: View {
         self.existingServer = existingServer
         self.onSave = onSave
         _name = State(initialValue: existingServer?.name ?? "")
+        _transferProtocol = State(initialValue: existingServer?.transferProtocol ?? .sftp)
         _host = State(initialValue: existingServer?.host ?? "")
         _portText = State(initialValue: String(existingServer?.port ?? AppSettings.defaultServerPort()))
         _username = State(initialValue: existingServer?.username ?? "")
@@ -59,6 +61,7 @@ struct ServerFormView: View {
             Form {
                 Section("伺服器") {
                     TextField("名稱", text: $name, prompt: Text("我的 NAS"))
+                    ProtocolPicker(transferProtocol: $transferProtocol, portText: $portText)
                     TextField("主機", text: $host, prompt: Text("example.com"))
                     TextField("連接埠", text: $portText)
                     TextField("使用者名稱", text: $username)
@@ -69,7 +72,8 @@ struct ServerFormView: View {
                     importedKey: $importedKey,
                     keyPassphrase: $keyPassphrase,
                     hasStoredKey: false,
-                    allowsBlankPassword: isEditing
+                    allowsBlankPassword: isEditing,
+                    allowsPrivateKey: transferProtocol.supportsPrivateKeyAuthentication
                 )
                 Section("掛載") {
                     TextField("遠端路徑", text: $remotePath, prompt: Text("/"))
@@ -102,6 +106,7 @@ struct ServerFormView: View {
         let config = ServerConfig(
             id: existingServer?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespaces),
+            transferProtocol: transferProtocol,
             host: host.trimmingCharacters(in: .whitespaces),
             port: port,
             username: username.trimmingCharacters(in: .whitespaces),

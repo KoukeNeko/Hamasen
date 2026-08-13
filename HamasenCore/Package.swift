@@ -12,6 +12,9 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.7.0"),
+        // Already in the graph through Citadel; declared so the test target
+        // can stand up an in-process WebDAV server.
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
     ],
     targets: [
         // Citadel's SSHClient is not marked Sendable yet, which trips Swift 6
@@ -26,7 +29,10 @@ let package = Package(
         ),
         .testTarget(
             name: "HamasenCoreTests",
-            dependencies: ["HamasenCore"],
+            dependencies: [
+                "HamasenCore",
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

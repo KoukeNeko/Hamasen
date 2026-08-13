@@ -176,6 +176,12 @@ final class ServerListModel {
         (try? credentialStore.load(kind: .privateKey, for: serverID)) != nil
     }
 
+    /// Whether a password is already stored, so an edit form can leave the
+    /// field blank without implying the server has no credential.
+    func hasStoredPassword(for serverID: UUID) -> Bool {
+        (try? credentialStore.load(kind: .password, for: serverID)) != nil
+    }
+
     /// Tries a real SFTP connection with the given draft configuration.
     /// Returns nil on success, or a user-facing error message. Credentials
     /// the user has not re-entered fall back to what is stored.
@@ -189,11 +195,7 @@ final class ServerListModel {
                 : "沒有可用的 SSH 金鑰，請先選擇金鑰檔案"
         }
 
-        let service = SFTPFileService(
-            config: config,
-            credentials: credentials,
-            connectTimeoutSeconds: AppSettings.connectTimeoutSeconds()
-        )
+        let service = RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
         defer { Task { try? await service.disconnect() } }
         do {
             try await service.connect()

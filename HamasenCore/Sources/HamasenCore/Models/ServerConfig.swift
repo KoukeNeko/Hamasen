@@ -5,7 +5,41 @@ import Foundation
 public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     public enum TransferProtocol: String, Codable, Sendable, CaseIterable {
         case sftp
-        // Phase 2: case ftp, case ftps
+        case webdav
+        case webdavs
+        // Phase 3: case ftp, case ftps
+
+        public var displayName: String {
+            switch self {
+            case .sftp: return "SFTP"
+            case .webdav: return "WebDAV"
+            case .webdavs: return "WebDAV (HTTPS)"
+            }
+        }
+
+        public var defaultPort: Int {
+            switch self {
+            case .sftp: return 22
+            case .webdav: return 80
+            case .webdavs: return 443
+            }
+        }
+
+        /// The URL scheme for HTTP-based protocols; nil for SFTP, which does
+        /// not address items by URL.
+        public var urlScheme: String? {
+            switch self {
+            case .sftp: return nil
+            case .webdav: return "http"
+            case .webdavs: return "https"
+            }
+        }
+
+        /// Whether the protocol authenticates with an SSH key rather than a
+        /// password.
+        public var supportsPrivateKeyAuthentication: Bool {
+            self == .sftp
+        }
     }
 
     /// How the connection authenticates. The secret itself always lives in
@@ -22,7 +56,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         }
     }
 
-    public static let defaultSFTPPort = 22
+    public static let defaultSFTPPort = TransferProtocol.sftp.defaultPort
     public static let defaultRemotePath = RemotePath.root
 
     public let id: UUID

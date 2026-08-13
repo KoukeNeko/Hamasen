@@ -308,10 +308,7 @@ public actor SFTPFileService: RemoteFileService {
     /// Maps a mount-relative path ("/docs/a.txt") to the remote absolute path
     /// (remotePath + relative path).
     private func remoteAbsolutePath(for mountRelativePath: String) -> String {
-        let base = config.remotePath
-        if base == RemotePath.root { return mountRelativePath }
-        if mountRelativePath == RemotePath.root { return base }
-        return base + mountRelativePath
+        RemotePath.resolve(mountRelativePath, against: config.remotePath)
     }
 
     private static func makeRemoteItem(

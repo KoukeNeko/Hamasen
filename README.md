@@ -59,6 +59,7 @@ Hamasen.xcodeproj
 ├── HamasenCore              Local Swift package
 │   ├── RemoteFileService        Protocol abstraction (FTP can plug in later)
 │   ├── SFTPFileService          Citadel (SwiftNIO SSH) implementation
+│   ├── WebDAVFileService        URLSession implementation, no dependencies
 │   ├── ServerConfigStore        JSON config in the App Group container
 │   ├── MountedServersStore      Which servers are currently mounted
 │   └── KeychainCredentialStore  Passwords and keys live in the Keychain only
@@ -94,7 +95,8 @@ Development signing certificate.
 
 Tests need no external infrastructure: `HamasenCoreTests` spins up an
 in-process SFTP server (Citadel's server API over a local temp directory)
-that accepts both password and public key authentication. 50 tests cover
+that accepts both password and public key authentication, plus an
+in-process WebDAV server. 70 tests cover
 connecting with either credential type, authentication failures, key
 parsing, directory listing, upload/download content integrity, range
 requests across chunk boundaries, create/delete/rename, the `remotePath`
@@ -113,13 +115,14 @@ base directory, and the mounted-server diffing that drives Finder updates.
 
 - [x] SFTP with password or SSH key authentication (Ed25519 / RSA, OpenSSH
       format, encrypted keys supported)
+- [x] WebDAV and WebDAV over HTTPS, with Basic authentication
 - [x] Finder integration: browse, download on open, upload, new folders,
       rename, move, delete
 - [x] Per-server folders under a single Finder location
 - [x] Range requests: opening a large file fetches only the bytes the system
       asks for, rather than downloading the whole thing
-- [ ] Planned: FTP/FTPS, WebDAV, host key verification (TOFU), streaming
-      uploads, remote change tracking
+- [ ] Planned: FTP/FTPS, host key verification (TOFU), streaming uploads,
+      remote change tracking
 
 Known limitations:
 

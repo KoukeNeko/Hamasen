@@ -35,12 +35,14 @@ echo "==> [1/2] Running HamasenCore tests"
 (cd "${PROJECT_ROOT}/HamasenCore" && swift test)
 
 echo "==> [2/2] Building app + File Provider extension"
+# pipefail (set above) carries xcodebuild's exit status through the grep, so a
+# failed build fails the script instead of being swallowed.
 xcodebuild \
     -project "${PROJECT_ROOT}/Hamasen.xcodeproj" \
     -scheme "${SCHEME}" \
     -configuration Debug \
     -destination 'platform=macOS' \
     -allowProvisioningUpdates \
-    build | grep -E "error:|warning:|BUILD" || true
+    build | grep -E "error:|warning:|BUILD"
 
 echo "==> All checks passed"

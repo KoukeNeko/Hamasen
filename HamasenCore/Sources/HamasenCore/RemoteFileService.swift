@@ -56,6 +56,8 @@ public enum RemoteFileServiceError: Error, Equatable, Sendable {
     case privateKeyPassphraseRequired
     /// The private key could not be decoded — usually a wrong passphrase.
     case privateKeyUnreadable(underlying: String)
+    /// The stored credentials are of a kind this protocol cannot use.
+    case unsupportedCredentials(protocolName: String)
 }
 
 extension RemoteFileServiceError: LocalizedError {
@@ -77,6 +79,8 @@ extension RemoteFileServiceError: LocalizedError {
             return "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼"
         case .privateKeyUnreadable(let underlying):
             return "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：\(underlying)"
+        case .unsupportedCredentials(let protocolName):
+            return "\(protocolName) 不支援 SSH 金鑰認證，請改用密碼"
         }
     }
 }

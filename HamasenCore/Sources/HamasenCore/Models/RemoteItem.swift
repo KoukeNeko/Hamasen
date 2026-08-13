@@ -63,4 +63,19 @@ public enum RemotePath {
         guard path != root else { return root }
         return String(path.split(separator: Character(separator)).last ?? "")
     }
+
+    /// Resolves a mount-relative path against the server's base directory.
+    /// Shared by every protocol so they agree on what the mount root means.
+    public static func resolve(_ mountRelativePath: String, against base: String) -> String {
+        if base == root { return mountRelativePath }
+        if mountRelativePath == root { return base }
+        return base + mountRelativePath
+    }
+
+    /// Drops a trailing separator so paths compare equal regardless of how a
+    /// server spells a directory.
+    public static func withoutTrailingSeparator(_ path: String) -> String {
+        guard path.count > 1, path.hasSuffix(separator) else { return path }
+        return String(path.dropLast())
+    }
 }

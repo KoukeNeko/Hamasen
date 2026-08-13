@@ -9,7 +9,7 @@ actor ConnectionRegistry {
         case serverConfigurationMissing(UUID)
     }
 
-    private var services: [UUID: SFTPFileService] = [:]
+    private var services: [UUID: any RemoteFileService] = [:]
 
     /// Returns a connected service for the server, creating one on first use.
     func service(for serverID: UUID) async throws -> any RemoteFileService {
@@ -18,11 +18,7 @@ actor ConnectionRegistry {
         }
         let config = try Self.config(for: serverID)
         let credentials = try KeychainCredentialStore().loadCredentials(for: config)
-        let service = SFTPFileService(
-            config: config,
-            credentials: credentials,
-            connectTimeoutSeconds: AppSettings.connectTimeoutSeconds()
-        )
+        let service = RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
         try await service.connect()
         services[serverID] = service
         return service

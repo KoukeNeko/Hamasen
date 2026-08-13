@@ -17,6 +17,7 @@ struct ServerDetailView: View {
     let onDeleted: () -> Void
 
     @State private var draftName: String
+    @State private var draftProtocol: ServerConfig.TransferProtocol
     @State private var draftHost: String
     @State private var draftPortText: String
     @State private var draftUsername: String
@@ -35,6 +36,7 @@ struct ServerDetailView: View {
         self.model = model
         self.onDeleted = onDeleted
         _draftName = State(initialValue: server.name)
+        _draftProtocol = State(initialValue: server.transferProtocol)
         _draftHost = State(initialValue: server.host)
         _draftPortText = State(initialValue: String(server.port))
         _draftUsername = State(initialValue: server.username)
@@ -58,6 +60,7 @@ struct ServerDetailView: View {
         return ServerConfig(
             id: server.id,
             name: name,
+            transferProtocol: draftProtocol,
             host: host,
             port: port,
             username: username,
@@ -74,11 +77,17 @@ struct ServerDetailView: View {
         )
     }
 
-    /// Switching to key authentication needs a key from somewhere.
+    /// Each authentication method needs its own secret from somewhere — newly
+    /// entered or already stored. Without this check, switching a key-based
+    /// server to a protocol that only does passwords would save a server that
+    /// can never authenticate.
     private var hasUsableCredential: Bool {
-        draftAuthenticationMethod == .password
-            || importedKey != nil
-            || model.hasStoredPrivateKey(for: server.id)
+        switch draftAuthenticationMethod {
+        case .password:
+            return !draftPassword.isEmpty || model.hasStoredPassword(for: server.id)
+        case .privateKey:
+            return importedKey != nil || model.hasStoredPrivateKey(for: server.id)
+        }
     }
 
     private var hasUnsavedChanges: Bool {
@@ -128,7 +137,7 @@ struct ServerDetailView: View {
                 Text(server.name)
                     .font(.title2.bold())
                 HStack(spacing: 6) {
-                    badge("SFTP", tint: .blue)
+                    badge(server.transferProtocol.displayName, tint: .blue)
                     badge(server.authenticationMethod.displayName, tint: .purple)
                     badge(
                         isMounted ? "已掛載" : "未掛載",
@@ -180,6 +189,7 @@ struct ServerDetailView: View {
         Form {
             Section("伺服器") {
                 TextField("名稱", text: $draftName)
+                ProtocolPicker(transferProtocol: $draftProtocol, portText: $draftPortText)
                 TextField("主機", text: $draftHost, prompt: Text("example.com"))
                 TextField("連接埠", text: $draftPortText)
                 TextField("使用者名稱", text: $draftUsername)
@@ -190,7 +200,10 @@ struct ServerDetailView: View {
                 importedKey: $importedKey,
                 keyPassphrase: $draftKeyPassphrase,
                 hasStoredKey: model.hasStoredPrivateKey(for: server.id),
-                allowsBlankPassword: true
+                // Only offer "leave blank to keep" when there is in fact a
+                // stored password to keep.
+                allowsBlankPassword: model.hasStoredPassword(for: server.id),
+                allowsPrivateKey: draftProtocol.supportsPrivateKeyAuthentication
             )
             Section("掛載") {
                 TextField("遠端路徑", text: $draftRemotePath, prompt: Text("/"))
