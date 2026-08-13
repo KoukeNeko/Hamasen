@@ -82,10 +82,14 @@ Key design points:
   calls.
 - Server folders cannot be renamed, moved, or deleted from Finder — they are
   managed in the app. Cross-server moves fall back to copy + delete.
-- A second extension (`HamasenFileProviderUI`) adds Hamasen's own entries to
-  the Finder context menu. Which entries appear is decided by predicates in
-  its Info.plist; the identifier format and the domain bookkeeping both live
-  in `HamasenCore` so the two extensions cannot disagree.
+- Context menu entries come from a second extension (`HamasenFinderSync`), a
+  **FinderSync** extension. On macOS this is the only mechanism Finder builds
+  its context menu from — `NSExtensionFileProviderActions` is the iOS Files
+  app equivalent and Finder never queries it, which is why every provider
+  that adds menu entries (Google Drive, Synology Drive) ships a FinderSync
+  extension next to its file provider. Finder hands it plain file URLs, so
+  `MountLocator` maps them back to a server by matching the first path
+  component under the mount against the server's name.
 
 ## Development
 
@@ -128,7 +132,9 @@ diffing that drives Finder updates.
 - [x] Range requests: opening a large file fetches only the bytes the system
       asks for, rather than downloading the whole thing
 - [x] Finder context menu: copy an item's remote address, refresh, unmount a
-      server
+      server (needs enabling once under System Settings → General → Login
+      Items & Extensions → Finder Extensions, as macOS requires for every
+      Finder extension)
 - [ ] Planned: FTP/FTPS, host key verification (TOFU), streaming uploads,
       remote change tracking
 

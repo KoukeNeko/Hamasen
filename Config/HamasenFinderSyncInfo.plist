@@ -5,11 +5,9 @@
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>
-		<string>com.apple.fileprovider-nonui</string>
+		<string>com.apple.FinderSync</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
-		<key>NSExtensionFileProviderSupportsEnumeration</key>
-		<true/>
+		<string>$(PRODUCT_MODULE_NAME).FinderSyncExtension</string>
 	</dict>
 </dict>
 </plist>
