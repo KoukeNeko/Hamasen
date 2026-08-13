@@ -82,6 +82,10 @@ Key design points:
   calls.
 - Server folders cannot be renamed, moved, or deleted from Finder — they are
   managed in the app. Cross-server moves fall back to copy + delete.
+- A second extension (`HamasenFileProviderUI`) adds Hamasen's own entries to
+  the Finder context menu. Which entries appear is decided by predicates in
+  its Info.plist; the identifier format and the domain bookkeeping both live
+  in `HamasenCore` so the two extensions cannot disagree.
 
 ## Development
 
@@ -96,11 +100,13 @@ Development signing certificate.
 Tests need no external infrastructure: `HamasenCoreTests` spins up an
 in-process SFTP server (Citadel's server API over a local temp directory)
 that accepts both password and public key authentication, plus an
-in-process WebDAV server. 70 tests cover
+in-process WebDAV server. 96 tests cover
 connecting with either credential type, authentication failures, key
 parsing, directory listing, upload/download content integrity, range
 requests across chunk boundaries, create/delete/rename, the `remotePath`
-base directory, and the mounted-server diffing that drives Finder updates.
+base directory, item identifier encoding, misbehaving-server quirks
+(redirects, 207, 416, ignored `Range` headers), and the mounted-server
+diffing that drives Finder updates.
 
 ## Manual end-to-end check
 
@@ -121,6 +127,8 @@ base directory, and the mounted-server diffing that drives Finder updates.
 - [x] Per-server folders under a single Finder location
 - [x] Range requests: opening a large file fetches only the bytes the system
       asks for, rather than downloading the whole thing
+- [x] Finder context menu: copy an item's remote address, refresh, unmount a
+      server
 - [ ] Planned: FTP/FTPS, host key verification (TOFU), streaming uploads,
       remote change tracking
 

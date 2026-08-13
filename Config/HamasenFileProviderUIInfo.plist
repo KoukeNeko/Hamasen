@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.fileprovider-actionsui</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).ActionViewController</string>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>NSExtensionFileProviderActions</key>
+			<array>
+				<!-- The address only makes sense for one item at a time. -->
+				<dict>
+					<key>NSExtensionFileProviderActionIdentifier</key>
+					<string>dev.hamasen.action.copyRemotePath</string>
+					<key>NSExtensionFileProviderActionName</key>
+					<string>複製遠端路徑</string>
+					<key>NSExtensionFileProviderActionActivationRule</key>
+					<string>sourceItemIdentifiers.@count == 1</string>
+				</dict>
+				<dict>
+					<key>NSExtensionFileProviderActionIdentifier</key>
+					<string>dev.hamasen.action.refresh</string>
+					<key>NSExtensionFileProviderActionName</key>
+					<string>重新整理</string>
+					<key>NSExtensionFileProviderActionActivationRule</key>
+					<string>sourceItemIdentifiers.@count &gt;= 1</string>
+				</dict>
+				<!-- Only on a server's own folder: "srv:<uuid>" has no second
+				     colon, while items inside one are "srv:<uuid>:<path>". -->
+				<dict>
+					<key>NSExtensionFileProviderActionIdentifier</key>
+					<string>dev.hamasen.action.unmountServer</string>
+					<key>NSExtensionFileProviderActionName</key>
+					<string>從 Finder 卸載此伺服器</string>
+					<key>NSExtensionFileProviderActionActivationRule</key>
+					<string>sourceItemIdentifiers.@count == 1 AND SUBQUERY(sourceItemIdentifiers, $id, $id MATCHES &quot;srv:[^:]+&quot;).@count == 1</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+</dict>
+</plist>

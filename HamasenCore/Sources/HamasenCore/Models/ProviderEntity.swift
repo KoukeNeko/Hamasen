@@ -1,14 +1,36 @@
 import FileProvider
 import Foundation
-import HamasenCore
 
 /// What an NSFileProviderItemIdentifier points at in the single-domain world:
 /// the domain root (listing all servers), one server's root folder, or an
 /// item inside a server.
-enum ProviderEntity: Equatable {
+///
+/// Both the file provider and its UI extension read identifiers, so the
+/// mapping lives here rather than in either extension.
+public enum ProviderEntity: Equatable, Sendable {
     case root
     case serverRoot(UUID)
     case item(serverID: UUID, path: String)
+
+    /// The server an entity belongs to, or nil for the domain root.
+    public var serverID: UUID? {
+        switch self {
+        case .root:
+            return nil
+        case .serverRoot(let serverID), .item(let serverID, _):
+            return serverID
+        }
+    }
+
+    /// The path within the server, treating a server's root folder as "/".
+    public var path: String {
+        switch self {
+        case .root, .serverRoot:
+            return RemotePath.root
+        case .item(_, let path):
+            return path
+        }
+    }
 }
 
 /// Bidirectional mapping between identifiers and entities.
@@ -16,11 +38,11 @@ enum ProviderEntity: Equatable {
 /// Format: "srv:<uuid>" is a server's root folder and "srv:<uuid>:<path>" an
 /// item inside it. The UUID has a fixed length, so paths containing ":" are
 /// parsed correctly by position.
-enum ItemIdentifierMapper {
+public enum ItemIdentifierMapper {
     private static let serverPrefix = "srv:"
     private static let uuidStringLength = 36
 
-    static func entity(for identifier: NSFileProviderItemIdentifier) -> ProviderEntity? {
+    public static func entity(for identifier: NSFileProviderItemIdentifier) -> ProviderEntity? {
         switch identifier {
         case .rootContainer, .workingSet, .trashContainer:
             return .root
@@ -46,7 +68,7 @@ enum ItemIdentifierMapper {
         return path == RemotePath.root ? .serverRoot(serverID) : .item(serverID: serverID, path: path)
     }
 
-    static func identifier(for entity: ProviderEntity) -> NSFileProviderItemIdentifier {
+    public static func identifier(for entity: ProviderEntity) -> NSFileProviderItemIdentifier {
         switch entity {
         case .root:
             return .rootContainer
@@ -57,7 +79,7 @@ enum ItemIdentifierMapper {
         }
     }
 
-    static func parentEntity(of entity: ProviderEntity) -> ProviderEntity {
+    public static func parentEntity(of entity: ProviderEntity) -> ProviderEntity {
         switch entity {
         case .root, .serverRoot:
             return .root

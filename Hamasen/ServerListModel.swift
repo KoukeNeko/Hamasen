@@ -17,11 +17,6 @@ final class ServerListModel {
 
     private let credentialStore = KeychainCredentialStore()
 
-    private static let mainDomain = NSFileProviderDomain(
-        identifier: NSFileProviderDomainIdentifier(rawValue: SharedConstants.mainDomainIdentifier),
-        displayName: SharedConstants.mainDomainDisplayName
-    )
-
     private var configStore: ServerConfigStore? {
         do {
             return try ServerConfigStore()
@@ -106,7 +101,9 @@ final class ServerListModel {
         // A rename shows up as the folder name in Finder; tell the system to
         // re-check the server list.
         if isMounted(config) {
-            await signalServerListChanged()
+            // The domain may still be initializing; the next enumeration
+            // picks the rename up anyway.
+            try? await FinderDomain.signalServerListChanged()
         }
         return true
     }
@@ -133,26 +130,21 @@ final class ServerListModel {
     func mount(_ config: ServerConfig) async {
         mountedServerIDs.insert(config.id)
         persistMountedSet()
-        await ensureDomainRegistered()
-        await signalServerListChanged()
+        await syncDomainRegistration()
     }
 
     func unmount(_ config: ServerConfig) async {
         guard mountedServerIDs.contains(config.id) else { return }
         mountedServerIDs.remove(config.id)
         persistMountedSet()
-        if mountedServerIDs.isEmpty {
-            try? await NSFileProviderManager.remove(Self.mainDomain)
-        } else {
-            await signalServerListChanged()
-        }
+        await syncDomainRegistration()
     }
 
     // MARK: - Finder integration
 
     /// Opens the mounted Hamasen location in Finder.
     func revealInFinder() async {
-        guard let manager = NSFileProviderManager(for: Self.mainDomain) else { return }
+        guard let manager = NSFileProviderManager(for: FinderDomain.domain) else { return }
         do {
             let url = try await manager.getUserVisibleURL(for: .rootContainer)
             // getUserVisibleURL vends a security-scoped URL: a sandboxed app
@@ -241,37 +233,10 @@ final class ServerListModel {
     /// Registers or removes the main domain so it exists exactly when at
     /// least one server is mounted.
     private func syncDomainRegistration() async {
-        if mountedServerIDs.isEmpty {
-            try? await NSFileProviderManager.remove(Self.mainDomain)
-        } else {
-            await ensureDomainRegistered()
-        }
-    }
-
-    private func ensureDomainRegistered() async {
         do {
-            let domains = try await NSFileProviderManager.domains()
-            let isRegistered = domains.contains {
-                $0.identifier.rawValue == SharedConstants.mainDomainIdentifier
-            }
-            if !isRegistered {
-                try await NSFileProviderManager.add(Self.mainDomain)
-            }
+            try await FinderDomain.synchronize(hasMountedServers: !mountedServerIDs.isEmpty)
         } catch {
-            errorMessage = "掛載失敗：\(error.localizedDescription)"
-        }
-    }
-
-    private func signalServerListChanged() async {
-        guard let manager = NSFileProviderManager(for: Self.mainDomain) else { return }
-        do {
-            // A replicated extension only honours working-set signals; the
-            // system ignores signals for any other container and propagates
-            // working-set changes to the UI itself.
-            try await manager.signalEnumerator(for: .workingSet)
-        } catch {
-            // The domain may still be initializing; the next enumeration
-            // picks up the change anyway.
+            errorMessage = "更新 Finder 位置失敗：\(error.localizedDescription)"
         }
     }
 }
