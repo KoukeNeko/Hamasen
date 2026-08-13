@@ -8,7 +8,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.dev.hamasen.shared</string>
+		<string>33832Z66QU.group.dev.hamasen.shared</string>
 	</array>
 </dict>
 </plist>

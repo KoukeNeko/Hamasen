@@ -18,16 +18,6 @@ struct MountedLocation {
 /// be rebuilt from the path: the first component under the mount is the
 /// server's folder, which the provider names after the server.
 enum MountLocator {
-    /// Asks the system where the domain is mounted.
-    ///
-    /// The path is never assembled by hand — its shape is the system's to
-    /// decide, and a guess that is close but wrong would claim a directory
-    /// Finder never asks about, leaving the menu silently missing.
-    static func mountRoot() async -> URL? {
-        guard let manager = NSFileProviderManager(for: FinderDomain.domain) else { return nil }
-        return try? await manager.getUserVisibleURL(for: .rootContainer)
-    }
-
     static func location(of url: URL, under root: URL) -> MountedLocation? {
         guard let components = pathComponents(of: url, under: root),
               let serverName = components.first,

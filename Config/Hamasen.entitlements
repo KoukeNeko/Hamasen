@@ -6,9 +6,21 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- The legacy "group.*" entry exists only so development builds can
+	     migrate old data; scripts/install-devid.sh strips it, because under
+	     Developer ID it would demand a provisioning profile. -->
 	<key>com.apple.security.application-groups</key>
 	<array>
+		<string>33832Z66QU.group.dev.hamasen.shared</string>
 		<string>group.dev.hamasen.shared</string>
+	</array>
+	<!-- Development builds use these only to migrate Data Protection
+	     Keychain items. scripts/install-devid.sh strips the restricted
+	     entitlement before Developer ID signing. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>33832Z66QU.group.dev.hamasen.shared</string>
+		<string>33832Z66QU.dev.hamasen.credentials</string>
 	</array>
 </dict>
 </plist>

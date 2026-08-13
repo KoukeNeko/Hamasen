@@ -79,7 +79,7 @@ enum FileProviderErrorMapper {
             return NSFileProviderError(.notAuthenticated)
         case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected:
             return NSFileProviderError(.serverUnreachable)
-        case KeychainCredentialStore.KeychainError.itemNotFound,
+        case is KeychainCredentialStore.KeychainError,
              RemoteFileServiceError.unsupportedCredentials,
              RemoteFileServiceError.privateKeyPassphraseRequired,
              RemoteFileServiceError.privateKeyUnreadable:

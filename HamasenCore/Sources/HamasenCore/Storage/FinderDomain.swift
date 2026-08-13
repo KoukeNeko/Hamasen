@@ -53,6 +53,28 @@ public enum FinderDomain {
         }
         try await manager.signalEnumerator(for: .workingSet)
     }
+
+    /// Stores the mount's on-disk location in the shared defaults, for the
+    /// FinderSync extension to read.
+    ///
+    /// Only the app may call this: resolving the location asks fileproviderd
+    /// over XPC, and from the FinderSync extension's sandbox that call never
+    /// completes — it neither answers nor fails, which is why the extension
+    /// reads the published value instead of asking the system itself.
+    public static func publishUserVisibleLocation() async {
+        guard let manager = NSFileProviderManager(for: domain),
+              let location = try? await manager.getUserVisibleURL(for: .rootContainer)
+        else { return }
+        AppSettings.sharedStore.set(location.path, forKey: AppSettings.Keys.mountRootPath)
+    }
+
+    /// The location the app last published, or nil before its first launch
+    /// with a mounted server.
+    public static func publishedUserVisibleLocation() -> URL? {
+        guard let path = AppSettings.sharedStore.string(forKey: AppSettings.Keys.mountRootPath)
+        else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
 }
 
 public enum FinderDomainError: LocalizedError {

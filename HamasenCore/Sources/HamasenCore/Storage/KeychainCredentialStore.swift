@@ -3,9 +3,11 @@ import Security
 
 /// Keychain access for server secrets.
 ///
-/// Uses the Data Protection Keychain with the App Group as the access group
-/// so both the main app and the File Provider extension can read and write
-/// the same credentials.
+/// Uses the macOS file-based Keychain with an item ACL that trusts both the
+/// main app and the File Provider extension. This avoids a distribution-only
+/// provisioning profile: Data Protection Keychain sharing requires the
+/// restricted `keychain-access-groups` entitlement, while a local Developer
+/// ID build can express the same trust with `SecAccess`.
 public struct KeychainCredentialStore: Sendable {
     /// The kinds of secret a server can have. A server uses either a
     /// password or a private key (plus its passphrase when encrypted).
@@ -15,34 +17,64 @@ public struct KeychainCredentialStore: Sendable {
         case keyPassphrase
     }
 
-    public enum KeychainError: Error, Equatable {
+    public enum KeychainError: LocalizedError, Equatable {
         case itemNotFound
         case unexpectedData
         case operationFailed(status: OSStatus)
+        case trustedApplicationUnavailable(path: String, status: OSStatus)
+        case accessCreationFailed(status: OSStatus)
+
+        public var errorDescription: String? {
+            switch self {
+            case .itemNotFound:
+                return "找不到 Keychain 憑證"
+            case .unexpectedData:
+                return "Keychain 憑證格式無法辨識"
+            case .operationFailed(let status):
+                return "Keychain 操作失敗（\(status): \(Self.message(for: status))）"
+            case .trustedApplicationUnavailable(let path, let status):
+                return "無法建立受信任程式 \(path)（\(status): \(Self.message(for: status))）"
+            case .accessCreationFailed(let status):
+                return "無法建立 Keychain ACL（\(status): \(Self.message(for: status))）"
+            }
+        }
+
+        private static func message(for status: OSStatus) -> String {
+            SecCopyErrorMessageString(status, nil) as String? ?? "unknown error"
+        }
     }
 
     private let service: String
-    private let accessGroup: String
+    private let trustedApplicationURLs: [URL]?
 
     public init(
         service: String = SharedConstants.keychainService,
-        accessGroup: String = SharedConstants.appGroupIdentifier
+        trustedApplicationURLs: [URL]? = nil
     ) {
         self.service = service
-        self.accessGroup = accessGroup
+        self.trustedApplicationURLs = trustedApplicationURLs
     }
 
     // MARK: - Generic access
 
     public func save(_ secret: String, kind: CredentialKind, for serverID: UUID) throws {
-        let secretData = Data(secret.utf8)
-        var addQuery = baseQuery(for: serverID, kind: kind)
+        try save(Data(secret.utf8), account: account(for: serverID, kind: kind))
+    }
+
+    /// Imports an existing item while preserving its account naming scheme.
+    /// Internal so the one-time migration can move credentials without ever
+    /// decoding or logging their contents.
+    func save(_ secretData: Data, account: String) throws {
+        var addQuery = itemAttributes(account: account)
+        addQuery[kSecUseKeychain as String] = try defaultKeychain()
         addQuery[kSecValueData as String] = secretData
+        addQuery[kSecAttrLabel as String] = "Hamasen server credential"
+        addQuery[kSecAttrAccess as String] = try makeSharedAccess()
 
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus == errSecDuplicateItem {
             let updateStatus = SecItemUpdate(
-                baseQuery(for: serverID, kind: kind) as CFDictionary,
+                try searchQuery(account: account) as CFDictionary,
                 [kSecValueData as String: secretData] as CFDictionary
             )
             guard updateStatus == errSecSuccess else {
@@ -53,8 +85,37 @@ public struct KeychainCredentialStore: Sendable {
         }
     }
 
+    /// Imports a migration item only when the destination is absent. Existing
+    /// file-based items are never edited by the development-signed helper.
+    @discardableResult
+    func insertForMigration(_ secretData: Data, account: String) throws -> Bool {
+        var addQuery = itemAttributes(account: account)
+        addQuery[kSecUseKeychain as String] = try defaultKeychain()
+        addQuery[kSecValueData as String] = secretData
+        addQuery[kSecAttrLabel as String] = "Hamasen server credential"
+        addQuery[kSecAttrAccess as String] = try makeSharedAccess()
+
+        switch SecItemAdd(addQuery as CFDictionary, nil) {
+        case errSecSuccess:
+            return true
+        case errSecDuplicateItem:
+            return false
+        case let status:
+            throw KeychainError.operationFailed(status: status)
+        }
+    }
+
+    /// Removes one migration-created file-based item. This is called only by
+    /// the already-installed, ACL-trusted final app during installer rollback.
+    func delete(account: String) throws {
+        let status = SecItemDelete(try searchQuery(account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.operationFailed(status: status)
+        }
+    }
+
     public func load(kind: CredentialKind, for serverID: UUID) throws -> String {
-        var query = baseQuery(for: serverID, kind: kind)
+        var query = try searchQuery(for: serverID, kind: kind)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -69,7 +130,7 @@ public struct KeychainCredentialStore: Sendable {
     }
 
     public func delete(kind: CredentialKind, for serverID: UUID) throws {
-        let status = SecItemDelete(baseQuery(for: serverID, kind: kind) as CFDictionary)
+        let status = SecItemDelete(try searchQuery(for: serverID, kind: kind) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.operationFailed(status: status)
         }
@@ -111,15 +172,88 @@ public struct KeychainCredentialStore: Sendable {
         }
     }
 
-    private func baseQuery(for serverID: UUID, kind: CredentialKind) -> [String: Any] {
+    private func searchQuery(for serverID: UUID, kind: CredentialKind) throws -> [String: Any] {
+        try searchQuery(account: account(for: serverID, kind: kind))
+    }
+
+    private func searchQuery(account: String) throws -> [String: Any] {
+        var query = itemAttributes(account: account)
+        // Never search every keychain in the user's search list. This pins
+        // reads, updates, and deletes to the same Keychain used by save.
+        query[kSecMatchSearchList as String] = [try defaultKeychain()]
+        return query
+    }
+
+    private func itemAttributes(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account(for: serverID, kind: kind),
-            kSecAttrAccessGroup as String: accessGroup,
-            // On macOS, App Group sharing only works with the Data
-            // Protection Keychain.
-            kSecUseDataProtectionKeychain as String: true,
+            kSecAttrAccount as String: account,
         ]
+    }
+
+    private func defaultKeychain() throws -> SecKeychain {
+        var keychain: SecKeychain?
+        let status = SecKeychainCopyDefault(&keychain)
+        guard status == errSecSuccess, let keychain else {
+            throw KeychainError.operationFailed(status: status)
+        }
+        return keychain
+    }
+
+    /// Builds the ACL at creation time; changing it later would require a
+    /// user authorization prompt. Explicit URLs are used by the installer to
+    /// trust the final Developer ID app even though migration runs from a
+    /// development-signed build.
+    private func makeSharedAccess() throws -> SecAccess {
+        var trustedApplications: [SecTrustedApplication] = []
+        let applicationURLs = trustedApplicationURLs ?? Self.defaultTrustedApplicationURLs()
+        guard !applicationURLs.isEmpty else {
+            throw KeychainError.trustedApplicationUnavailable(path: "<application bundle>", status: errSecParam)
+        }
+        for url in applicationURLs {
+            var application: SecTrustedApplication?
+            let status = url.path.withCString {
+                SecTrustedApplicationCreateFromPath($0, &application)
+            }
+            guard status == errSecSuccess, let application else {
+                throw KeychainError.trustedApplicationUnavailable(path: url.path, status: status)
+            }
+            trustedApplications.append(application)
+        }
+
+        var access: SecAccess?
+        let status = SecAccessCreate(
+            "Hamasen server credential" as CFString,
+            trustedApplications as CFArray,
+            &access
+        )
+        guard status == errSecSuccess, let access else {
+            throw KeychainError.accessCreationFailed(status: status)
+        }
+        return access
+    }
+
+    /// Returns the app and embedded File Provider bundle URLs regardless of
+    /// whether the code is currently running in the app or the extension.
+    private static func defaultTrustedApplicationURLs() -> [URL] {
+        let currentBundleURL = Bundle.main.bundleURL.standardizedFileURL
+        let appURL: URL
+        if currentBundleURL.pathExtension == "app" {
+            appURL = currentBundleURL
+        } else if currentBundleURL.pathExtension == "appex" {
+            appURL = currentBundleURL
+                .deletingLastPathComponent() // PlugIns
+                .deletingLastPathComponent() // Contents
+                .deletingLastPathComponent() // Hamasen.app
+        } else {
+            return []
+        }
+
+        let providerURL = appURL
+            .appendingPathComponent("Contents/PlugIns/HamasenFileProvider.appex", isDirectory: true)
+        return [appURL, providerURL].filter {
+            FileManager.default.fileExists(atPath: $0.path)
+        }
     }
 }

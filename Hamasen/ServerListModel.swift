@@ -233,17 +233,25 @@ final class ServerListModel {
     /// Registers or removes the main domain so it exists exactly when at
     /// least one server is mounted.
     private func syncDomainRegistration() async {
+        var preservedLocation: URL?
         do {
-            let preservedLocation = try await FinderDomain.synchronize(
+            preservedLocation = try await FinderDomain.synchronize(
                 hasMountedServers: !mountedServerIDs.isEmpty
             )
-            // Content that never made it to the server survives the unmount;
-            // showing it is the only way the user learns it is there.
-            if let preservedLocation {
-                NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
-            }
         } catch {
             errorMessage = "更新 Finder 位置失敗：\(error.localizedDescription)"
+        }
+        // Even when synchronize throws (e.g. the change signal while the
+        // domain is still initializing), the domain may well be registered —
+        // publish whenever the location resolves, or the FinderSync
+        // extension never learns where the mount lives.
+        if !mountedServerIDs.isEmpty {
+            await FinderDomain.publishUserVisibleLocation()
+        }
+        // Content that never made it to the server survives the unmount;
+        // showing it is the only way the user learns it is there.
+        if let preservedLocation {
+            NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
         }
     }
 }

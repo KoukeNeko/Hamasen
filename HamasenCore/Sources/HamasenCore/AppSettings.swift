@@ -12,6 +12,9 @@ public enum AppSettings {
         public static let connectTimeoutSeconds = "connectTimeoutSeconds"
         public static let defaultServerPort = "defaultServerPort"
         public static let debugLoggingEnabled = "debugLoggingEnabled"
+        /// Where the Finder location lives on disk, published by the app for
+        /// the FinderSync extension (see FinderDomain.publishUserVisibleLocation).
+        public static let mountRootPath = "mountRootPath"
     }
 
     public static let defaultConnectTimeoutSeconds = 30

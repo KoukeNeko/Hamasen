@@ -12,26 +12,58 @@ import HamasenCore
 /// Drive, Synology Drive) ships a FinderSync extension alongside its provider
 /// for the same reason.
 final class FinderSyncExtension: FIFinderSync {
-    /// Where the domain is mounted. Finder calls `menu(for:)` synchronously on
-    /// the main thread, so the location has to be resolved ahead of time.
+    private let log = HamasenLog(category: "FinderSync")
+
+    /// Where the domain is mounted, as published by the app.
+    ///
+    /// Never resolved here: asking fileproviderd from this sandbox hangs
+    /// without an answer, so the app resolves the location and shares it
+    /// through the App Group defaults. Finder calls `menu(for:)`
+    /// synchronously, which also rules out waiting on anything async.
     private var mountRoot: URL?
+
+    /// Cross-process defaults offer no change notification, and this
+    /// extension usually outlives many app launches — including the very
+    /// first one that ever publishes the location — so it re-reads on a
+    /// slow clock instead of only once at start.
+    private static let publishedLocationPollInterval: TimeInterval = 10
+
+    private var pollTimer: Timer?
 
     override init() {
         super.init()
-        // Finder only offers a menu inside the directories we claim, and the
-        // location is only known once the domain exists.
-        Task { @MainActor in
-            guard let mountRoot = await MountLocator.mountRoot() else { return }
-            self.mountRoot = mountRoot
-            FIFinderSyncController.default().directoryURLs = [mountRoot]
+        adoptPublishedMountRoot()
+        pollTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.publishedLocationPollInterval,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in self?.adoptPublishedMountRoot() }
         }
+    }
+
+    /// Claims the published location whenever it appears or moves.
+    private func adoptPublishedMountRoot() {
+        let published = FinderDomain.publishedUserVisibleLocation()
+        guard published != mountRoot else { return }
+        guard let published else {
+            // Without a claimed directory Finder never shows the menu, so
+            // this must be visible even without debug logging.
+            log.error("No published mount location; context menu stays hidden")
+            return
+        }
+        mountRoot = published
+        FIFinderSyncController.default().directoryURLs = [published]
+        log.debug("Watching \(published.path)")
     }
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu? {
         guard menuKind == .contextualMenuForItems || menuKind == .contextualMenuForContainer else {
             return nil
         }
-        guard let target = currentTarget() else { return nil }
+        guard let target = currentTarget() else {
+            log.debug("No menu: selection did not resolve to a mounted server")
+            return nil
+        }
 
         let menu = NSMenu(title: "")
         menu.addItem(item(titled: "複製遠端路徑", action: #selector(copyRemotePath(_:)), for: target))

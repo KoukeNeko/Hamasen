@@ -3,12 +3,29 @@ import Foundation
 /// Identifiers shared between the main app and the File Provider extension,
 /// kept in one place so they cannot drift apart.
 public enum SharedConstants {
-    /// App Group: both the config file and Keychain sharing hang off this
-    /// group. Must match the entitlements of both targets.
-    public static let appGroupIdentifier = "group.dev.hamasen.shared"
+    /// App Group for shared files and defaults. Must match the application
+    /// groups entitlement of every target.
+    ///
+    /// The macOS team-prefixed form, not "group.*": a team-prefixed group is
+    /// validated against the signing certificate alone, so Developer ID
+    /// builds need no provisioning profile — and Developer ID is what pkd
+    /// requires before it will enable the FinderSync extension.
+    public static let appGroupIdentifier = "33832Z66QU.group.dev.hamasen.shared"
+
+    /// The original "group.*" App Group. Only the migration reads it; new
+    /// data always lives in ``appGroupIdentifier``.
+    public static let legacyAppGroupIdentifier = "group.dev.hamasen.shared"
 
     /// Service name for Keychain items.
     public static let keychainService = "dev.hamasen.credentials"
+
+    /// Data Protection Keychain groups used only as migration sources. New
+    /// credentials use the file-based Keychain with an explicit item ACL.
+    public static let migratedKeychainAccessGroupIdentifiers = [
+        "group.dev.hamasen.shared",
+        "33832Z66QU.group.dev.hamasen.shared",
+        "33832Z66QU.dev.hamasen.credentials",
+    ]
 
     /// File name of the server config store inside the App Group container.
     public static let serverConfigFileName = "servers.json"

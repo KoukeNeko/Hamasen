@@ -1,3 +1,4 @@
+import FinderSync
 import HamasenCore
 import ServiceManagement
 import SwiftUI
@@ -70,6 +71,8 @@ private struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            FinderExtensionSection()
         }
         .formStyle(.grouped)
     }
@@ -85,6 +88,44 @@ private struct GeneralSettingsView: View {
         } catch {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             launchAtLoginError = "無法變更登入啟動設定：\(error.localizedDescription)"
+        }
+    }
+}
+
+/// Reports whether the Finder context menu is available, and offers the one
+/// route to turning it on.
+///
+/// macOS enables a Finder extension only through the user's own action in
+/// System Settings — there is no programmatic switch — and it is filed under
+/// the Finder extension category rather than beside the app's file provider,
+/// which makes it easy to miss. `showExtensionManagementInterface` opens the
+/// exact pane.
+private struct FinderExtensionSection: View {
+    @State private var isEnabled = FIFinderSyncController.isExtensionEnabled
+
+    var body: some View {
+        Section {
+            LabeledContent("Finder 右鍵選單") {
+                HStack(spacing: 8) {
+                    Image(systemName: isEnabled ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundStyle(isEnabled ? .green : .orange)
+                    Text(isEnabled ? "已啟用" : "尚未啟用")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if !isEnabled {
+                Button("在系統設定中啟用…") {
+                    FIFinderSyncController.showExtensionManagementInterface()
+                }
+            }
+        } footer: {
+            Text("啟用後，在掛載的檔案上按右鍵可複製遠端路徑、重新整理或卸載伺服器。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // The switch is flipped in another app, so re-read on return.
+            isEnabled = FIFinderSyncController.isExtensionEnabled
         }
     }
 }

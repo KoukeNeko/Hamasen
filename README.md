@@ -73,8 +73,9 @@ Key design points:
   the server and path (`srv:<uuid>:<path>`), so one extension serves any
   number of servers, each over its own SSH connection.
 - The app and the extension share configuration through an **App Group**
-  (`group.dev.hamasen.shared`); credentials are shared via the Data
-  Protection Keychain using the same group.
+  (`33832Z66QU.group.dev.hamasen.shared`). Credentials stay in the macOS
+  file-based Keychain, with an item ACL that trusts the signed app and File
+  Provider extension; no secret is written into the App Group container.
 - Mount, unmount, and rename changes reach Finder through the **working
   set**, the only container a replicated extension receives change signals
   for. The previous server list is encoded into the sync anchor, so the
