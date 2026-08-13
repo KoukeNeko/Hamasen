@@ -30,6 +30,12 @@ struct ServerDetailView: View {
     @State private var testState: ConnectionTestState = .idle
     @State private var isConfirmingDelete = false
 
+    /// Cached so the form does not reach into the Keychain on every keystroke:
+    /// the body is re-evaluated on each edit, and each lookup is a synchronous
+    /// call into securityd.
+    @State private var hasStoredPassword = false
+    @State private var hasStoredPrivateKey = false
+
     init(server: ServerConfig, isMounted: Bool, model: ServerListModel, onDeleted: @escaping () -> Void) {
         self.server = server
         self.isMounted = isMounted
@@ -84,9 +90,9 @@ struct ServerDetailView: View {
     private var hasUsableCredential: Bool {
         switch draftAuthenticationMethod {
         case .password:
-            return !draftPassword.isEmpty || model.hasStoredPassword(for: server.id)
+            return !draftPassword.isEmpty || hasStoredPassword
         case .privateKey:
-            return importedKey != nil || model.hasStoredPrivateKey(for: server.id)
+            return importedKey != nil || hasStoredPrivateKey
         }
     }
 
@@ -107,6 +113,9 @@ struct ServerDetailView: View {
             settingsForm
             Divider()
             footer
+        }
+        .task(id: server.id) {
+            refreshStoredCredentials()
         }
         .confirmationDialog(
             "確定要刪除「\(server.name)」嗎？",
@@ -199,10 +208,10 @@ struct ServerDetailView: View {
                 password: $draftPassword,
                 importedKey: $importedKey,
                 keyPassphrase: $draftKeyPassphrase,
-                hasStoredKey: model.hasStoredPrivateKey(for: server.id),
+                hasStoredKey: hasStoredPrivateKey,
                 // Only offer "leave blank to keep" when there is in fact a
                 // stored password to keep.
-                allowsBlankPassword: model.hasStoredPassword(for: server.id),
+                allowsBlankPassword: hasStoredPassword,
                 allowsPrivateKey: draftProtocol.supportsPrivateKeyAuthentication
             )
             Section("掛載") {
@@ -254,6 +263,7 @@ struct ServerDetailView: View {
                     draftPassword = ""
                     draftKeyPassphrase = ""
                     importedKey = nil
+                    refreshStoredCredentials()
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -262,6 +272,11 @@ struct ServerDetailView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
+    }
+
+    private func refreshStoredCredentials() {
+        hasStoredPassword = model.hasStoredPassword(for: server.id)
+        hasStoredPrivateKey = model.hasStoredPrivateKey(for: server.id)
     }
 
     private func runConnectionTest() {

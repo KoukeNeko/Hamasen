@@ -164,7 +164,8 @@ public actor WebDAVFileService: RemoteFileService {
 
         return try entries.compactMap { entry in
             let entryPath = try mountRelativePath(fromHref: entry.href)
-            // The first entry of a depth-1 PROPFIND is the directory itself.
+            // A depth-1 PROPFIND also describes the directory itself; it is
+            // matched by path rather than position, which servers vary on.
             guard RemotePath.withoutTrailingSeparator(entryPath) != directoryPath else { return nil }
             return Self.makeRemoteItem(path: entryPath, entry: entry)
         }
