@@ -296,6 +296,27 @@ struct SFTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+
+    @Test("刪除非空目錄會連同內容一起移除")
+    func deletesDirectoryWithContents() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let tree = server.rootDirectory.appendingPathComponent("tree/nested")
+        try FileManager.default.createDirectory(at: tree, withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: tree.appendingPathComponent("deep.txt"))
+        try Data("b".utf8).write(
+            to: server.rootDirectory.appendingPathComponent("tree/shallow.txt")
+        )
+
+        try await service.deleteDirectory(at: "/tree")
+
+        #expect(!FileManager.default.fileExists(
+            atPath: server.rootDirectory.appendingPathComponent("tree").path
+        ))
+
+        try await Self.tearDown(service, server)
+    }
+
     @Test("刪除檔案")
     func deleteFileRemovesRemoteFile() async throws {
         let (service, server) = try await Self.makeConnectedService()

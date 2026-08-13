@@ -348,7 +348,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 let service = try await registry.service(for: serverID)
                 let info = try await service.itemInfo(at: path)
                 if info.isDirectory {
-                    try await Self.deleteDirectoryRecursively(at: path, using: service)
+                    // Recursive by contract: WebDAV does it in one request,
+                    // SFTP walks the tree itself.
+                    try await service.deleteDirectory(at: path)
                 } else {
                     try await service.deleteFile(at: path)
                 }
@@ -416,20 +418,4 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         return temporaryDirectory.appendingPathComponent(UUID().uuidString)
     }
 
-    /// SFTP rmdir requires empty directories, so deletion walks the tree
-    /// depth-first.
-    private static func deleteDirectoryRecursively(
-        at path: String,
-        using service: any RemoteFileService
-    ) async throws {
-        let children = try await service.listDirectory(at: path)
-        for child in children {
-            if child.isDirectory {
-                try await deleteDirectoryRecursively(at: child.path, using: service)
-            } else {
-                try await service.deleteFile(at: child.path)
-            }
-        }
-        try await service.deleteDirectory(at: path)
-    }
 }

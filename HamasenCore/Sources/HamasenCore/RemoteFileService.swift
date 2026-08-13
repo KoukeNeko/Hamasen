@@ -35,8 +35,11 @@ public protocol RemoteFileService: Sendable {
 
     func deleteFile(at path: String) async throws
 
-    /// Deletes a directory (must be empty; recursive deletion is the caller's
-    /// responsibility).
+    /// Deletes a directory and everything inside it.
+    ///
+    /// Each protocol does this its own way — WebDAV in a single request, SFTP
+    /// by walking the tree — so callers must not impose one protocol's
+    /// constraint on the others.
     func deleteDirectory(at path: String) async throws
 
     /// Moves or renames an item within the same connection.

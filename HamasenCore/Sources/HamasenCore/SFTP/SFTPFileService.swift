@@ -225,6 +225,16 @@ public actor SFTPFileService: RemoteFileService {
     }
 
     public func deleteDirectory(at path: String) async throws {
+        // SFTP's RMDIR only removes an empty directory, so the tree is
+        // emptied depth-first first.
+        for child in try await listDirectory(at: path) {
+            if child.isDirectory {
+                try await deleteDirectory(at: child.path)
+            } else {
+                try await deleteFile(at: child.path)
+            }
+        }
+
         let sftp = try activeSFTPClient()
         do {
             try await sftp.rmdir(at: remoteAbsolutePath(for: path))

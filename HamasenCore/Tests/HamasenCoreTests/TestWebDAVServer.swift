@@ -13,6 +13,24 @@ final class TestWebDAVServer {
     static let username = "davuser"
     static let password = "davpass"
 
+    /// Quirks real servers have that a uniformly well-behaved fake would hide.
+    struct Behaviour: Sendable {
+        /// Redirect every request whose path starts with this prefix to the
+        /// same path under `redirectTo`.
+        var redirectFrom: String?
+        var redirectTo: String?
+        /// Answer 200 with the whole entity instead of honouring Range.
+        var ignoresRange = false
+        /// Answer DELETE with 207, as a collection with a failed member does.
+        var multiStatusOnDelete = false
+        /// Answer writes with 403 while still accepting the credentials.
+        var forbidsWrites = false
+        /// Omit getcontentlength from PROPFIND responses.
+        var omitsContentLength = false
+
+        static let wellBehaved = Behaviour()
+    }
+
     private static let portRange = 20000..<60000
     private static let maxBindAttempts = 5
 
@@ -20,25 +38,42 @@ final class TestWebDAVServer {
     let rootDirectory: URL
     private let channel: Channel
     private let group: MultiThreadedEventLoopGroup
+    private let counter: RequestCounter
 
-    private init(port: Int, rootDirectory: URL, channel: Channel, group: MultiThreadedEventLoopGroup) {
+    private init(
+        port: Int,
+        rootDirectory: URL,
+        channel: Channel,
+        group: MultiThreadedEventLoopGroup,
+        counter: RequestCounter
+    ) {
         self.port = port
         self.rootDirectory = rootDirectory
         self.channel = channel
         self.group = group
+        self.counter = counter
     }
 
-    static func start() async throws -> TestWebDAVServer {
+    /// How many times a method was served, so tests can prove a request was
+    /// not repeated.
+    func requestCount(method: String) -> Int {
+        counter.count(for: method)
+    }
+
+    static func start(behaviour: Behaviour = .wellBehaved) async throws -> TestWebDAVServer {
         let rootDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("webdav-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
 
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let counter = RequestCounter()
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
                 channel.pipeline.configureHTTPServerPipeline().flatMap {
-                    channel.pipeline.addHandler(WebDAVHandler(root: rootDirectory))
+                    channel.pipeline.addHandler(
+                        WebDAVHandler(root: rootDirectory, behaviour: behaviour, counter: counter)
+                    )
                 }
             }
 
@@ -51,7 +86,8 @@ final class TestWebDAVServer {
                     port: candidatePort,
                     rootDirectory: rootDirectory,
                     channel: channel,
-                    group: group
+                    group: group,
+                    counter: counter
                 )
             } catch {
                 lastError = error
@@ -70,16 +106,39 @@ final class TestWebDAVServer {
 
 // MARK: - Request handling
 
+/// Shared across connections, so a test can count requests for the whole
+/// server rather than one channel.
+final class RequestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    func record(_ method: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        counts[method, default: 0] += 1
+    }
+
+    func count(for method: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return counts[method] ?? 0
+    }
+}
+
 private final class WebDAVHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
     private let root: URL
+    private let behaviour: TestWebDAVServer.Behaviour
+    private let counter: RequestCounter
     private var head: HTTPRequestHead?
     private var body = Data()
 
-    init(root: URL) {
+    init(root: URL, behaviour: TestWebDAVServer.Behaviour, counter: RequestCounter) {
         self.root = root
+        self.behaviour = behaviour
+        self.counter = counter
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -101,13 +160,32 @@ private final class WebDAVHandler: ChannelInboundHandler {
     // MARK: Routing
 
     private func respond(to head: HTTPRequestHead, body: Data, context: ChannelHandlerContext) {
+        counter.record(head.method.rawValue)
+        let path = decodedPath(head.uri)
+
+        // Redirect before authenticating, the way a server normalising a URL
+        // does: the client must restore its credentials on the new request.
+        if let from = behaviour.redirectFrom, let to = behaviour.redirectTo, path.hasPrefix(from) {
+            let location = to + String(path.dropFirst(from.count))
+            send(
+                status: .movedPermanently,
+                extraHeaders: ["Location": location],
+                context: context
+            )
+            return
+        }
+
         guard isAuthorized(head) else {
             send(status: .unauthorized, context: context)
             return
         }
 
-        let path = decodedPath(head.uri)
         let target = localURL(for: path)
+
+        if behaviour.forbidsWrites, ["PUT", "MKCOL", "DELETE", "MOVE"].contains(head.method.rawValue) {
+            send(status: .forbidden, context: context)
+            return
+        }
 
         switch head.method.rawValue {
         case "PROPFIND":
@@ -201,7 +279,7 @@ private final class WebDAVHandler: ChannelInboundHandler {
             <D:propstat>
               <D:prop>
                 <D:resourcetype>\(resourceType)</D:resourcetype>
-                <D:getcontentlength>\(size)</D:getcontentlength>
+                \(behaviour.omitsContentLength ? "" : "<D:getcontentlength>\(size)</D:getcontentlength>")
                 <D:getlastmodified>\(modified)</D:getlastmodified>
               </D:prop>
               <D:status>HTTP/1.1 200 OK</D:status>
@@ -215,10 +293,20 @@ private final class WebDAVHandler: ChannelInboundHandler {
             send(status: .notFound, context: context)
             return
         }
-        guard let rangeHeader = head.headers.first(name: "Range"),
-              let range = Self.parseRange(rangeHeader, fileSize: contents.count)
-        else {
-            send(status: .ok, body: contents, context: context)
+        guard let rangeHeader = head.headers.first(name: "Range"), !behaviour.ignoresRange else {
+            // A validator is required before the client will reuse a whole
+            // entity for later chunks.
+            send(
+                status: .ok,
+                body: contents,
+                extraHeaders: ["ETag": "\"test-\(contents.count)\""],
+                context: context
+            )
+            return
+        }
+        guard let range = Self.parseRange(rangeHeader, fileSize: contents.count) else {
+            // Real servers answer 416 when the range starts past the end.
+            send(status: .rangeNotSatisfiable, context: context)
             return
         }
         send(
@@ -254,6 +342,19 @@ private final class WebDAVHandler: ChannelInboundHandler {
             send(status: .notFound, context: context)
             return
         }
+        if behaviour.multiStatusOnDelete {
+            let xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <D:multistatus xmlns:D="DAV:">
+              <D:response>
+                <D:href>/locked-child</D:href>
+                <D:status>HTTP/1.1 423 Locked</D:status>
+              </D:response>
+            </D:multistatus>
+            """
+            send(status: .multiStatus, body: Data(xml.utf8), context: context)
+            return
+        }
         do {
             try FileManager.default.removeItem(at: target)
             send(status: .noContent, context: context)
@@ -275,7 +376,14 @@ private final class WebDAVHandler: ChannelInboundHandler {
         }
         do {
             let destinationURL = localURL(for: decodedPath(destinationPath))
-            try? FileManager.default.removeItem(at: destinationURL)
+            let overwrite = head.headers.first(name: "Overwrite") ?? "T"
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                guard overwrite == "T" else {
+                    send(status: .preconditionFailed, context: context)
+                    return
+                }
+                try FileManager.default.removeItem(at: destinationURL)
+            }
             try FileManager.default.moveItem(at: target, to: destinationURL)
             send(status: .created, context: context)
         } catch {
