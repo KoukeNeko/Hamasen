@@ -1,22 +1,43 @@
 #!/bin/zsh
-# Builds Release, signs everything with Developer ID, and installs to
-# /Applications.
+# Builds Release, signs and notarizes everything with Developer ID, and
+# installs to /Applications.
 #
-# Why this exists: pkd only enables the FinderSync extension (the Finder
-# context menu) for apps whose entire bundle chain is Developer ID-signed —
-# development-signed builds are silently flipped to "ignored". Notarization
-# is not required for local use. The legacy "group.*" App Group is stripped
-# here because under Developer ID it would demand a provisioning profile;
-# migrated installs no longer need it.
+# Why this exists: the FinderSync extension (the Finder context menu) must be
+# hosted outside the app that owns the File Provider domain. A nested helper
+# supplies that separate containing app. This script then creates the stable,
+# Developer ID-signed and notarized /Applications build used for distribution.
+# The legacy "group.*" App Group is stripped here because under Developer ID
+# it would demand a provisioning profile; migrated installs no longer need it.
 set -euo pipefail
 
 readonly PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 readonly SCHEME="Hamasen"
 readonly INSTALL_PATH="/Applications/Hamasen.app"
+readonly APP_BUNDLE_ID="dev.hamasen.mac"
+readonly HELPER_APP_RELATIVE_PATH="Contents/Applications/HamasenFinderHelper.app"
+readonly HELPER_BUNDLE_ID="dev.hamasen.mac.FinderHelper"
+readonly FINDER_SYNC_IN_HELPER_RELATIVE_PATH="Contents/PlugIns/HamasenFinderSync.appex"
 readonly LEGACY_APP_GROUP="group.dev.hamasen.shared"
-readonly FINDER_SYNC_ID="dev.hamasen.mac.ContextMenu"
+readonly FILE_PROVIDER_ID="dev.hamasen.mac.FileProvider"
+readonly FILE_PROVIDER_RELATIVE_PATH="Contents/PlugIns/HamasenFileProvider.appex"
+readonly FINDER_SYNC_ID="dev.hamasen.mac.FinderHelper.ContextMenu"
+readonly FINDER_SYNC_RELATIVE_PATH="$HELPER_APP_RELATIVE_PATH/$FINDER_SYNC_IN_HELPER_RELATIVE_PATH"
+readonly LEGACY_FINDER_SYNC_ID="dev.hamasen.mac.ContextMenu"
+readonly LEGACY_FINDER_SYNC_RELATIVE_PATH="Contents/PlugIns/HamasenFinderSync.appex"
 readonly TEAM_ID="33832Z66QU"
 readonly LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+readonly NOTARYTOOL_PROFILE="${NOTARYTOOL_PROFILE:-}"
+readonly NOTARYTOOL_KEYCHAIN="${NOTARYTOOL_KEYCHAIN:-}"
+readonly NOTARY_TIMEOUT="${NOTARY_TIMEOUT:-30m}"
+readonly NOTARY_NO_S3_ACCELERATION="${NOTARY_NO_S3_ACCELERATION:-0}"
+
+typeset -ga NOTARYTOOL_AUTH_ARGS=()
+typeset -g WORK_DIR=""
+typeset -g BACKUP_DIR=""
+typeset -g BACKUP_PATH=""
+typeset -g HAD_PREVIOUS_INSTALL=0
+typeset -g INSTALLATION_STARTED=0
+typeset -g INSTALLATION_SUCCEEDED=0
 
 resolve_developer_dir() {
     local selected
@@ -35,6 +56,53 @@ resolve_developer_dir() {
 }
 
 export DEVELOPER_DIR="$(resolve_developer_dir)"
+
+configure_notarytool_auth() {
+    if [[ -z "$NOTARYTOOL_PROFILE" ]]; then
+        echo "error: NOTARYTOOL_PROFILE is required" >&2
+        echo "       Create one with 'xcrun notarytool store-credentials', then retry." >&2
+        return 1
+    fi
+    if [[ "$NOTARY_NO_S3_ACCELERATION" != 0 && "$NOTARY_NO_S3_ACCELERATION" != 1 ]]; then
+        echo "error: NOTARY_NO_S3_ACCELERATION must be 0 or 1" >&2
+        return 1
+    fi
+    if [[ ! "$NOTARY_TIMEOUT" =~ '^[0-9]+([smh])?$' ]]; then
+        echo "error: NOTARY_TIMEOUT must be an integer with an optional s, m, or h suffix" >&2
+        return 1
+    fi
+
+    NOTARYTOOL_AUTH_ARGS=(--keychain-profile "$NOTARYTOOL_PROFILE")
+    if [[ -n "$NOTARYTOOL_KEYCHAIN" ]]; then
+        NOTARYTOOL_AUTH_ARGS+=(--keychain "$NOTARYTOOL_KEYCHAIN")
+    fi
+}
+
+verify_required_tools() {
+    local tool
+    for tool in notarytool stapler; do
+        if ! xcrun --find "$tool" >/dev/null 2>&1; then
+            echo "error: xcrun could not find $tool in $DEVELOPER_DIR" >&2
+            return 1
+        fi
+    done
+    if [[ ! -x /usr/bin/syspolicy_check || ! -x /usr/sbin/spctl ]]; then
+        echo "error: this macOS installation is missing syspolicy_check or spctl" >&2
+        return 1
+    fi
+}
+
+verify_notarytool_profile() {
+    local history_output
+    echo "==> Validating notarytool profile: $NOTARYTOOL_PROFILE"
+    if ! history_output="$(xcrun notarytool history \
+        "${NOTARYTOOL_AUTH_ARGS[@]}" \
+        --output-format json --no-progress 2>&1)"; then
+        echo "error: notarytool could not authenticate with the configured profile" >&2
+        echo "$history_output" >&2
+        return 1
+    fi
+}
 
 find_developer_id_identity() {
     security find-identity -v -p codesigning \
@@ -86,7 +154,120 @@ sign_bundle() {
     local identity=$1 entitlements=$2 bundle=$3
     rm -f "$bundle/Contents/embedded.provisionprofile"
     codesign --force --options runtime \
-        --sign "$identity" --entitlements "$entitlements" "$bundle"
+        --timestamp --sign "$identity" --entitlements "$entitlements" "$bundle"
+}
+
+json_value() {
+    local json_path=$1 key=$2
+    /usr/bin/python3 - "$json_path" "$key" <<'PY'
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as input_file:
+        value = json.load(input_file).get(sys.argv[2], "")
+except (OSError, ValueError, AttributeError):
+    value = ""
+print("" if value is None else value)
+PY
+}
+
+run_syspolicy_check() {
+    local subcommand=$1 bundle=$2 expected_message=$3
+    local output command_status
+
+    if output="$(/usr/bin/syspolicy_check "$subcommand" "$bundle" --verbose 2>&1)"; then
+        command_status=0
+    else
+        command_status=$?
+    fi
+    echo "$output"
+
+    # macOS 27 betas can return status 0 even when the report contains a Fatal
+    # error, so the documented success sentence is the actual local gate.
+    if [[ "$output" == *"$expected_message"* ]]; then
+        return 0
+    fi
+    echo "warning: syspolicy_check $subcommand did not report success (exit $command_status)" >&2
+    return 1
+}
+
+fetch_notary_log() {
+    local submission_id=$1 work_dir=$2
+    [[ -z "$submission_id" ]] && return 0
+
+    local log_path="$work_dir/notary-log-$submission_id.json"
+    echo "==> Fetching notarization log for $submission_id" >&2
+    if xcrun notarytool log \
+        "${NOTARYTOOL_AUTH_ARGS[@]}" \
+        "$submission_id" "$log_path"; then
+        cat "$log_path" >&2
+    else
+        echo "warning: notarization log was not available" >&2
+    fi
+}
+
+notarize_and_validate() {
+    local bundle=$1 work_dir=$2
+    local archive_path="$work_dir/Hamasen-notarization.zip"
+    local response_path="$work_dir/notary-submit.json"
+    local error_path="$work_dir/notary-submit.stderr.log"
+    local submission_id notary_status
+    local -a transfer_options=()
+
+    echo "==> Checking notarization submission readiness"
+    if ! run_syspolicy_check \
+        notary-submission "$bundle" \
+        "App passed all pre-notarization checks and is ready for upload to the Apple notary service."; then
+        echo "warning: continuing so the Apple notary service can provide the authoritative result" >&2
+    fi
+
+    echo "==> Creating notarization archive"
+    ditto -c -k --keepParent "$bundle" "$archive_path"
+    if [[ "$NOTARY_NO_S3_ACCELERATION" == 1 ]]; then
+        transfer_options+=(--no-s3-acceleration)
+    fi
+
+    echo "==> Submitting for notarization (timeout: $NOTARY_TIMEOUT)"
+    if ! xcrun notarytool submit \
+        "${NOTARYTOOL_AUTH_ARGS[@]}" \
+        --wait --timeout "$NOTARY_TIMEOUT" \
+        --output-format json --no-progress \
+        "${transfer_options[@]}" \
+        "$archive_path" >"$response_path" 2>"$error_path"; then
+        cat "$response_path" >&2
+        cat "$error_path" >&2
+        submission_id="$(json_value "$response_path" id)"
+        fetch_notary_log "$submission_id" "$work_dir"
+        echo "error: notarization submission failed; artifacts preserved at $work_dir" >&2
+        return 1
+    fi
+
+    cat "$response_path"
+    if [[ -s "$error_path" ]]; then
+        cat "$error_path" >&2
+    fi
+    submission_id="$(json_value "$response_path" id)"
+    notary_status="$(json_value "$response_path" status)"
+    if [[ "$notary_status" != Accepted ]]; then
+        fetch_notary_log "$submission_id" "$work_dir"
+        echo "error: notarization status is '${notary_status:-unknown}', expected 'Accepted'" >&2
+        echo "       Artifacts preserved at $work_dir" >&2
+        return 1
+    fi
+
+    echo "==> Stapling and validating notarization ticket"
+    xcrun stapler staple -v "$bundle"
+    xcrun stapler validate -v "$bundle"
+    codesign --verify --deep --strict "$bundle"
+
+    echo "==> Checking distribution policy"
+    if ! run_syspolicy_check \
+        distribution "$bundle" \
+        "App passed all pre-distribution checks and is ready for distribution."; then
+        echo "error: the notarized app failed local distribution policy" >&2
+        return 1
+    fi
+    /usr/sbin/spctl --assess --type execute --verbose=4 "$bundle"
 }
 
 verify_no_restricted_keychain_access() {
@@ -102,65 +283,261 @@ sys.exit(0 if "keychain-access-groups" in entitlements else 1)
     fi
 }
 
+verify_single_plugin_registration() {
+    local identifier=$1 expected_path=$2 records registered_path path_count
+    records="$(pluginkit -m -A -D -vvv -i "$identifier")"
+    registered_path="$(awk -F' = ' '/^[[:space:]]*Path = / {print $2}' <<< "$records")"
+    path_count="$(awk '/^[[:space:]]*Path = / {count++} END {print count + 0}' <<< "$records")"
+
+    if [[ "$path_count" != 1 || "$registered_path" != "$expected_path" ]]; then
+        echo "error: expected exactly one $identifier registration at $expected_path" >&2
+        echo "$records" >&2
+        return 1
+    fi
+}
+
+registered_app_paths_for_identifier() {
+    local bundle_identifier=$1
+    local registry_paths_file registry_dump_status
+    registry_paths_file="$(mktemp)"
+    # lsregister writes its database dump to stderr on current macOS releases.
+    # Read it directly from Python so no downstream process closes the pipe
+    # early and leaves lsregister blocked on a full output buffer.
+    set +e
+    "$LSREGISTER" -dump 2>&1 \
+        | WANTED_BUNDLE_ID="$bundle_identifier" /usr/bin/python3 -c '
+import os
+import re
+import sys
+
+wanted = os.environ["WANTED_BUNDLE_ID"]
+path = None
+identifier = None
+
+def emit():
+    if identifier == wanted and path:
+        print(path)
+
+for line in sys.stdin:
+    if line.startswith("--------------------"):
+        emit()
+        path = None
+        identifier = None
+    elif line.startswith("path:"):
+        value = line.split(":", 1)[1].strip()
+        path = re.sub(r"\s+\(0x[0-9A-Fa-f]+\)$", "", value)
+    elif line.startswith("identifier:"):
+        identifier = line.split(":", 1)[1].strip()
+emit()
+' > "$registry_paths_file"
+    registry_dump_status=$pipestatus[1]
+    set -e
+    if (( registry_dump_status != 0 )); then
+        rm -f "$registry_paths_file"
+        echo "error: could not read the Launch Services registry" >&2
+        return 1
+    fi
+    cat "$registry_paths_file"
+    rm -f "$registry_paths_file"
+}
+
+unregister_app_copy() {
+    local app_path=$1
+    [[ "$app_path" == "$INSTALL_PATH" ]] && return
+    pluginkit -r "$app_path/$FILE_PROVIDER_RELATIVE_PATH" 2>/dev/null || true
+    pluginkit -r "$app_path/$FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
+    pluginkit -r "$app_path/$LEGACY_FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
+    "$LSREGISTER" -u "$app_path/$HELPER_APP_RELATIVE_PATH" 2>/dev/null || true
+    "$LSREGISTER" -u "$app_path" 2>/dev/null || true
+}
+
+unregister_helper_copy() {
+    local helper_path=$1
+    [[ "$helper_path" == "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH" ]] && return
+    pluginkit -r "$helper_path/$FINDER_SYNC_IN_HELPER_RELATIVE_PATH" 2>/dev/null || true
+    "$LSREGISTER" -u "$helper_path" 2>/dev/null || true
+}
+
+verify_no_plugin_registration() {
+    local identifier=$1 records path_count
+    records="$(pluginkit -m -A -D -vvv -i "$identifier")"
+    path_count="$(awk '/^[[:space:]]*Path = / {count++} END {print count + 0}' <<< "$records")"
+    if [[ "$path_count" != 0 ]]; then
+        echo "error: expected no remaining $identifier registrations" >&2
+        echo "$records" >&2
+        return 1
+    fi
+}
+
+verify_single_app_registration() {
+    local identifier=$1 expected_path=$2 registered_paths path_count
+    registered_paths="$(registered_app_paths_for_identifier "$identifier")"
+    path_count="$(awk 'NF {count++} END {print count + 0}' <<< "$registered_paths")"
+
+    if [[ "$path_count" != 1 || "$registered_paths" != "$expected_path" ]]; then
+        echo "error: expected exactly one $identifier registration at $expected_path" >&2
+        echo "$registered_paths" >&2
+        return 1
+    fi
+}
+
+register_stable_install() {
+    [[ -d "$INSTALL_PATH" ]] || return 0
+
+    "$LSREGISTER" -f "$INSTALL_PATH"
+    if [[ -d "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH" ]]; then
+        "$LSREGISTER" -f "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH"
+    fi
+    if [[ -d "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH" ]]; then
+        pluginkit -a "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH"
+    fi
+    if [[ -d "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH" ]]; then
+        pluginkit -a "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH"
+        sleep 2
+        pluginkit -e use -p com.apple.FinderSync -i "$FINDER_SYNC_ID"
+    elif [[ -d "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH" ]]; then
+        # Rollback may restore a release from before FinderSync moved into
+        # the nested helper app. Re-register that layout as well so rollback
+        # restores the context menu, not merely the app bundle.
+        pluginkit -a "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH"
+        sleep 2
+        pluginkit -e use -p com.apple.FinderSync -i "$LEGACY_FINDER_SYNC_ID"
+    fi
+}
+
+restore_previous_install() {
+    echo "==> Restoring previous installation" >&2
+    pkill -x Hamasen 2>/dev/null || true
+    if [[ -x "$INSTALL_PATH/Contents/MacOS/Hamasen" ]]; then
+        "$INSTALL_PATH/Contents/MacOS/Hamasen" --rollback-uncommitted-credentials || \
+            echo "warning: could not remove uncommitted migrated credentials" >&2
+    fi
+    pluginkit -r "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH" 2>/dev/null || true
+    pluginkit -r "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
+    pluginkit -r "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
+    "$LSREGISTER" -u "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH" 2>/dev/null || true
+    "$LSREGISTER" -u "$INSTALL_PATH" 2>/dev/null || true
+    rm -rf "$INSTALL_PATH"
+
+    if (( HAD_PREVIOUS_INSTALL )); then
+        if ! ditto "$BACKUP_PATH" "$INSTALL_PATH"; then
+            echo "error: automatic restore failed; backup preserved at $BACKUP_PATH" >&2
+            return 1
+        fi
+        killall pkd 2>/dev/null || true
+        sleep 3
+        if ! register_stable_install; then
+            echo "error: previous app was restored but could not be re-registered" >&2
+            return 1
+        fi
+        echo "==> Previous installation restored and re-registered" >&2
+    else
+        echo "==> Removed failed installation; there was no previous app to restore" >&2
+    fi
+}
+
+handle_exit() {
+    local exit_status=$?
+    trap - EXIT
+    set +e
+
+    if (( exit_status != 0 )); then
+        if (( INSTALLATION_STARTED && ! INSTALLATION_SUCCEEDED )); then
+            restore_previous_install
+        fi
+        if [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]]; then
+            echo "==> Staging and notarization artifacts preserved at $WORK_DIR" >&2
+        fi
+        if [[ -n "$BACKUP_DIR" && -d "$BACKUP_DIR" ]]; then
+            echo "==> Installation backup preserved at $BACKUP_DIR" >&2
+        fi
+    fi
+    exit "$exit_status"
+}
+
+trap handle_exit EXIT
+
 main() {
-    local identity
+    local identity staging products_dir work_dir
+    local products_root build_app build_helper registered_app existing_app_paths
+    local registered_helper existing_helper_paths
+    local finder_sync_status initially_enabled
+
+    configure_notarytool_auth
+    verify_required_tools
+    verify_notarytool_profile
+
     identity="$(find_developer_id_identity)"
     if [[ -z "$identity" ]]; then
         echo "error: no Developer ID Application identity in the keychain" >&2
-        exit 1
+        return 1
     fi
     echo "==> Signing identity: $identity"
     echo "==> Using DEVELOPER_DIR: $DEVELOPER_DIR"
 
     build_release
-    local staging products_dir
     products_dir="$(built_products_dir)"
 
-    staging="$(mktemp -d)/Hamasen.app"
+    WORK_DIR="$(mktemp -d)"
+    work_dir="$WORK_DIR"
+    staging="$work_dir/Hamasen.app"
     ditto "$products_dir/Hamasen.app" "$staging"
 
     echo "==> Preparing distribution entitlements"
-    local work_dir
-    work_dir="$(dirname "$staging")"
     write_distribution_entitlements \
         "$PROJECT_DIR/Config/Hamasen.entitlements" "$work_dir/app.entitlements"
     write_distribution_entitlements \
         "$PROJECT_DIR/Config/HamasenFileProvider.entitlements" "$work_dir/provider.entitlements"
+    write_distribution_entitlements \
+        "$PROJECT_DIR/Config/HamasenFinderHelper.entitlements" "$work_dir/helper.entitlements"
 
     echo "==> Signing (inner bundles first)"
     sign_bundle "$identity" "$PROJECT_DIR/Config/HamasenFinderSync.entitlements" \
-        "$staging/Contents/PlugIns/HamasenFinderSync.appex"
+        "$staging/$FINDER_SYNC_RELATIVE_PATH"
+    sign_bundle "$identity" "$work_dir/helper.entitlements" \
+        "$staging/$HELPER_APP_RELATIVE_PATH"
     sign_bundle "$identity" "$work_dir/provider.entitlements" \
-        "$staging/Contents/PlugIns/HamasenFileProvider.appex"
+        "$staging/$FILE_PROVIDER_RELATIVE_PATH"
     sign_bundle "$identity" "$work_dir/app.entitlements" "$staging"
     codesign --verify --deep --strict "$staging"
     verify_no_restricted_keychain_access "$staging"
-    verify_no_restricted_keychain_access "$staging/Contents/PlugIns/HamasenFileProvider.appex"
+    verify_no_restricted_keychain_access "$staging/$HELPER_APP_RELATIVE_PATH"
+    verify_no_restricted_keychain_access "$staging/$FILE_PROVIDER_RELATIVE_PATH"
+    verify_no_restricted_keychain_access "$staging/$FINDER_SYNC_RELATIVE_PATH"
+    notarize_and_validate "$staging" "$work_dir"
 
     echo "==> Installing to $INSTALL_PATH"
-    local backup_dir backup_path had_previous_install
-    backup_dir="$(mktemp -d)"
-    backup_path="$backup_dir/Hamasen.app"
-    had_previous_install=false
+    BACKUP_DIR="$(mktemp -d)"
+    BACKUP_PATH="$BACKUP_DIR/Hamasen.app"
     if [[ -d "$INSTALL_PATH" ]]; then
-        ditto "$INSTALL_PATH" "$backup_path"
-        had_previous_install=true
+        ditto "$INSTALL_PATH" "$BACKUP_PATH"
+        HAD_PREVIOUS_INSTALL=1
     fi
+    INSTALLATION_STARTED=1
     pkill -x Hamasen 2>/dev/null || true
+    # PluginKit keeps registrations independently of the bundle currently on
+    # disk. Remove the direct FinderSync record from pre-helper releases while
+    # its old path still resolves, before replacing /Applications/Hamasen.app.
+    pluginkit -r "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
     rm -rf "$INSTALL_PATH"
     ditto "$staging" "$INSTALL_PATH"
+
+    echo "==> Verifying installed notarization and distribution policy"
+    codesign --verify --deep --strict "$INSTALL_PATH"
+    xcrun stapler validate -v "$INSTALL_PATH"
+    if ! run_syspolicy_check \
+        distribution "$INSTALL_PATH" \
+        "App passed all pre-distribution checks and is ready for distribution."; then
+        echo "error: installed app failed local distribution policy" >&2
+        return 1
+    fi
+    /usr/sbin/spctl --assess --type execute --verbose=4 "$INSTALL_PATH"
 
     # Clean up a partial two-phase migration left by an interrupted prior run
     # before the development-signed helper starts a new transaction.
     if ! "$INSTALL_PATH/Contents/MacOS/Hamasen" --rollback-uncommitted-credentials; then
         echo "error: could not clean up an uncommitted credential migration" >&2
-        rm -rf "$INSTALL_PATH"
-        if [[ "$had_previous_install" == true ]]; then
-            ditto "$backup_path" "$INSTALL_PATH"
-        fi
-        rm -rf "$backup_dir"
-        rm -rf "$(dirname "$staging")"
-        exit 1
+        return 1
     fi
 
     # The development-signed helper can still read every migration-era Data
@@ -172,59 +549,92 @@ main() {
         echo "error: credential migration failed; restoring previous install" >&2
         "$INSTALL_PATH/Contents/MacOS/Hamasen" --rollback-uncommitted-credentials || \
             echo "warning: could not remove uncommitted migrated credentials" >&2
-        rm -rf "$INSTALL_PATH"
-        if [[ "$had_previous_install" == true ]]; then
-            ditto "$backup_path" "$INSTALL_PATH"
-        fi
-        rm -rf "$backup_dir"
-        rm -rf "$(dirname "$staging")"
-        exit 1
+        return 1
     fi
 
     echo "==> Verifying installed credential access"
     if ! "$INSTALL_PATH/Contents/MacOS/Hamasen" \
-        --verify-credentials-only --finalize-migration; then
+        --verify-credentials-only; then
         echo "error: installed app cannot read migrated credentials; restoring previous install" >&2
         "$INSTALL_PATH/Contents/MacOS/Hamasen" --rollback-uncommitted-credentials || \
             echo "warning: could not remove uncommitted migrated credentials" >&2
-        rm -rf "$INSTALL_PATH"
-        if [[ "$had_previous_install" == true ]]; then
-            ditto "$backup_path" "$INSTALL_PATH"
-        fi
-        rm -rf "$backup_dir"
-        rm -rf "$(dirname "$staging")"
-        exit 1
+        return 1
     fi
 
-    rm -rf "$backup_dir"
-    rm -rf "$(dirname "$staging")"
-
     echo "==> Registering"
-    # Building leaves development-signed copies registered from DerivedData;
-    # pkd refuses to enable a FinderSync identifier while any registration of
-    # it fails validation, and its in-memory record of the replaced install
-    # path goes stale — so drop the duplicates and restart pkd before
-    # electing. Elections must target exactly one, Developer ID-signed copy.
+    # Building leaves development-signed copies of both the main app and the
+    # helper app registered from DerivedData. Remove both extensions and both
+    # parent apps so System Settings and Finder select only /Applications.
+    products_root="$(dirname "$products_dir")"
     for configuration in Debug Release; do
-        pluginkit -r "$(dirname "$products_dir")/$configuration/Hamasen.app/Contents/PlugIns/HamasenFinderSync.appex" 2>/dev/null || true
+        build_app="$products_root/$configuration/Hamasen.app"
+        build_helper="$products_root/$configuration/HamasenFinderHelper.app"
+        unregister_app_copy "$build_app"
+        unregister_helper_copy "$build_helper"
     done
+    existing_app_paths="$(registered_app_paths_for_identifier "$APP_BUNDLE_ID")"
+    while IFS= read -r registered_app; do
+        [[ -z "$registered_app" ]] && continue
+        unregister_app_copy "$registered_app"
+    done <<< "$existing_app_paths"
+    existing_helper_paths="$(registered_app_paths_for_identifier "$HELPER_BUNDLE_ID")"
+    while IFS= read -r registered_helper; do
+        [[ -z "$registered_helper" ]] && continue
+        unregister_helper_copy "$registered_helper"
+    done <<< "$existing_helper_paths"
+    # The explicit removal above covers the current build root even when
+    # Launch Services has not indexed it yet; the registry pass also catches
+    # clones left in older DerivedData roots.
     killall pkd 2>/dev/null || true
     sleep 3
     "$LSREGISTER" -f "$INSTALL_PATH"
-    pluginkit -a "$INSTALL_PATH/Contents/PlugIns/HamasenFinderSync.appex"
-    sleep 2
-    pluginkit -e use -i "$FINDER_SYNC_ID"
+    "$LSREGISTER" -f "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH"
+    pluginkit -a "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH"
+    pluginkit -a "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH"
     sleep 2
 
-    echo "==> FinderSync status (enabled is '+'):"
-    local finder_sync_status
+    verify_single_plugin_registration \
+        "$FILE_PROVIDER_ID" \
+        "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH"
+    verify_single_plugin_registration \
+        "$FINDER_SYNC_ID" \
+        "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH"
+    verify_no_plugin_registration "$LEGACY_FINDER_SYNC_ID"
+    verify_single_app_registration "$APP_BUNDLE_ID" "$INSTALL_PATH"
+    verify_single_app_registration \
+        "$HELPER_BUNDLE_ID" \
+        "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH"
+
+    pluginkit -e use -p com.apple.FinderSync -i "$FINDER_SYNC_ID"
+    echo "==> FinderSync status immediately after enabling (enabled is '+'):"
     finder_sync_status="$(pluginkit -m -A -D -i "$FINDER_SYNC_ID")"
     echo "$finder_sync_status"
+    initially_enabled=1
     if ! grep -q '^[[:space:]]*+' <<< "$finder_sync_status"; then
-        echo "warning: FinderSync is installed but macOS has not enabled it." >&2
-        echo "         Enable Hamasen in System Settings > General > Login Items & Extensions > Finder." >&2
+        initially_enabled=0
     fi
+
+    echo "==> Waiting 5 seconds to confirm FinderSync remains enabled"
+    sleep 5
+    finder_sync_status="$(pluginkit -m -A -D -i "$FINDER_SYNC_ID")"
+    echo "$finder_sync_status"
+    if (( ! initially_enabled )) || \
+        ! grep -q '^[[:space:]]*+' <<< "$finder_sync_status"; then
+        echo "error: FinderSync did not remain enabled; restoring previous installation" >&2
+        return 1
+    fi
+
+    echo "==> Finalizing credential migration"
+    if ! "$INSTALL_PATH/Contents/MacOS/Hamasen" \
+        --verify-credentials-only --finalize-migration; then
+        echo "error: could not finalize credential migration" >&2
+        return 1
+    fi
+
     open "$INSTALL_PATH"
+    INSTALLATION_SUCCEEDED=1
+    rm -rf "$BACKUP_DIR"
+    rm -rf "$WORK_DIR"
     echo "==> Done"
 }
 

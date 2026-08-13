@@ -26,34 +26,68 @@ final class FinderSyncExtension: FIFinderSync {
     /// extension usually outlives many app launches — including the very
     /// first one that ever publishes the location — so it re-reads on a
     /// slow clock instead of only once at start.
-    private static let publishedLocationPollInterval: TimeInterval = 10
+    private static let publishedLocationPollInterval: TimeInterval = 2
 
-    private var pollTimer: Timer?
+    private var publishedLocationMonitor: DispatchSourceTimer?
 
     override init() {
         super.init()
-        adoptPublishedMountRoot()
-        pollTimer = Timer.scheduledTimer(
-            withTimeInterval: Self.publishedLocationPollInterval,
-            repeats: true
-        ) { [weak self] _ in
-            Task { @MainActor in self?.adoptPublishedMountRoot() }
-        }
+
+        // Finder may reuse extension state across app launches. Clear any
+        // previously claimed location before asynchronously adopting the
+        // current value published by the app.
+        FIFinderSyncController.default().directoryURLs = []
+        startPublishedLocationMonitor()
+    }
+
+    deinit {
+        publishedLocationMonitor?.setEventHandler {}
+        publishedLocationMonitor?.cancel()
     }
 
     /// Claims the published location whenever it appears or moves.
     private func adoptPublishedMountRoot() {
         let published = FinderDomain.publishedUserVisibleLocation()
         guard published != mountRoot else { return }
+
+        mountRoot = published
+        FIFinderSyncController.default().directoryURLs = published.map { [$0] } ?? []
+
         guard let published else {
             // Without a claimed directory Finder never shows the menu, so
             // this must be visible even without debug logging.
             log.error("No published mount location; context menu stays hidden")
             return
         }
-        mountRoot = published
-        FIFinderSyncController.default().directoryURLs = [published]
         log.debug("Watching \(published.path)")
+    }
+
+    /// Dispatch source timers stay attached to the requested queue even when
+    /// Finder creates the extension from a thread without a running RunLoop.
+    /// Holding and cancelling the source also makes its lifetime match this
+    /// extension instance instead of leaking a scheduled Timer into Finder.
+    private func startPublishedLocationMonitor() {
+        let start = { [weak self] in
+            guard let self, self.publishedLocationMonitor == nil else { return }
+
+            let monitor = DispatchSource.makeTimerSource(queue: .main)
+            monitor.schedule(
+                deadline: .now(),
+                repeating: Self.publishedLocationPollInterval,
+                leeway: .milliseconds(250)
+            )
+            monitor.setEventHandler { [weak self] in
+                self?.adoptPublishedMountRoot()
+            }
+            self.publishedLocationMonitor = monitor
+            monitor.resume()
+        }
+
+        if Thread.isMainThread {
+            start()
+        } else {
+            DispatchQueue.main.async(execute: start)
+        }
     }
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu? {
@@ -120,18 +154,23 @@ final class FinderSyncExtension: FIFinderSync {
     @objc private func unmountServer(_ sender: NSMenuItem) {
         guard let target = sender.representedObject as? MountedLocation else { return }
         Task {
-            let store = try MountedServersStore()
-            var mounted = try store.loadMountedServerIDs()
-            guard mounted.remove(target.server.id) != nil else { return }
+            do {
+                let store = try MountedServersStore()
+                var mounted = try store.loadMountedServerIDs()
+                guard mounted.remove(target.server.id) != nil else { return }
 
-            try store.saveMountedServerIDs(mounted)
-            let preservedLocation = try await FinderDomain.synchronize(
-                hasMountedServers: !mounted.isEmpty
-            )
-            // Content that never made it to the server survives the unmount;
-            // showing it is the only way the user learns it is there.
-            if let preservedLocation {
-                NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
+                try store.saveMountedServerIDs(mounted)
+                let preservedLocation = try await FinderDomain.synchronize(
+                    hasMountedServers: !mounted.isEmpty
+                )
+                // Content that never made it to the server survives the
+                // unmount; showing it is the only way the user learns it is
+                // there.
+                if let preservedLocation {
+                    NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
+                }
+            } catch {
+                log.error("Unmounting from Finder failed: \(error.localizedDescription)")
             }
         }
     }

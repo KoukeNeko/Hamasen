@@ -26,7 +26,8 @@ struct HamasenApp: App {
                 force: true
             )
         }
-        _model = State(initialValue: ServerListModel())
+        let model = ServerListModel()
+        _model = State(initialValue: model)
         if migrationArgumentIndex != nil {
             Darwin.exit(migrationComplete == true ? EXIT_SUCCESS : EXIT_FAILURE)
         }
@@ -49,6 +50,14 @@ struct HamasenApp: App {
                     ? EXIT_SUCCESS
                     : EXIT_FAILURE
             )
+        }
+
+        // Publishing the File Provider's user-visible URL cannot depend on a
+        // window or the menu-bar popover being opened. Finder may launch its
+        // context-menu extension while Hamasen is otherwise running only in
+        // the background, so load and publish as soon as the app starts.
+        Task { @MainActor in
+            await model.loadIfNeeded()
         }
     }
 
