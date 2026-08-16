@@ -56,6 +56,26 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         }
     }
 
+    /// Whether the system may keep a server's content on this Mac.
+    ///
+    /// A File Provider always materializes what is read — the content cannot
+    /// stay entirely on the server — so "online only" means it does not
+    /// linger: the system is told to drop it when the remote copy changes,
+    /// and the extension evicts what is no longer in use.
+    public enum StorageMode: String, Codable, Sendable, CaseIterable {
+        /// The system decides, keeping content until it needs the space.
+        case automatic
+        /// Content is dropped as soon as it is no longer needed.
+        case onlineOnly
+
+        public var displayName: String {
+            switch self {
+            case .automatic: return String(localized: "自動", bundle: .module)
+            case .onlineOnly: return String(localized: "純線上", bundle: .module)
+            }
+        }
+    }
+
     public static let defaultSFTPPort = TransferProtocol.sftp.defaultPort
     public static let defaultRemotePath = RemotePath.root
     public static let validPortRange = 1...65535
@@ -70,6 +90,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     /// Remote directory used as the mount root (e.g. "/home/user"); all paths
     /// inside the mount are resolved against it.
     public var remotePath: String
+    /// Whether this server's content may stay on the Mac.
+    public var storageMode: StorageMode
 
     public init(
         id: UUID = UUID(),
@@ -79,7 +101,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         port: Int = ServerConfig.defaultSFTPPort,
         username: String,
         authenticationMethod: AuthenticationMethod = .password,
-        remotePath: String = ServerConfig.defaultRemotePath
+        remotePath: String = ServerConfig.defaultRemotePath,
+        storageMode: StorageMode = .automatic
     ) {
         self.id = id
         self.name = name
@@ -89,6 +112,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.username = username
         self.authenticationMethod = authenticationMethod
         self.remotePath = ServerConfig.normalizedRemotePath(remotePath)
+        self.storageMode = storageMode
     }
 
     /// Configurations written before key authentication existed have no
@@ -113,6 +137,12 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.remotePath = ServerConfig.normalizedRemotePath(
             try container.decode(String.self, forKey: .remotePath)
         )
+        // Written before the storage mode existed: the system decided then,
+        // which is what .automatic means.
+        self.storageMode = try container.decodeIfPresent(
+            StorageMode.self,
+            forKey: .storageMode
+        ) ?? .automatic
     }
 
     /// Normalizes remotePath: always starts with "/" and, except for the

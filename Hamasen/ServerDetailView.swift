@@ -23,6 +23,7 @@ struct ServerDetailView: View {
     @State private var draftUsername: String
     @State private var draftPassword: String = ""
     @State private var draftRemotePath: String
+    @State private var draftStorageMode: ServerConfig.StorageMode
     @State private var draftAuthenticationMethod: ServerConfig.AuthenticationMethod
     @State private var importedKey: PrivateKeyImporter.ImportedKey?
     @State private var draftKeyPassphrase: String = ""
@@ -47,6 +48,7 @@ struct ServerDetailView: View {
         _draftPortText = State(initialValue: String(server.port))
         _draftUsername = State(initialValue: server.username)
         _draftRemotePath = State(initialValue: server.remotePath)
+        _draftStorageMode = State(initialValue: server.storageMode)
         _draftAuthenticationMethod = State(initialValue: server.authenticationMethod)
     }
 
@@ -71,7 +73,8 @@ struct ServerDetailView: View {
             port: port,
             username: username,
             authenticationMethod: draftAuthenticationMethod,
-            remotePath: draftRemotePath
+            remotePath: draftRemotePath,
+            storageMode: draftStorageMode
         )
     }
 
@@ -220,6 +223,11 @@ struct ServerDetailView: View {
             )
             Section("掛載") {
                 TextField("遠端路徑", text: $draftRemotePath, prompt: Text("/"))
+                Picker("儲存方式", selection: $draftStorageMode) {
+                    ForEach(ServerConfig.StorageMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
             }
         }
         .formStyle(.grouped)

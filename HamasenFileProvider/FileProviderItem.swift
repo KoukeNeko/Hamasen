@@ -43,9 +43,16 @@ final class ServerFolderItem: NSObject, NSFileProviderItem {
         [.allowsReading, .allowsContentEnumerating, .allowsAddingSubItems]
     }
 
+    /// Set here rather than on every item: everything inside a server folder
+    /// inherits, so one value governs the whole server.
+    var contentPolicy: NSFileProviderContentPolicy {
+        config.storageMode.contentPolicy
+    }
+
     var itemVersion: NSFileProviderItemVersion {
-        // Derived from the name so a rename in the app propagates to Finder.
-        let versionToken = Data("\(config.name)".utf8)
+        // Derived from the name so a rename in the app propagates to Finder,
+        // and from the storage mode so a change of mode does too.
+        let versionToken = Data("\(config.name)|\(config.storageMode.versionToken)".utf8)
         return NSFileProviderItemVersion(contentVersion: versionToken, metadataVersion: versionToken)
     }
 }

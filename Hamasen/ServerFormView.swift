@@ -14,6 +14,7 @@ struct ServerFormView: View {
     @State private var portText: String
     @State private var username: String
     @State private var remotePath: String
+    @State private var storageMode: ServerConfig.StorageMode
 
     @State private var authenticationMethod: ServerConfig.AuthenticationMethod
     @State private var password: String = ""
@@ -29,6 +30,7 @@ struct ServerFormView: View {
         _portText = State(initialValue: String(existingServer?.port ?? AppSettings.defaultServerPort()))
         _username = State(initialValue: existingServer?.username ?? "")
         _remotePath = State(initialValue: existingServer?.remotePath ?? ServerConfig.defaultRemotePath)
+        _storageMode = State(initialValue: existingServer?.storageMode ?? .automatic)
         _authenticationMethod = State(initialValue: existingServer?.authenticationMethod ?? .password)
     }
 
@@ -77,6 +79,11 @@ struct ServerFormView: View {
                 )
                 Section("掛載") {
                     TextField("遠端路徑", text: $remotePath, prompt: Text("/"))
+                    Picker("儲存方式", selection: $storageMode) {
+                        ForEach(ServerConfig.StorageMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -111,7 +118,8 @@ struct ServerFormView: View {
             port: port,
             username: username.trimmingCharacters(in: .whitespaces),
             authenticationMethod: authenticationMethod,
-            remotePath: remotePath
+            remotePath: remotePath,
+            storageMode: storageMode
         )
         let usesKey = authenticationMethod == .privateKey
         let credentials = CredentialUpdate(

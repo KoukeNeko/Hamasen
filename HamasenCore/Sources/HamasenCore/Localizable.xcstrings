@@ -375,6 +375,23 @@
         }
       }
     },
+    "純線上": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online Only"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンラインのみ"
+          }
+        }
+      }
+    },
     "組合網址": {
       "extractionState": "manual",
       "localizations": {
@@ -388,6 +405,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "URLの組み立て"
+          }
+        }
+      }
+    },
+    "自動": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動"
           }
         }
       }

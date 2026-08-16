@@ -20,16 +20,31 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
     private let domain: NSFileProviderDomain
     private let registry = ConnectionRegistry()
+    private let evictor: OnlineOnlyEvictor
 
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
+        self.evictor = OnlineOnlyEvictor(domain: domain)
         super.init()
     }
 
     func invalidate() {
         let registry = registry
+        let evictor = evictor
         Task {
+            await evictor.cancel()
             await registry.shutdownAll()
+        }
+    }
+
+    /// Called on every change to the set of materialized items, so it only
+    /// arms the eviction pass; the work happens once the churn settles, as
+    /// NSFileProviderReplicatedExtension.h advises.
+    func materializedItemsDidChange(completionHandler: @escaping () -> Void) {
+        let evictor = evictor
+        Task {
+            await evictor.scheduleEvictionPass()
+            completionHandler()
         }
     }
 

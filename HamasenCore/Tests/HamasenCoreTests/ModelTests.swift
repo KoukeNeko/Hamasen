@@ -160,3 +160,48 @@ struct ServerConfigStoreTests {
         #expect(try store.server(withID: servers[0].id) == servers[0])
     }
 }
+
+@Suite("StorageMode")
+struct StorageModeTests {
+    /// A config written before the mode existed must keep behaving the way it
+    /// did, which is what .automatic means.
+    @Test("舊設定檔沒有欄位時解為自動")
+    func legacyConfigDecodesAsAutomatic() throws {
+        let legacyJSON = """
+        {"id":"1E1AC5B4-9E5E-4C0E-9E43-8E4E2E7F0A11","name":"NAS","transferProtocol":"sftp",
+         "host":"example.com","port":22,"username":"user","remotePath":"/"}
+        """
+        let config = try JSONDecoder().decode(ServerConfig.self, from: Data(legacyJSON.utf8))
+        #expect(config.storageMode == .automatic)
+    }
+
+    @Test("模式可儲存並讀回")
+    func storageModeRoundTrips() throws {
+        let config = ServerConfig(
+            name: "NAS", host: "example.com", username: "user", storageMode: .onlineOnly
+        )
+        let decoded = try JSONDecoder().decode(
+            ServerConfig.self, from: try JSONEncoder().encode(config)
+        )
+        #expect(decoded.storageMode == .onlineOnly)
+    }
+
+    /// Online only has to ask for a different policy than automatic, or the
+    /// setting would be inert.
+    @Test("兩種模式對應到不同的內容策略")
+    func modesMapToDistinctContentPolicies() {
+        #expect(ServerConfig.StorageMode.automatic.contentPolicy == .inherited)
+        #expect(ServerConfig.StorageMode.onlineOnly.contentPolicy == .downloadLazilyAndEvictOnRemoteUpdate)
+    }
+
+    /// The version token is what carries a mode change to the system; equal
+    /// tokens would leave the old policy in force until something else
+    /// re-enumerated the server folder.
+    @Test("模式不同，版本識別也不同")
+    func versionTokensDiffer() {
+        #expect(
+            ServerConfig.StorageMode.automatic.versionToken
+                != ServerConfig.StorageMode.onlineOnly.versionToken
+        )
+    }
+}

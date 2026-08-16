@@ -253,6 +253,22 @@
         }
       }
     },
+    "儲存方式": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存方法"
+          }
+        }
+      }
+    },
     "儲存變更": {
       "localizations": {
         "en": {
