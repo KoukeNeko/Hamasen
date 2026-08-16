@@ -4,11 +4,10 @@ import Security
 /// One-time move of stored data out of the legacy "group.*" App Group into
 /// the team-prefixed one, and of credentials into the file-based Keychain.
 ///
-/// The group changed because pkd only enables the FinderSync extension for
-/// Developer ID-signed builds, and under Developer ID a "group.*" group
-/// demands a provisioning profile while a team-prefixed one does not. Only
-/// development builds still carry the legacy groups in their entitlements, so
-/// the installer runs this migration from that build before launching the
+/// The group changed because under Developer ID a "group.*" group demands a
+/// provisioning profile while a team-prefixed one does not. Only development
+/// builds still carry the legacy groups in their entitlements, so the
+/// installer runs this migration from that build before launching the
 /// Developer ID app.
 public enum LegacyGroupMigration {
     // v3 migrates credentials out of the entitlement-mediated Data Protection

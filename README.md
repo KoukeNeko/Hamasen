@@ -57,10 +57,6 @@ Hamasen.xcodeproj
 ├── HamasenFileProvider      File Provider extension
 │   └── NSFileProviderReplicatedExtension: enumerate / fetch / create / modify / delete,
 │       plus the Finder context-menu actions (NSFileProviderCustomAction)
-├── HamasenFinderHelper      Nested helper app (legacy, slated for removal)
-│   └── Hosts the FinderSync extension
-├── HamasenFinderSync        FinderSync extension (legacy, slated for removal)
-│   └── Superseded by the File Provider custom actions
 ├── HamasenCore              Local Swift package
 │   ├── RemoteFileService        Protocol abstraction (FTP can plug in later)
 │   ├── SFTPFileService          Citadel (SwiftNIO SSH) implementation
@@ -95,9 +91,7 @@ Key design points:
   add their entries; Finder never asks a FinderSync extension for menus on
   `~/Library/CloudStorage` paths. `fileproviderctl evaluate <path>` shows the
   rules and their verdicts without opening Finder, and
-  `FinderActivationRuleTests` pins the shipped plist. The FinderSync helper
-  (`HamasenFinderHelper.app` / `HamasenFinderSync`) predates this and is
-  slated for removal.
+  `FinderActivationRuleTests` pins the shipped plist.
 
 ## Development
 
@@ -113,7 +107,7 @@ also needs a Developer ID Application certificate and notarization credentials.
 Tests need no external infrastructure: `HamasenCoreTests` spins up an
 in-process SFTP server (Citadel's server API over a local temp directory)
 that accepts both password and public key authentication, plus an
-in-process WebDAV server. 100 tests cover
+in-process WebDAV server. 99 tests cover
 connecting with either credential type, authentication failures, key
 parsing, directory listing, upload/download content integrity, range
 requests across chunk boundaries, create/delete/rename, the `remotePath`
@@ -123,11 +117,11 @@ diffing that drives Finder updates.
 
 ### Developer ID installation and notarization
 
-The Finder context menu is hosted by the nested `HamasenFinderHelper.app`,
-separating it from the main app's File Provider domain so both extensions can
-remain active. For distribution outside the Mac App Store, the complete app,
-helper, and extension chain is Developer ID-signed and notarized before it is
-installed in `/Applications`.
+For distribution outside the Mac App Store, the app and its File Provider
+extension are Developer ID-signed and notarized before being installed in
+`/Applications`. The installer also retracts the PluginKit and Launch Services
+records of the FinderSync extension and helper app that releases up to 1.0
+shipped, since those registrations outlive the bundles they name.
 
 Create a `notarytool` Keychain profile once. The command prompts securely for
 the app-specific password; do not put that password in the repository or in a
@@ -157,10 +151,10 @@ NOTARY_NO_S3_ACCELERATION=1 \
 ./scripts/install-devid.sh
 ```
 
-If notarization, distribution validation, credential migration, registration,
-or the delayed FinderSync election check fails, the installer preserves its
-diagnostic artifacts. Once installation has started, it also restores and
-re-registers the previous `/Applications/Hamasen.app`. These distribution and
+If notarization, distribution validation, credential migration, or
+registration fails, the installer preserves its diagnostic artifacts. Once
+installation has started, it also restores and re-registers the previous
+`/Applications/Hamasen.app`. These distribution and
 rollback checks run during an actual installer invocation; `scripts/verify.sh`
 only validates package tests and the development build.
 

@@ -7,9 +7,8 @@ public enum SharedConstants {
     /// groups entitlement of every target.
     ///
     /// The macOS team-prefixed form, not "group.*": a team-prefixed group is
-    /// validated against the signing certificate alone, so Developer ID
-    /// builds need no provisioning profile — and Developer ID is what pkd
-    /// requires before it will enable the FinderSync extension.
+    /// validated against the signing certificate alone, so the Developer ID
+    /// builds used for distribution need no provisioning profile.
     public static let appGroupIdentifier = "33832Z66QU.group.dev.hamasen.shared"
 
     /// The original "group.*" App Group. Only the migration reads it; new

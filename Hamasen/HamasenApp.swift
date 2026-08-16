@@ -52,10 +52,9 @@ struct HamasenApp: App {
             )
         }
 
-        // Publishing the File Provider's user-visible URL cannot depend on a
-        // window or the menu-bar popover being opened. Finder may launch its
-        // context-menu extension while Hamasen is otherwise running only in
-        // the background, so load and publish as soon as the app starts.
+        // Registering the domain must not depend on a window or the menu-bar
+        // popover being opened, so the mounted set is loaded as soon as the
+        // app starts.
         Task { @MainActor in
             await model.loadIfNeeded()
         }

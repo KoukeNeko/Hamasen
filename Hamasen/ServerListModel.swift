@@ -247,13 +247,6 @@ final class ServerListModel {
         } catch {
             errorMessage = "更新 Finder 位置失敗：\(error.localizedDescription)"
         }
-        // Even when synchronize throws (e.g. the change signal while the
-        // domain is still initializing), the domain may well be registered —
-        // publish whenever the location resolves, or the FinderSync
-        // extension never learns where the mount lives.
-        if !mountedServerIDs.isEmpty {
-            await FinderDomain.publishUserVisibleLocation()
-        }
         // Content that never made it to the server survives the unmount;
         // showing it is the only way the user learns it is there.
         if let preservedLocation {

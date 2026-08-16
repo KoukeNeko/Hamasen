@@ -2,28 +2,34 @@
 # Builds Release, signs and notarizes everything with Developer ID, and
 # installs to /Applications.
 #
-# Why this exists: the FinderSync extension (the Finder context menu) must be
-# hosted outside the app that owns the File Provider domain. A nested helper
-# supplies that separate containing app. This script then creates the stable,
-# Developer ID-signed and notarized /Applications build used for distribution.
-# The legacy "group.*" App Group is stripped here because under Developer ID
-# it would demand a provisioning profile; migrated installs no longer need it.
+# Why this exists: distribution outside the Mac App Store needs a stable,
+# Developer ID-signed and notarized build at a fixed path. The legacy "group.*"
+# App Group is stripped here because under Developer ID it would demand a
+# provisioning profile; migrated installs no longer need it.
 set -euo pipefail
 
 readonly PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 readonly SCHEME="Hamasen"
 readonly INSTALL_PATH="/Applications/Hamasen.app"
 readonly APP_BUNDLE_ID="dev.hamasen.mac"
-readonly HELPER_APP_RELATIVE_PATH="Contents/Applications/HamasenFinderHelper.app"
-readonly HELPER_BUNDLE_ID="dev.hamasen.mac.FinderHelper"
-readonly FINDER_SYNC_IN_HELPER_RELATIVE_PATH="Contents/PlugIns/HamasenFinderSync.appex"
 readonly LEGACY_APP_GROUP="group.dev.hamasen.shared"
 readonly FILE_PROVIDER_ID="dev.hamasen.mac.FileProvider"
 readonly FILE_PROVIDER_RELATIVE_PATH="Contents/PlugIns/HamasenFileProvider.appex"
-readonly FINDER_SYNC_ID="dev.hamasen.mac.FinderHelper.ContextMenu"
-readonly FINDER_SYNC_RELATIVE_PATH="$HELPER_APP_RELATIVE_PATH/$FINDER_SYNC_IN_HELPER_RELATIVE_PATH"
-readonly LEGACY_FINDER_SYNC_ID="dev.hamasen.mac.ContextMenu"
-readonly LEGACY_FINDER_SYNC_RELATIVE_PATH="Contents/PlugIns/HamasenFinderSync.appex"
+# Releases up to 1.0 shipped the Finder context menu as a FinderSync extension,
+# in a nested helper app and, before that, directly in the app. The Finder menu
+# now comes from the File Provider extension itself, but PluginKit and Launch
+# Services keep registrations independently of what is on disk, so an upgrade
+# has to retract those records or the removed bundles stay registered forever.
+readonly RETIRED_HELPER_APP_RELATIVE_PATH="Contents/Applications/HamasenFinderHelper.app"
+readonly RETIRED_HELPER_BUNDLE_ID="dev.hamasen.mac.FinderHelper"
+readonly RETIRED_FINDER_SYNC_IDS=(
+    "dev.hamasen.mac.FinderHelper.ContextMenu"
+    "dev.hamasen.mac.ContextMenu"
+)
+readonly RETIRED_FINDER_SYNC_RELATIVE_PATHS=(
+    "$RETIRED_HELPER_APP_RELATIVE_PATH/Contents/PlugIns/HamasenFinderSync.appex"
+    "Contents/PlugIns/HamasenFinderSync.appex"
+)
 readonly TEAM_ID="33832Z66QU"
 readonly LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 readonly NOTARYTOOL_PROFILE="${NOTARYTOOL_PROFILE:-}"
@@ -345,17 +351,19 @@ unregister_app_copy() {
     local app_path=$1
     [[ "$app_path" == "$INSTALL_PATH" ]] && return
     pluginkit -r "$app_path/$FILE_PROVIDER_RELATIVE_PATH" 2>/dev/null || true
-    pluginkit -r "$app_path/$FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
-    pluginkit -r "$app_path/$LEGACY_FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
-    "$LSREGISTER" -u "$app_path/$HELPER_APP_RELATIVE_PATH" 2>/dev/null || true
+    unregister_retired_finder_sync "$app_path"
     "$LSREGISTER" -u "$app_path" 2>/dev/null || true
 }
 
-unregister_helper_copy() {
-    local helper_path=$1
-    [[ "$helper_path" == "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH" ]] && return
-    pluginkit -r "$helper_path/$FINDER_SYNC_IN_HELPER_RELATIVE_PATH" 2>/dev/null || true
-    "$LSREGISTER" -u "$helper_path" 2>/dev/null || true
+# Retracts the records left by the retired FinderSync bundles. Their paths must
+# still resolve for PluginKit to accept the removal, so this runs before the
+# installed app is replaced.
+unregister_retired_finder_sync() {
+    local app_path=$1 relative_path
+    for relative_path in "${RETIRED_FINDER_SYNC_RELATIVE_PATHS[@]}"; do
+        pluginkit -r "$app_path/$relative_path" 2>/dev/null || true
+    done
+    "$LSREGISTER" -u "$app_path/$RETIRED_HELPER_APP_RELATIVE_PATH" 2>/dev/null || true
 }
 
 verify_no_plugin_registration() {
@@ -365,6 +373,18 @@ verify_no_plugin_registration() {
     if [[ "$path_count" != 0 ]]; then
         echo "error: expected no remaining $identifier registrations" >&2
         echo "$records" >&2
+        return 1
+    fi
+}
+
+verify_no_app_registration() {
+    local identifier=$1 registered_paths path_count
+    registered_paths="$(registered_app_paths_for_identifier "$identifier")"
+    path_count="$(awk 'NF {count++} END {print count + 0}' <<< "$registered_paths")"
+
+    if [[ "$path_count" != 0 ]]; then
+        echo "error: expected no remaining $identifier registrations" >&2
+        echo "$registered_paths" >&2
         return 1
     fi
 }
@@ -382,27 +402,27 @@ verify_single_app_registration() {
 }
 
 register_stable_install() {
+    local index relative_path finder_sync_id
     [[ -d "$INSTALL_PATH" ]] || return 0
 
     "$LSREGISTER" -f "$INSTALL_PATH"
-    if [[ -d "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH" ]]; then
-        "$LSREGISTER" -f "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH"
-    fi
     if [[ -d "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH" ]]; then
         pluginkit -a "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH"
     fi
-    if [[ -d "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH" ]]; then
-        pluginkit -a "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH"
-        sleep 2
-        pluginkit -e use -p com.apple.FinderSync -i "$FINDER_SYNC_ID"
-    elif [[ -d "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH" ]]; then
-        # Rollback may restore a release from before FinderSync moved into
-        # the nested helper app. Re-register that layout as well so rollback
-        # restores the context menu, not merely the app bundle.
-        pluginkit -a "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH"
-        sleep 2
-        pluginkit -e use -p com.apple.FinderSync -i "$LEGACY_FINDER_SYNC_ID"
+    # Rollback may restore a release whose context menu was a FinderSync
+    # extension; re-register it so rollback restores the menu, not merely the
+    # app bundle.
+    if [[ -d "$INSTALL_PATH/$RETIRED_HELPER_APP_RELATIVE_PATH" ]]; then
+        "$LSREGISTER" -f "$INSTALL_PATH/$RETIRED_HELPER_APP_RELATIVE_PATH"
     fi
+    for index in {1..${#RETIRED_FINDER_SYNC_RELATIVE_PATHS[@]}}; do
+        relative_path="${RETIRED_FINDER_SYNC_RELATIVE_PATHS[$index]}"
+        finder_sync_id="${RETIRED_FINDER_SYNC_IDS[$index]}"
+        [[ -d "$INSTALL_PATH/$relative_path" ]] || continue
+        pluginkit -a "$INSTALL_PATH/$relative_path"
+        sleep 2
+        pluginkit -e use -p com.apple.FinderSync -i "$finder_sync_id"
+    done
 }
 
 restore_previous_install() {
@@ -413,9 +433,7 @@ restore_previous_install() {
             echo "warning: could not remove uncommitted migrated credentials" >&2
     fi
     pluginkit -r "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH" 2>/dev/null || true
-    pluginkit -r "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
-    pluginkit -r "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
-    "$LSREGISTER" -u "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH" 2>/dev/null || true
+    unregister_retired_finder_sync "$INSTALL_PATH"
     "$LSREGISTER" -u "$INSTALL_PATH" 2>/dev/null || true
     rm -rf "$INSTALL_PATH"
 
@@ -459,9 +477,8 @@ trap handle_exit EXIT
 
 main() {
     local identity staging products_dir work_dir
-    local products_root build_app build_helper registered_app existing_app_paths
-    local registered_helper existing_helper_paths
-    local finder_sync_status initially_enabled
+    local products_root build_app registered_app existing_app_paths
+    local retired_finder_sync_id
 
     configure_notarytool_auth
     verify_required_tools
@@ -488,22 +505,14 @@ main() {
         "$PROJECT_DIR/Config/Hamasen.entitlements" "$work_dir/app.entitlements"
     write_distribution_entitlements \
         "$PROJECT_DIR/Config/HamasenFileProvider.entitlements" "$work_dir/provider.entitlements"
-    write_distribution_entitlements \
-        "$PROJECT_DIR/Config/HamasenFinderHelper.entitlements" "$work_dir/helper.entitlements"
 
     echo "==> Signing (inner bundles first)"
-    sign_bundle "$identity" "$PROJECT_DIR/Config/HamasenFinderSync.entitlements" \
-        "$staging/$FINDER_SYNC_RELATIVE_PATH"
-    sign_bundle "$identity" "$work_dir/helper.entitlements" \
-        "$staging/$HELPER_APP_RELATIVE_PATH"
     sign_bundle "$identity" "$work_dir/provider.entitlements" \
         "$staging/$FILE_PROVIDER_RELATIVE_PATH"
     sign_bundle "$identity" "$work_dir/app.entitlements" "$staging"
     codesign --verify --deep --strict "$staging"
     verify_no_restricted_keychain_access "$staging"
-    verify_no_restricted_keychain_access "$staging/$HELPER_APP_RELATIVE_PATH"
     verify_no_restricted_keychain_access "$staging/$FILE_PROVIDER_RELATIVE_PATH"
-    verify_no_restricted_keychain_access "$staging/$FINDER_SYNC_RELATIVE_PATH"
     notarize_and_validate "$staging" "$work_dir"
 
     echo "==> Installing to $INSTALL_PATH"
@@ -515,10 +524,7 @@ main() {
     fi
     INSTALLATION_STARTED=1
     pkill -x Hamasen 2>/dev/null || true
-    # PluginKit keeps registrations independently of the bundle currently on
-    # disk. Remove the direct FinderSync record from pre-helper releases while
-    # its old path still resolves, before replacing /Applications/Hamasen.app.
-    pluginkit -r "$INSTALL_PATH/$LEGACY_FINDER_SYNC_RELATIVE_PATH" 2>/dev/null || true
+    unregister_retired_finder_sync "$INSTALL_PATH"
     rm -rf "$INSTALL_PATH"
     ditto "$staging" "$INSTALL_PATH"
 
@@ -562,67 +568,36 @@ main() {
     fi
 
     echo "==> Registering"
-    # Building leaves development-signed copies of both the main app and the
-    # helper app registered from DerivedData. Remove both extensions and both
-    # parent apps so System Settings and Finder select only /Applications.
+    # Building leaves a development-signed copy of the app registered from
+    # DerivedData. Remove its extension and the app itself so Finder and
+    # fileproviderd select only /Applications.
     products_root="$(dirname "$products_dir")"
     for configuration in Debug Release; do
         build_app="$products_root/$configuration/Hamasen.app"
-        build_helper="$products_root/$configuration/HamasenFinderHelper.app"
         unregister_app_copy "$build_app"
-        unregister_helper_copy "$build_helper"
     done
     existing_app_paths="$(registered_app_paths_for_identifier "$APP_BUNDLE_ID")"
     while IFS= read -r registered_app; do
         [[ -z "$registered_app" ]] && continue
         unregister_app_copy "$registered_app"
     done <<< "$existing_app_paths"
-    existing_helper_paths="$(registered_app_paths_for_identifier "$HELPER_BUNDLE_ID")"
-    while IFS= read -r registered_helper; do
-        [[ -z "$registered_helper" ]] && continue
-        unregister_helper_copy "$registered_helper"
-    done <<< "$existing_helper_paths"
     # The explicit removal above covers the current build root even when
     # Launch Services has not indexed it yet; the registry pass also catches
     # clones left in older DerivedData roots.
     killall pkd 2>/dev/null || true
     sleep 3
     "$LSREGISTER" -f "$INSTALL_PATH"
-    "$LSREGISTER" -f "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH"
     pluginkit -a "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH"
-    pluginkit -a "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH"
     sleep 2
 
     verify_single_plugin_registration \
         "$FILE_PROVIDER_ID" \
         "$INSTALL_PATH/$FILE_PROVIDER_RELATIVE_PATH"
-    verify_single_plugin_registration \
-        "$FINDER_SYNC_ID" \
-        "$INSTALL_PATH/$FINDER_SYNC_RELATIVE_PATH"
-    verify_no_plugin_registration "$LEGACY_FINDER_SYNC_ID"
+    for retired_finder_sync_id in "${RETIRED_FINDER_SYNC_IDS[@]}"; do
+        verify_no_plugin_registration "$retired_finder_sync_id"
+    done
     verify_single_app_registration "$APP_BUNDLE_ID" "$INSTALL_PATH"
-    verify_single_app_registration \
-        "$HELPER_BUNDLE_ID" \
-        "$INSTALL_PATH/$HELPER_APP_RELATIVE_PATH"
-
-    pluginkit -e use -p com.apple.FinderSync -i "$FINDER_SYNC_ID"
-    echo "==> FinderSync status immediately after enabling (enabled is '+'):"
-    finder_sync_status="$(pluginkit -m -A -D -i "$FINDER_SYNC_ID")"
-    echo "$finder_sync_status"
-    initially_enabled=1
-    if ! grep -q '^[[:space:]]*+' <<< "$finder_sync_status"; then
-        initially_enabled=0
-    fi
-
-    echo "==> Waiting 5 seconds to confirm FinderSync remains enabled"
-    sleep 5
-    finder_sync_status="$(pluginkit -m -A -D -i "$FINDER_SYNC_ID")"
-    echo "$finder_sync_status"
-    if (( ! initially_enabled )) || \
-        ! grep -q '^[[:space:]]*+' <<< "$finder_sync_status"; then
-        echo "error: FinderSync did not remain enabled; restoring previous installation" >&2
-        return 1
-    fi
+    verify_no_app_registration "$RETIRED_HELPER_BUNDLE_ID"
 
     echo "==> Finalizing credential migration"
     if ! "$INSTALL_PATH/Contents/MacOS/Hamasen" \
