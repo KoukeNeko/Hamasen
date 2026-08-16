@@ -70,6 +70,8 @@ private struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            LanguageSection()
         }
         .formStyle(.grouped)
     }
@@ -85,6 +87,46 @@ private struct GeneralSettingsView: View {
         } catch {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             launchAtLoginError = "無法變更登入啟動設定：\(error.localizedDescription)"
+        }
+    }
+}
+
+/// Chooses the language Hamasen runs in.
+///
+/// The picker writes the same per-app preference System Settings does, so both
+/// places show the same answer; the relaunch prompt appears because no
+/// mechanism, Apple's included, can change a running app's language.
+private struct LanguageSection: View {
+    @State private var selection = AppLanguage.selected
+    @State private var needsRelaunch = AppLanguage.needsRelaunch
+
+    var body: some View {
+        Section {
+            Picker("語言", selection: $selection) {
+                Text("跟隨系統").tag(AppLanguage.system)
+                Divider()
+                ForEach(AppLanguage.availableIdentifiers, id: \.self) { identifier in
+                    // Each language names itself, as in every macOS language list.
+                    Text(AppLanguage.fixed(identifier).endonym ?? identifier)
+                        .tag(AppLanguage.fixed(identifier))
+                }
+            }
+            .onChange(of: selection) { _, newSelection in
+                newSelection.apply()
+                needsRelaunch = AppLanguage.needsRelaunch
+            }
+
+            if needsRelaunch {
+                LabeledContent("重新啟動後生效") {
+                    Button("立即重新啟動") { AppLanguageSettings.relaunch() }
+                }
+            }
+
+            Button("在系統設定中管理…") { AppLanguageSettings.openSystemLanguageSettings() }
+        } footer: {
+            Text("Finder 右鍵選單的語言由系統決定，不受這個設定影響。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

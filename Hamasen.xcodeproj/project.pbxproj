@@ -158,6 +158,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				ja,
 				"zh-Hant",
 				Base,
 			);

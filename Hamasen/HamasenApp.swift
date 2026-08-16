@@ -84,5 +84,8 @@ struct HamasenApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         DockIconController.applyStoredPreference()
+        // Recorded now so a later comparison reflects the language this
+        // process actually launched with, not one chosen since.
+        AppLanguage.captureLaunchState()
     }
 }
