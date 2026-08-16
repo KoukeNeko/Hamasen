@@ -52,7 +52,7 @@ final class ServerFolderItem: NSObject, NSFileProviderItem {
     var itemVersion: NSFileProviderItemVersion {
         // Derived from the name so a rename in the app propagates to Finder,
         // and from the storage mode so a change of mode does too.
-        let versionToken = Data("\(config.name)|\(config.storageMode.versionToken)".utf8)
+        let versionToken = Data(config.finderItemToken.utf8)
         return NSFileProviderItemVersion(contentVersion: versionToken, metadataVersion: versionToken)
     }
 }

@@ -85,3 +85,28 @@ struct ServerListChangeTrackerTests {
         #expect(diff.updated.count == 1)
     }
 }
+
+@Suite("ServerListChangeTracker storage mode")
+struct ServerListChangeTrackerStorageModeTests {
+    /// The storage mode decides the folder's content policy, so a change to
+    /// it has to be reported: otherwise the system is never told to re-read
+    /// the item and the old policy stays in force.
+    @Test("改變儲存方式會被視為變更")
+    func reportsStorageModeChange() {
+        let server = ServerConfig(name: "NAS", host: "example.com", username: "user")
+        let previous = ServerListChangeTracker.snapshot(of: [server])
+
+        var switched = server
+        switched.storageMode = .onlineOnly
+
+        let diff = ServerListChangeTracker.diff(previous: previous, current: [switched])
+        #expect(diff.updated.map(\.id) == [server.id])
+    }
+
+    @Test("沒有任何變更時不回報")
+    func reportsNothingWhenUnchanged() {
+        let server = ServerConfig(name: "NAS", host: "example.com", username: "user")
+        let previous = ServerListChangeTracker.snapshot(of: [server])
+        #expect(ServerListChangeTracker.diff(previous: previous, current: [server]).isEmpty)
+    }
+}

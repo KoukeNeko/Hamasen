@@ -26,3 +26,15 @@ extension ServerConfig.StorageMode {
         rawValue
     }
 }
+
+extension ServerConfig {
+    /// Everything about a server that its Finder folder shows or obeys.
+    ///
+    /// The change tracker compares these to decide what to report, and the
+    /// folder's item version is built from the same string: announcing a
+    /// change the item does not reflect, or changing an item nobody is told
+    /// about, both leave Finder on stale metadata.
+    public var finderItemToken: String {
+        "\(name)|\(storageMode.versionToken)"
+    }
+}

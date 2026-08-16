@@ -5,9 +5,9 @@ import Foundation
 /// The File Provider extension has no state of its own between calls, so the
 /// previous list is carried inside the sync anchor the system hands back.
 public enum ServerListChangeTracker {
-    /// Server identifier to display name; enough to detect additions,
-    /// removals, and renames, which are the only changes Finder can see at
-    /// the top level.
+    /// Server identifier to the token describing its Finder folder. Detects
+    /// additions, removals, renames, and any other change the folder itself
+    /// carries — the storage mode, which decides its content policy.
     public typealias Snapshot = [String: String]
 
     public struct Diff: Equatable, Sendable {
@@ -20,7 +20,10 @@ public enum ServerListChangeTracker {
     }
 
     public static func snapshot(of configs: [ServerConfig]) -> Snapshot {
-        Dictionary(configs.map { ($0.id.uuidString, $0.name) }, uniquingKeysWith: { first, _ in first })
+        Dictionary(
+            configs.map { ($0.id.uuidString, $0.finderItemToken) },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     /// Encodes a snapshot for use as a sync anchor. Sorted keys keep the
@@ -39,7 +42,7 @@ public enum ServerListChangeTracker {
 
     public static func diff(previous: Snapshot, current configs: [ServerConfig]) -> Diff {
         let current = snapshot(of: configs)
-        let updated = configs.filter { previous[$0.id.uuidString] != $0.name }
+        let updated = configs.filter { previous[$0.id.uuidString] != $0.finderItemToken }
         let removedServerIDs = previous.keys.filter { current[$0] == nil }.sorted()
         return Diff(updated: updated, removedServerIDs: removedServerIDs)
     }
