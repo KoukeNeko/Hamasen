@@ -33,6 +33,17 @@
 				<key>NSExtensionFileProviderActionActivationRule</key>
 				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "srv:").@count == 1</string>
 			</dict>
+			<!-- Every item in the domain, the Hamasen root included, is
+			     somewhere under ~/Library/CloudStorage, so this only needs the
+			     selection to be a single item. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.copyLocalPath</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_COPY_LOCAL_PATH</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1</string>
+			</dict>
 			<!-- Any selection, the Hamasen root included. -->
 			<dict>
 				<key>NSExtensionFileProviderActionIdentifier</key>

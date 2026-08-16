@@ -50,15 +50,16 @@ struct FinderActivationRuleTests {
     /// Every selection the rules are expected to tell apart, with the
     /// entries each one must show.
     private static let expectations: [(selection: [IndexedItem], visible: Set<FinderAction>, label: String)] = [
-        ([datalessFile], [.copyRemotePath, .refresh], "single dataless file"),
-        ([downloadedFile], [.copyRemotePath, .refresh, .freeLocalSpace], "single downloaded file"),
-        ([innerFolder], [.copyRemotePath, .refresh, .freeLocalSpace], "single folder"),
-        ([serverRoot], [.copyRemotePath, .refresh, .unmountServer, .freeLocalSpace], "single server folder"),
-        ([serverRootWithSlash], [.copyRemotePath, .refresh, .unmountServer, .freeLocalSpace], "server folder as srv:<uuid>:/"),
+        ([datalessFile], [.copyRemotePath, .copyLocalPath, .refresh], "single dataless file"),
+        ([downloadedFile], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace], "single downloaded file"),
+        ([innerFolder], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace], "single folder"),
+        ([serverRoot], [.copyRemotePath, .copyLocalPath, .refresh, .unmountServer, .freeLocalSpace], "single server folder"),
+        ([serverRootWithSlash], [.copyRemotePath, .copyLocalPath, .refresh, .unmountServer, .freeLocalSpace], "server folder as srv:<uuid>:/"),
         ([datalessFile, downloadedFile], [.refresh, .freeLocalSpace], "two files, one downloaded"),
         ([datalessFile, innerFolder], [.refresh, .freeLocalSpace], "a file and a folder"),
         ([serverRoot, otherServerRoot], [.refresh, .freeLocalSpace], "two server folders"),
-        ([hamasenRoot], [.refresh, .freeLocalSpace], "the Hamasen root"),
+        // The root has no address on a server, but it does have one on this Mac.
+        ([hamasenRoot], [.copyLocalPath, .refresh, .freeLocalSpace], "the Hamasen root"),
         ([], [], "nothing"),
     ]
 

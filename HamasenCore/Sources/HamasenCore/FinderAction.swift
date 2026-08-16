@@ -9,6 +9,9 @@ import Foundation
 public enum FinderAction: String, CaseIterable, Sendable {
     /// Puts "user@host:/remote/path" of one item on the clipboard.
     case copyRemotePath = "dev.hamasen.action.copyRemotePath"
+    /// Puts the item's path on this Mac — the one under ~/Library/CloudStorage
+    /// that local tools and scripts can open — on the clipboard.
+    case copyLocalPath = "dev.hamasen.action.copyLocalPath"
     /// Asks the system to re-enumerate the mounted servers.
     case refresh = "dev.hamasen.action.refresh"
     /// Removes a server from Finder; only offered on a server's own folder.

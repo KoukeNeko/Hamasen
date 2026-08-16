@@ -68,6 +68,12 @@ enum CustomActionRunner {
             let entity = try singleServerEntity(in: entities)
             try await copyRemotePath(of: entity)
             return nil
+        case .copyLocalPath:
+            guard itemIdentifiers.count == 1, let identifier = itemIdentifiers.first else {
+                throw CustomActionError.notAHamasenItem
+            }
+            try await copyLocalPath(of: identifier)
+            return nil
         case .refresh:
             try await FinderDomain.signalServerListChanged()
             return nil
@@ -98,18 +104,33 @@ enum CustomActionRunner {
         guard let serverID = entity.serverID else { throw CustomActionError.notAHamasenItem }
         let config = try ConnectionRegistry.config(for: serverID)
         let remotePath = RemotePath.resolve(entity.path, against: config.remotePath)
-        let address = "\(config.username)@\(config.host):\(remotePath)"
 
+        try await copyToPasteboard("\(config.username)@\(config.host):\(remotePath)")
+    }
+
+    /// Puts the item's path on this Mac on the clipboard — what a terminal or
+    /// a script needs, as opposed to the address it has on the server.
+    ///
+    /// Only the system knows where a domain is mounted (the folder is named
+    /// after the domain and gains a suffix when an older one is still around),
+    /// so the location is resolved rather than assembled.
+    private static func copyLocalPath(of identifier: NSFileProviderItemIdentifier) async throws {
+        let location = try await FinderDomain.manager().getUserVisibleURL(for: identifier)
+        try await copyToPasteboard(location.path)
+    }
+
+    /// Replaces the clipboard contents from this extension's process.
+    private static func copyToPasteboard(_ text: String) async throws {
         let didWrite = await MainActor.run {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
-            return pasteboard.setString(address, forType: .string)
+            return pasteboard.setString(text, forType: .string)
         }
         guard didWrite else {
-            log.error("Pasteboard refused the remote address")
+            log.error("Pasteboard refused the copied path")
             throw CustomActionError.pasteboardUnavailable
         }
-        log.debug("Copied remote address for \(entity.path)")
+        log.debug("Copied \(text)")
     }
 
     /// Removes the server from the mounted set, then brings the Finder
