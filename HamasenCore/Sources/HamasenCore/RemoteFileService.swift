@@ -67,23 +67,23 @@ extension RemoteFileServiceError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notConnected:
-            return "尚未連線到伺服器"
+            return String(localized: "尚未連線到伺服器", bundle: .module)
         case .connectionFailed(let underlying):
-            return "無法連線到伺服器：\(underlying)"
+            return String(localized: "無法連線到伺服器：\(underlying)", bundle: .module)
         case .authenticationFailed:
-            return "認證失敗，請檢查帳號與密碼"
+            return String(localized: "認證失敗，請檢查帳號與密碼", bundle: .module)
         case .itemNotFound(let path):
-            return "找不到遠端項目：\(path)"
+            return String(localized: "找不到遠端項目：\(path)", bundle: .module)
         case .operationFailed(let operation, let path, let underlying):
-            return "\(operation) 失敗（\(path)）：\(underlying)"
+            return String(localized: "\(operation) 失敗（\(path)）：\(underlying)", bundle: .module)
         case .localFileUnreadable(let url):
-            return "無法讀取本地檔案：\(url.path)"
+            return String(localized: "無法讀取本地檔案：\(url.path)", bundle: .module)
         case .privateKeyPassphraseRequired:
-            return "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼"
+            return String(localized: "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼", bundle: .module)
         case .privateKeyUnreadable(let underlying):
-            return "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：\(underlying)"
+            return String(localized: "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：\(underlying)", bundle: .module)
         case .unsupportedCredentials(let protocolName):
-            return "\(protocolName) 不支援 SSH 金鑰認證，請改用密碼"
+            return String(localized: "\(protocolName) 不支援 SSH 金鑰認證，請改用密碼", bundle: .module)
         }
     }
 }

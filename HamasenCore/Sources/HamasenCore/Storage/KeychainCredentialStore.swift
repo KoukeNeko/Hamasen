@@ -27,15 +27,15 @@ public struct KeychainCredentialStore: Sendable {
         public var errorDescription: String? {
             switch self {
             case .itemNotFound:
-                return "找不到 Keychain 憑證"
+                return String(localized: "找不到 Keychain 憑證", bundle: .module)
             case .unexpectedData:
-                return "Keychain 憑證格式無法辨識"
+                return String(localized: "Keychain 憑證格式無法辨識", bundle: .module)
             case .operationFailed(let status):
-                return "Keychain 操作失敗（\(status): \(Self.message(for: status))）"
+                return String(localized: "Keychain 操作失敗（\(status): \(Self.message(for: status))）", bundle: .module)
             case .trustedApplicationUnavailable(let path, let status):
-                return "無法建立受信任程式 \(path)（\(status): \(Self.message(for: status))）"
+                return String(localized: "無法建立受信任程式 \(path)（\(status): \(Self.message(for: status))）", bundle: .module)
             case .accessCreationFailed(let status):
-                return "無法建立 Keychain ACL（\(status): \(Self.message(for: status))）"
+                return String(localized: "無法建立 Keychain ACL（\(status): \(Self.message(for: status))）", bundle: .module)
             }
         }
 

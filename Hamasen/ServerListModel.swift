@@ -21,7 +21,7 @@ final class ServerListModel {
         do {
             return try ServerConfigStore()
         } catch {
-            errorMessage = "無法存取 App Group 容器，請確認簽章設定（App Groups）"
+            errorMessage = String(localized: "無法存取 App Group 容器，請確認簽章設定（App Groups）")
             return nil
         }
     }
@@ -30,7 +30,7 @@ final class ServerListModel {
         do {
             return try MountedServersStore()
         } catch {
-            errorMessage = "無法存取 App Group 容器，請確認簽章設定（App Groups）"
+            errorMessage = String(localized: "無法存取 App Group 容器，請確認簽章設定（App Groups）")
             return nil
         }
     }
@@ -52,7 +52,7 @@ final class ServerListModel {
             servers = try configStore.loadServers()
             mountedServerIDs = try mountedStore.loadMountedServerIDs()
         } catch {
-            errorMessage = "讀取伺服器設定失敗：\(error.localizedDescription)"
+            errorMessage = String(localized: "讀取伺服器設定失敗：\(error.localizedDescription)")
             return
         }
         await migrateLegacyDomains()
@@ -94,7 +94,7 @@ final class ServerListModel {
             try credentials.apply(to: config.id, using: credentialStore)
             servers = updatedServers
         } catch {
-            errorMessage = "儲存伺服器失敗：\(error.localizedDescription)"
+            errorMessage = String(localized: "儲存伺服器失敗：\(error.localizedDescription)")
             return false
         }
 
@@ -117,7 +117,7 @@ final class ServerListModel {
             try credentialStore.deleteAllCredentials(for: config.id)
             servers = remainingServers
         } catch {
-            errorMessage = "刪除伺服器失敗：\(error.localizedDescription)"
+            errorMessage = String(localized: "刪除伺服器失敗：\(error.localizedDescription)")
         }
     }
 
@@ -140,7 +140,7 @@ final class ServerListModel {
             // (unmounting from Finder), so take the remaining set from it.
             mountedServerIDs = try mountedStore.removeMountedServer(config.id)
         } catch {
-            errorMessage = "儲存掛載狀態失敗：\(error.localizedDescription)"
+            errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
             return
         }
         await syncDomainRegistration()
@@ -164,7 +164,7 @@ final class ServerListModel {
             }
             NSWorkspace.shared.open(url)
         } catch {
-            errorMessage = "無法開啟 Finder 位置：\(error.localizedDescription)"
+            errorMessage = String(localized: "無法開啟 Finder 位置：\(error.localizedDescription)")
         }
     }
 
@@ -232,7 +232,7 @@ final class ServerListModel {
         do {
             try mountedStore.saveMountedServerIDs(mountedServerIDs)
         } catch {
-            errorMessage = "儲存掛載狀態失敗：\(error.localizedDescription)"
+            errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
         }
     }
 
@@ -245,7 +245,7 @@ final class ServerListModel {
                 hasMountedServers: !mountedServerIDs.isEmpty
             )
         } catch {
-            errorMessage = "更新 Finder 位置失敗：\(error.localizedDescription)"
+            errorMessage = String(localized: "更新 Finder 位置失敗：\(error.localizedDescription)")
         }
         // Content that never made it to the server survives the unmount;
         // showing it is the only way the user learns it is there.

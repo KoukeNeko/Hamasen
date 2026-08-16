@@ -16,7 +16,7 @@ enum PrivateKeyImporter {
         var errorDescription: String? {
             switch self {
             case .unreadableFile(let underlying):
-                return "無法讀取金鑰檔案：\(underlying)"
+                return String(localized: "無法讀取金鑰檔案：\(underlying)")
             }
         }
     }

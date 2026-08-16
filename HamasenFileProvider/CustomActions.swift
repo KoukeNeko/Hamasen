@@ -203,15 +203,15 @@ enum CustomActionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unknownAction(let identifier):
-            return "不支援的動作：\(identifier)"
+            return String(localized: "不支援的動作：\(identifier)")
         case .notAHamasenItem:
-            return "這個項目不屬於 Hamasen 掛載"
+            return String(localized: "這個項目不屬於 Hamasen 掛載")
         case .notAServerFolder:
-            return "只能從伺服器資料夾卸載"
+            return String(localized: "只能從伺服器資料夾卸載")
         case .pasteboardUnavailable:
-            return "無法寫入剪貼簿"
+            return String(localized: "無法寫入剪貼簿")
         case .freeLocalSpaceFailed(let failureCount, let reason):
-            return "\(failureCount) 個項目無法釋放本機空間：\(reason)"
+            return String(localized: "\(failureCount) 個項目無法釋放本機空間：\(reason)")
         }
     }
 }

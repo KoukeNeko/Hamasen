@@ -94,7 +94,7 @@ public actor SFTPFileService: RemoteFileService {
         do {
             nameBatches = try await sftp.listDirectory(atPath: remoteDirectory)
         } catch {
-            throw Self.mapError(error, operation: "列出目錄", path: path)
+            throw Self.mapError(error, operation: String(localized: "列出目錄", bundle: .module), path: path)
         }
 
         return nameBatches
@@ -115,7 +115,7 @@ public actor SFTPFileService: RemoteFileService {
             let attributes = try await sftp.getAttributes(at: remoteAbsolutePath(for: path))
             return Self.makeRemoteItem(path: path, name: RemotePath.name(of: path), attributes: attributes)
         } catch {
-            throw Self.mapError(error, operation: "讀取屬性", path: path)
+            throw Self.mapError(error, operation: String(localized: "讀取屬性", bundle: .module), path: path)
         }
     }
 
@@ -149,7 +149,7 @@ public actor SFTPFileService: RemoteFileService {
                 }
             }
         } catch {
-            throw Self.mapError(error, operation: "下載", path: path)
+            throw Self.mapError(error, operation: String(localized: "下載", bundle: .module), path: path)
         }
     }
 
@@ -180,7 +180,7 @@ public actor SFTPFileService: RemoteFileService {
                 return collected
             }
         } catch {
-            throw Self.mapError(error, operation: "下載區間", path: path)
+            throw Self.mapError(error, operation: String(localized: "下載區間", bundle: .module), path: path)
         }
     }
 
@@ -202,7 +202,7 @@ public actor SFTPFileService: RemoteFileService {
                 try await file.write(ByteBuffer(bytes: localData))
             }
         } catch {
-            throw Self.mapError(error, operation: "上傳", path: path)
+            throw Self.mapError(error, operation: String(localized: "上傳", bundle: .module), path: path)
         }
     }
 
@@ -211,7 +211,7 @@ public actor SFTPFileService: RemoteFileService {
         do {
             try await sftp.createDirectory(atPath: remoteAbsolutePath(for: path))
         } catch {
-            throw Self.mapError(error, operation: "建立目錄", path: path)
+            throw Self.mapError(error, operation: String(localized: "建立目錄", bundle: .module), path: path)
         }
     }
 
@@ -220,7 +220,7 @@ public actor SFTPFileService: RemoteFileService {
         do {
             try await sftp.remove(at: remoteAbsolutePath(for: path))
         } catch {
-            throw Self.mapError(error, operation: "刪除檔案", path: path)
+            throw Self.mapError(error, operation: String(localized: "刪除檔案", bundle: .module), path: path)
         }
     }
 
@@ -239,7 +239,7 @@ public actor SFTPFileService: RemoteFileService {
         do {
             try await sftp.rmdir(at: remoteAbsolutePath(for: path))
         } catch {
-            throw Self.mapError(error, operation: "刪除目錄", path: path)
+            throw Self.mapError(error, operation: String(localized: "刪除目錄", bundle: .module), path: path)
         }
     }
 
@@ -251,7 +251,7 @@ public actor SFTPFileService: RemoteFileService {
                 to: remoteAbsolutePath(for: newPath)
             )
         } catch {
-            throw Self.mapError(error, operation: "移動", path: oldPath)
+            throw Self.mapError(error, operation: String(localized: "移動", bundle: .module), path: oldPath)
         }
     }
 

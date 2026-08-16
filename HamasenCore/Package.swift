@@ -3,6 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "HamasenCore",
+    // The user-facing error strings are written in Traditional Chinese and
+    // are their own catalog keys, so that is the language they fall back to.
+    defaultLocalization: "zh-Hant",
     platforms: [
         .macOS(.v15),
         .iOS(.v18),
@@ -25,6 +28,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Citadel", package: "Citadel"),
             ],
+            resources: [.process("Localizable.xcstrings")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

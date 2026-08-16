@@ -221,6 +221,38 @@
         }
       }
     },
+    "儲存伺服器失敗：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save the server: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバを保存できませんでした：%@"
+          }
+        }
+      }
+    },
+    "儲存掛載狀態失敗：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save the mount state: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マウント状態を保存できませんでした：%@"
+          }
+        }
+      }
+    },
     "儲存變更": {
       "localizations": {
         "en": {
@@ -281,6 +313,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "サーバを削除…"
+          }
+        }
+      }
+    },
+    "刪除伺服器失敗：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not delete the server: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバを削除できませんでした：%@"
           }
         }
       }
@@ -653,6 +701,22 @@
         }
       }
     },
+    "更新 Finder 位置失敗：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not update the Finder location: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderの場所を更新できませんでした：%@"
+          }
+        }
+      }
+    },
     "此金鑰需要密碼": {
       "localizations": {
         "en": {
@@ -681,6 +745,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "接続をテスト"
+          }
+        }
+      }
+    },
+    "無法存取 App Group 容器，請確認簽章設定（App Groups）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not reach the App Group container. Check the App Groups entitlement."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Groupコンテナにアクセスできません。App Groupsの設定を確認してください。"
+          }
+        }
+      }
+    },
+    "無法讀取金鑰檔案：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read the key file: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鍵ファイルを読み込めませんでした：%@"
+          }
+        }
+      }
+    },
+    "無法開啟 Finder 位置：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not open the Finder location: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderの場所を開けませんでした：%@"
           }
         }
       }
@@ -873,6 +985,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "言語"
+          }
+        }
+      }
+    },
+    "讀取伺服器設定失敗：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load the server settings: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバ設定を読み込めませんでした：%@"
           }
         }
       }

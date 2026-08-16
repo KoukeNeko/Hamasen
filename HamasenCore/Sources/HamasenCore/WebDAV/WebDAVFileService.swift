@@ -267,13 +267,13 @@ public actor WebDAVFileService: RemoteFileService {
             do {
                 return try await session.download(for: request)
             } catch {
-                throw Self.mapTransportError(error, operation: "下載", path: path)
+                throw Self.mapTransportError(error, operation: String(localized: "下載", bundle: .module), path: path)
             }
         }
         // The downloaded body is ours to clean up until it has been moved.
         defer { try? FileManager.default.removeItem(at: temporaryURL) }
 
-        try Self.validate(response, method: .get, operation: "下載", path: path)
+        try Self.validate(response, method: .get, operation: String(localized: "下載", bundle: .module), path: path)
         try? FileManager.default.removeItem(at: localURL)
         do {
             try FileManager.default.moveItem(at: temporaryURL, to: localURL)
@@ -306,14 +306,14 @@ public actor WebDAVFileService: RemoteFileService {
                 // the whole file, which must not be buffered in memory.
                 return try await session.download(for: request)
             } catch {
-                throw Self.mapTransportError(error, operation: "下載區間", path: path)
+                throw Self.mapTransportError(error, operation: String(localized: "下載區間", bundle: .module), path: path)
             }
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             try? FileManager.default.removeItem(at: bodyURL)
             throw RemoteFileServiceError.operationFailed(
-                operation: "下載區間", path: path, underlying: "非 HTTP 回應"
+                operation: String(localized: "下載區間", bundle: .module), path: path, underlying: "非 HTTP 回應"
             )
         }
 
@@ -337,21 +337,21 @@ public actor WebDAVFileService: RemoteFileService {
             // necessarily the offset that was requested.
             guard let start = Self.contentRangeStart(httpResponse) else {
                 throw RemoteFileServiceError.operationFailed(
-                    operation: "下載區間", path: path, underlying: "206 回應缺少 Content-Range"
+                    operation: String(localized: "下載區間", bundle: .module), path: path, underlying: "206 回應缺少 Content-Range"
                 )
             }
             let skip = offset - start
             guard skip >= 0 else {
                 throw RemoteFileServiceError.operationFailed(
-                    operation: "下載區間", path: path, underlying: "伺服器回傳的區間起點不符"
+                    operation: String(localized: "下載區間", bundle: .module), path: path, underlying: "伺服器回傳的區間起點不符"
                 )
             }
             return try Self.readSlice(from: bodyURL, offset: skip, length: length, path: path)
         default:
             defer { try? FileManager.default.removeItem(at: bodyURL) }
-            try Self.validate(response, method: .get, operation: "下載區間", path: path)
+            try Self.validate(response, method: .get, operation: String(localized: "下載區間", bundle: .module), path: path)
             throw RemoteFileServiceError.operationFailed(
-                operation: "下載區間", path: path, underlying: "HTTP \(httpResponse.statusCode)"
+                operation: String(localized: "下載區間", bundle: .module), path: path, underlying: "HTTP \(httpResponse.statusCode)"
             )
         }
     }
@@ -362,24 +362,24 @@ public actor WebDAVFileService: RemoteFileService {
             do {
                 return try await session.upload(for: request, fromFile: localURL)
             } catch {
-                throw Self.mapTransportError(error, operation: "上傳", path: path)
+                throw Self.mapTransportError(error, operation: String(localized: "上傳", bundle: .module), path: path)
             }
         }
-        try Self.validate(response, method: .put, operation: "上傳", path: path)
+        try Self.validate(response, method: .put, operation: String(localized: "上傳", bundle: .module), path: path)
         discardCachedBody(forPath: path)
     }
 
     public func createDirectory(at path: String) async throws {
-        try await perform(method: .mkcol, path: path, operation: "建立目錄")
+        try await perform(method: .mkcol, path: path, operation: String(localized: "建立目錄", bundle: .module))
     }
 
     public func deleteFile(at path: String) async throws {
-        try await perform(method: .delete, path: path, operation: "刪除檔案")
+        try await perform(method: .delete, path: path, operation: String(localized: "刪除檔案", bundle: .module))
         discardCachedBody(forPath: path)
     }
 
     public func deleteDirectory(at path: String) async throws {
-        try await perform(method: .delete, path: path, operation: "刪除目錄")
+        try await perform(method: .delete, path: path, operation: String(localized: "刪除目錄", bundle: .module))
     }
 
     public func moveItem(from oldPath: String, to newPath: String) async throws {
@@ -391,10 +391,10 @@ public actor WebDAVFileService: RemoteFileService {
             do {
                 return try await session.data(for: request)
             } catch {
-                throw Self.mapTransportError(error, operation: "移動", path: oldPath)
+                throw Self.mapTransportError(error, operation: String(localized: "移動", bundle: .module), path: oldPath)
             }
         }
-        try Self.validate(response, method: .move, operation: "移動", path: oldPath)
+        try Self.validate(response, method: .move, operation: String(localized: "移動", bundle: .module), path: oldPath)
         discardCachedBody(forPath: oldPath)
     }
 
@@ -469,7 +469,7 @@ public actor WebDAVFileService: RemoteFileService {
         // malformed stored config must be rejected before it gets there.
         guard (1...65535).contains(config.port) else {
             throw RemoteFileServiceError.operationFailed(
-                operation: "組合網址", path: mountRelativePath,
+                operation: String(localized: "組合網址", bundle: .module), path: mountRelativePath,
                 underlying: "無效的連接埠：\(config.port)"
             )
         }
@@ -484,7 +484,7 @@ public actor WebDAVFileService: RemoteFileService {
 
         guard let url = components.url else {
             throw RemoteFileServiceError.operationFailed(
-                operation: "組合網址", path: mountRelativePath, underlying: "無效的主機或路徑"
+                operation: String(localized: "組合網址", bundle: .module), path: mountRelativePath, underlying: "無效的主機或路徑"
             )
         }
         return url
@@ -564,7 +564,7 @@ public actor WebDAVFileService: RemoteFileService {
             return try file.read(upToCount: length) ?? Data()
         } catch {
             throw RemoteFileServiceError.operationFailed(
-                operation: "下載區間", path: path, underlying: error.localizedDescription
+                operation: String(localized: "下載區間", bundle: .module), path: path, underlying: error.localizedDescription
             )
         }
     }

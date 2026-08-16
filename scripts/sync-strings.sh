@@ -20,6 +20,52 @@ CHECK_ONLY=0
 # Info.plist rather than in source, so they are not extracted.
 readonly CATALOG="$PROJECT_ROOT/Hamasen/Localizable.xcstrings"
 
+# HamasenCore is a Swift package, and Xcode does not run its string extractor
+# over package targets: `swift build -Xswiftc -emit-localized-strings` emits
+# nothing for this target's own sources (only for its dependencies), verified
+# on Xcode 27 beta 5. Until that works, the package's keys are read straight
+# out of the uniform `String(localized: "…", bundle: .module)` call sites, so
+# the catalog is still generated from the source rather than maintained by
+# hand. Everything else — merging, format specifiers, staleness — is left to
+# xcstringstool, exactly as for the app.
+readonly PACKAGE_CATALOG="$PROJECT_ROOT/HamasenCore/Sources/HamasenCore/Localizable.xcstrings"
+
+sync_package_catalog() {
+    echo "==> Syncing HamasenCore's catalog"
+    /usr/bin/python3 - "$PROJECT_ROOT/HamasenCore/Sources/HamasenCore" "$PACKAGE_CATALOG" <<'EOF'
+import json, pathlib, re, sys
+
+sources_root, catalog_path = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+# Matches the call sites and rewrites Swift interpolations into the format
+# specifiers a catalog key uses, the way the compiler's extractor would.
+call = re.compile(r'String\(localized: "((?:[^"\\]|\\.)*)"')
+interpolation = re.compile(r'\\\(([^()]*(?:\([^()]*\))?[^()]*)\)')
+
+def key_for(literal):
+    def specifier(match):
+        expression = match.group(1)
+        return "%lld" if re.search(r'\bcount\b|Count\b', expression) else "%@"
+    return interpolation.sub(specifier, literal)
+
+keys = []
+for path in sorted(sources_root.rglob("*.swift")):
+    for literal in call.findall(path.read_text()):
+        key = key_for(literal)
+        if key not in keys:
+            keys.append(key)
+
+catalog = json.loads(catalog_path.read_text())
+strings = catalog.setdefault("strings", {})
+for key in keys:
+    strings.setdefault(key, {"extractionState": "manual", "localizations": {}})
+for stale in set(strings) - set(keys):
+    del strings[stale]
+catalog["strings"] = {key: strings[key] for key in sorted(strings)}
+catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n")
+print(f"    {len(keys)} keys")
+EOF
+}
+
 resolve_developer_dir() {
     local selected
     selected="$(xcode-select -p 2>/dev/null || true)"
@@ -76,3 +122,5 @@ if (( CHECK_ONLY )); then
     rm -f "$before"
     echo "==> String Catalog is up to date"
 fi
+
+sync_package_catalog

@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld 個項目無法釋放本機空間：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not free local space for %1$lld items: %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld個の項目でローカルの空き容量を増やせませんでした：%2$@"
+          }
+        }
+      }
+    },
     "ACTION_COPY_LOCAL_PATH": {
       "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
       "extractionState": "manual",
@@ -11,16 +27,16 @@
             "value": "Copy Local Path"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "複製本機路徑"
-          }
-        },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ローカルパスをコピー"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製本機路徑"
           }
         }
       }
@@ -35,16 +51,16 @@
             "value": "Copy Remote Path"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "複製遠端路徑"
-          }
-        },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "リモートパスをコピー"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製遠端路徑"
           }
         }
       }
@@ -59,16 +75,16 @@
             "value": "Free Up Local Space"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "釋放本機空間"
-          }
-        },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ローカルの空き容量を増やす"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "釋放本機空間"
           }
         }
       }
@@ -83,16 +99,16 @@
             "value": "Refresh"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新整理"
-          }
-        },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "更新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新整理"
           }
         }
       }
@@ -107,16 +123,80 @@
             "value": "Unmount Server from Finder"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバをFinderから取り出す"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "從 Finder 卸載此伺服器"
           }
+        }
+      }
+    },
+    "不支援的動作：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsupported action: %@"
+          }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このサーバをFinderから取り出す"
+            "value": "サポートされていない操作：%@"
+          }
+        }
+      }
+    },
+    "只能從伺服器資料夾卸載": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only a server folder can be unmounted"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバのフォルダからのみ取り出せます"
+          }
+        }
+      }
+    },
+    "無法寫入剪貼簿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not write to the clipboard"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリップボードに書き込めませんでした"
+          }
+        }
+      }
+    },
+    "這個項目不屬於 Hamasen 掛載": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This item is not part of a Hamasen mount"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目はHamasenのマウントに含まれていません"
           }
         }
       }

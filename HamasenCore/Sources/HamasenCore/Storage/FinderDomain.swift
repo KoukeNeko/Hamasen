@@ -68,7 +68,7 @@ public enum FinderDomainError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notRegistered:
-            return "Hamasen 目前沒有掛載中的位置"
+            return String(localized: "Hamasen 目前沒有掛載中的位置", bundle: .module)
         }
     }
 }

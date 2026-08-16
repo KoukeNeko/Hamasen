@@ -103,13 +103,13 @@ extension OpenSSHPrivateKey.ParseError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notAnOpenSSHKey:
-            return "這不是 OpenSSH 私密金鑰檔案"
+            return String(localized: "這不是 OpenSSH 私密金鑰檔案", bundle: .module)
         case .legacyPEMFormat:
-            return "這是舊式 PEM 金鑰，請以 ssh-keygen -p -f <金鑰> 轉換為 OpenSSH 格式"
+            return String(localized: "這是舊式 PEM 金鑰，請以 ssh-keygen -p -f <金鑰> 轉換為 OpenSSH 格式", bundle: .module)
         case .malformed:
-            return "金鑰檔案內容損毀或格式不正確"
+            return String(localized: "金鑰檔案內容損毀或格式不正確", bundle: .module)
         case .unsupportedKeyType(let keyTypeName):
-            return "不支援的金鑰類型：\(keyTypeName)（目前支援 Ed25519 與 RSA）"
+            return String(localized: "不支援的金鑰類型：\(keyTypeName)（目前支援 Ed25519 與 RSA）", bundle: .module)
         }
     }
 }
