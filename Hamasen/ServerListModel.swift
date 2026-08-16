@@ -134,9 +134,15 @@ final class ServerListModel {
     }
 
     func unmount(_ config: ServerConfig) async {
-        guard mountedServerIDs.contains(config.id) else { return }
-        mountedServerIDs.remove(config.id)
-        persistMountedSet()
+        guard mountedServerIDs.contains(config.id), let mountedStore else { return }
+        do {
+            // The store is the truth the File Provider extension also edits
+            // (unmounting from Finder), so take the remaining set from it.
+            mountedServerIDs = try mountedStore.removeMountedServer(config.id)
+        } catch {
+            errorMessage = "儲存掛載狀態失敗：\(error.localizedDescription)"
+            return
+        }
         await syncDomainRegistration()
     }
 

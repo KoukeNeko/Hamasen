@@ -31,4 +31,16 @@ public struct MountedServersStore: Sendable {
         let data = try JSONEncoder().encode(serverIDs)
         try data.write(to: fileURL, options: .atomic)
     }
+
+    /// Takes one server out of the mounted set and returns what remains.
+    ///
+    /// Both the app and the File Provider extension unmount, so the
+    /// read-modify-write lives here rather than in each of them.
+    @discardableResult
+    public func removeMountedServer(_ serverID: UUID) throws -> Set<UUID> {
+        var mountedServerIDs = try loadMountedServerIDs()
+        guard mountedServerIDs.remove(serverID) != nil else { return mountedServerIDs }
+        try saveMountedServerIDs(mountedServerIDs)
+        return mountedServerIDs
+    }
 }

@@ -1,8 +1,9 @@
 #!/bin/bash
 # Verification harness for Hamasen.
 #
-# 1. Runs the HamasenCore test suite (hermetic, in-process SFTP server).
-# 2. Builds the app + File Provider extension with xcodebuild.
+# 1. Lints the extension Info.plists (the Finder context menu is declared there).
+# 2. Runs the HamasenCore test suite (hermetic, in-process SFTP server).
+# 3. Builds the app + File Provider extension with xcodebuild.
 #
 # Exits non-zero on the first failure.
 set -euo pipefail
@@ -31,10 +32,13 @@ export DEVELOPER_DIR
 
 echo "==> Using DEVELOPER_DIR: ${DEVELOPER_DIR}"
 
-echo "==> [1/2] Running HamasenCore tests"
+echo "==> [1/3] Linting extension Info.plists"
+plutil -lint "${PROJECT_ROOT}"/Config/*Info.plist
+
+echo "==> [2/3] Running HamasenCore tests"
 (cd "${PROJECT_ROOT}/HamasenCore" && swift test)
 
-echo "==> [2/2] Building app + File Provider extension"
+echo "==> [3/3] Building app + File Provider extension"
 # pipefail (set above) carries xcodebuild's exit status through the grep, so a
 # failed build fails the script instead of being swallowed.
 xcodebuild \

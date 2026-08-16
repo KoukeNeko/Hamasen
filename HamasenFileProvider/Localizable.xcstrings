@@ -1,0 +1,60 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "ACTION_COPY_REMOTE_PATH" : {
+      "comment" : "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Remote Path"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製遠端路徑"
+          }
+        }
+      }
+    },
+    "ACTION_REFRESH" : {
+      "comment" : "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新整理"
+          }
+        }
+      }
+    },
+    "ACTION_UNMOUNT_SERVER" : {
+      "comment" : "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unmount Server from Finder"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Finder 卸載此伺服器"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

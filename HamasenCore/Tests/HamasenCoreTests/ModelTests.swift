@@ -118,6 +118,24 @@ struct MountedServersStoreTests {
         try store.saveMountedServerIDs(mountedIDs)
         #expect(try store.loadMountedServerIDs() == mountedIDs)
     }
+
+    @Test("移除掛載會寫回並回傳剩餘集合；不存在的 ID 不改動")
+    func removeMountedServerPersistsRemainder() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mounted-test-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let store = MountedServersStore(fileURL: fileURL)
+        let removedID = UUID()
+        let keptID = UUID()
+        try store.saveMountedServerIDs([removedID, keptID])
+
+        #expect(try store.removeMountedServer(removedID) == [keptID])
+        #expect(try store.loadMountedServerIDs() == [keptID])
+
+        #expect(try store.removeMountedServer(UUID()) == [keptID])
+        #expect(try store.loadMountedServerIDs() == [keptID])
+    }
 }
 
 @Suite("ServerConfigStore")

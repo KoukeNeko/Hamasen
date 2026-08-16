@@ -64,6 +64,12 @@ public struct HamasenLog: Sendable {
         logger.debug("\(message, privacy: .public)")
     }
 
+    /// Facts the user may need later (not failures), kept regardless of the
+    /// preference — the notice level is persisted by default.
+    public func notice(_ message: String) {
+        logger.notice("\(message, privacy: .public)")
+    }
+
     /// Failures are always logged regardless of the preference.
     public func error(_ message: String) {
         logger.error("\(message, privacy: .public)")

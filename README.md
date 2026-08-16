@@ -55,11 +55,12 @@ Hamasen.xcodeproj
 ├── Hamasen                  Main app (SwiftUI)
 │   └── Server list, add/edit connections, mount/unmount
 ├── HamasenFileProvider      File Provider extension
-│   └── NSFileProviderReplicatedExtension: enumerate / fetch / create / modify / delete
-├── HamasenFinderHelper      Nested helper app
-│   └── Hosts the FinderSync extension for stable Finder registration
-├── HamasenFinderSync        FinderSync extension
-│   └── Context menu actions for mounted files and server roots
+│   └── NSFileProviderReplicatedExtension: enumerate / fetch / create / modify / delete,
+│       plus the Finder context-menu actions (NSFileProviderCustomAction)
+├── HamasenFinderHelper      Nested helper app (legacy, slated for removal)
+│   └── Hosts the FinderSync extension
+├── HamasenFinderSync        FinderSync extension (legacy, slated for removal)
+│   └── Superseded by the File Provider custom actions
 ├── HamasenCore              Local Swift package
 │   ├── RemoteFileService        Protocol abstraction (FTP can plug in later)
 │   ├── SFTPFileService          Citadel (SwiftNIO SSH) implementation
@@ -87,15 +88,16 @@ Key design points:
   calls.
 - Server folders cannot be renamed, moved, or deleted from Finder — they are
   managed in the app. Cross-server moves fall back to copy + delete.
-- Context menu entries come from a second extension (`HamasenFinderSync`), a
-  **FinderSync** extension hosted inside the nested `HamasenFinderHelper.app`.
-  On macOS this is the mechanism Finder builds its context menu from —
-  `NSExtensionFileProviderActions` is the iOS Files app equivalent and Finder
-  never queries it, which is why providers that add menu entries (Google
-  Drive, Synology Drive) ship a Finder helper app that embeds a FinderSync
-  extension beside the file provider. Finder hands it plain file URLs, so
-  `MountLocator` maps them back to a server by matching the first path
-  component under the mount against the server's name.
+- Context menu entries are **File Provider custom actions**: the extension
+  declares them in its Info.plist (`NSExtensionFileProviderActions`, with
+  activation rules over `fileproviderItems`) and runs them through
+  `NSFileProviderCustomAction`. This is how Google Drive and Synology Drive
+  add their entries; Finder never asks a FinderSync extension for menus on
+  `~/Library/CloudStorage` paths. `fileproviderctl evaluate <path>` shows the
+  rules and their verdicts without opening Finder, and
+  `FinderActivationRuleTests` pins the shipped plist. The FinderSync helper
+  (`HamasenFinderHelper.app` / `HamasenFinderSync`) predates this and is
+  slated for removal.
 
 ## Development
 
@@ -182,9 +184,8 @@ only validates package tests and the development build.
 - [x] Range requests: opening a large file fetches only the bytes the system
       asks for, rather than downloading the whole thing
 - [x] Finder context menu: copy an item's remote address, refresh, unmount a
-      server (needs enabling once under System Settings → General → Login
-      Items & Extensions → Finder Extensions, as macOS requires for every
-      Finder extension)
+      server — provided by the File Provider extension itself, so nothing
+      needs enabling in System Settings
 - [ ] Planned: FTP/FTPS, host key verification (TOFU), streaming uploads,
       remote change tracking
 

@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Shown by Finder next to this provider's context-menu entries; other
+	     providers (Google Drive, Synology Drive) give their extension an icon
+	     of its own for the same reason. -->
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>
@@ -10,6 +15,43 @@
 		<string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
 		<key>NSExtensionFileProviderSupportsEnumeration</key>
 		<true/>
+		<!-- Finder context menu entries, run through NSFileProviderCustomAction.
+		     The system evaluates each rule against `fileproviderItems` (the
+		     selection, as indexed items) and `domainUserInfo`; `$item.itemIdentifier`
+		     is this provider's own identifier, "srv:<uuid>" for a server's folder
+		     and "srv:<uuid>:<path>" inside one (see ItemIdentifierMapper). Names
+		     are keys into Localizable.xcstrings. FinderActivationRuleTests pins
+		     identifiers and rules to the Swift side. -->
+		<key>NSExtensionFileProviderActions</key>
+		<array>
+			<!-- One item that lives on a server; the Hamasen root has no address. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.copyRemotePath</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_COPY_REMOTE_PATH</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "srv:").@count == 1</string>
+			</dict>
+			<!-- Any selection, the Hamasen root included. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.refresh</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_REFRESH</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count &gt;= 1</string>
+			</dict>
+			<!-- Exactly one item, and it is a server's own top-level folder. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.unmountServer</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_UNMOUNT_SERVER</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier MATCHES "srv:[0-9A-Fa-f-]{36}(:/)?").@count == 1</string>
+			</dict>
+		</array>
 	</dict>
 </dict>
 </plist>
