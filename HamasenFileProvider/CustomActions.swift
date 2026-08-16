@@ -77,6 +77,9 @@ enum CustomActionRunner {
                 throw CustomActionError.notAServerFolder
             }
             return try await unmountServer(serverID)
+        case .freeLocalSpace:
+            try await freeLocalSpace(of: entities)
+            return nil
         }
     }
 
@@ -121,6 +124,40 @@ enum CustomActionRunner {
         return { await removeDomainPreservingEdits() }
     }
 
+    /// Makes the selection dataless again. The system does the actual work
+    /// and refuses anything unsafe to drop — unsynced edits, open files — so
+    /// one item's refusal must not stop the rest; the failures are summed up
+    /// in a single error for Finder to show.
+    private static func freeLocalSpace(of entities: [ProviderEntity]) async throws {
+        let manager = try FinderDomain.manager()
+        var failures: [Error] = []
+        for identifier in try evictionTargets(for: entities) {
+            try Task.checkCancellation()
+            do {
+                try await manager.evictItem(identifier: identifier)
+            } catch {
+                failures.append(error)
+                log.error("Could not free local space for \(identifier.rawValue): \(error.localizedDescription)")
+            }
+        }
+        if let firstFailure = failures.first {
+            throw CustomActionError.freeLocalSpaceFailed(
+                failureCount: failures.count, reason: firstFailure.localizedDescription
+            )
+        }
+    }
+
+    /// The Hamasen root is not an item that can be evicted; freeing it means
+    /// freeing every mounted server, which is what a user right-clicking the
+    /// location expects.
+    private static func evictionTargets(for entities: [ProviderEntity]) throws -> [NSFileProviderItemIdentifier] {
+        guard entities.contains(.root) else {
+            return entities.map(ItemIdentifierMapper.identifier(for:))
+        }
+        return try MountedServersStore().loadMountedServerIDs()
+            .map { ItemIdentifierMapper.identifier(for: .serverRoot($0)) }
+    }
+
     /// Content that never reached the server survives the removal, but by the
     /// time its location is known this process may already be gone, so it is
     /// recorded rather than revealed.
@@ -140,6 +177,7 @@ enum CustomActionError: LocalizedError {
     case notAHamasenItem
     case notAServerFolder
     case pasteboardUnavailable
+    case freeLocalSpaceFailed(failureCount: Int, reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -151,6 +189,8 @@ enum CustomActionError: LocalizedError {
             return "只能從伺服器資料夾卸載"
         case .pasteboardUnavailable:
             return "無法寫入剪貼簿"
+        case .freeLocalSpaceFailed(let failureCount, let reason):
+            return "\(failureCount) 個項目無法釋放本機空間：\(reason)"
         }
     }
 }

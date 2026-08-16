@@ -183,9 +183,10 @@ only validates package tests and the development build.
 - [x] Per-server folders under a single Finder location
 - [x] Range requests: opening a large file fetches only the bytes the system
       asks for, rather than downloading the whole thing
-- [x] Finder context menu: copy an item's remote address, refresh, unmount a
-      server — provided by the File Provider extension itself, so nothing
-      needs enabling in System Settings
+- [x] Finder context menu: copy an item's remote address, refresh, free up
+      local space (evict downloaded copies), unmount a server — provided by
+      the File Provider extension itself, so nothing needs enabling in System
+      Settings
 - [ ] Planned: FTP/FTPS, host key verification (TOFU), streaming uploads,
       remote change tracking
 

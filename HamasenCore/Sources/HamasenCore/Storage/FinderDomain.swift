@@ -57,10 +57,16 @@ public enum FinderDomain {
     /// ignores signals for any other container and propagates working-set
     /// changes to the UI itself.
     public static func signalServerListChanged() async throws {
+        try await manager().signalEnumerator(for: .workingSet)
+    }
+
+    /// The system's handle on the domain, which exists only while the domain
+    /// is registered.
+    public static func manager() throws -> NSFileProviderManager {
         guard let manager = NSFileProviderManager(for: domain) else {
             throw FinderDomainError.notRegistered
         }
-        try await manager.signalEnumerator(for: .workingSet)
+        return manager
     }
 
     /// Stores the mount's on-disk location in the shared defaults, for the

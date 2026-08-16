@@ -13,4 +13,6 @@ public enum FinderAction: String, CaseIterable, Sendable {
     case refresh = "dev.hamasen.action.refresh"
     /// Removes a server from Finder; only offered on a server's own folder.
     case unmountServer = "dev.hamasen.action.unmountServer"
+    /// Evicts the local copies of the selection so they become dataless again.
+    case freeLocalSpace = "dev.hamasen.action.freeLocalSpace"
 }

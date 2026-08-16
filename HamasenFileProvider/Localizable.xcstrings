@@ -19,6 +19,24 @@
         }
       }
     },
+    "ACTION_FREE_LOCAL_SPACE" : {
+      "comment" : "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free Up Local Space"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "釋放本機空間"
+          }
+        }
+      }
+    },
     "ACTION_REFRESH" : {
       "comment" : "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
       "extractionState" : "manual",

@@ -51,6 +51,17 @@
 				<key>NSExtensionFileProviderActionActivationRule</key>
 				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier MATCHES "srv:[0-9A-Fa-f-]{36}(:/)?").@count == 1</string>
 			</dict>
+			<!-- Something in the selection can hold local content: a folder (its
+			     subtree may be downloaded) or a downloaded file. A lone dataless
+			     file has nothing to free. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.freeLocalSpace</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_FREE_LOCAL_SPACE</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY(fileproviderItems, $item, $item.isFolder == YES OR $item.isDownloaded == YES).@count &gt; 0</string>
+			</dict>
 		</array>
 	</dict>
 </dict>
