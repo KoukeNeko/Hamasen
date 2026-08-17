@@ -39,11 +39,14 @@ public enum CacheEvictionPlan {
     ///   - items: every materialized file, from any server.
     ///   - policies: the policy per server. A server absent from this map is
     ///     not managed, and nothing of it is dropped.
+    ///   - pinned: identifiers the user asked to keep, which no allowance
+    ///     may drop. A limit says how much to keep, not what.
     ///   - limit: the most identifiers to return, so one pass cannot run
     ///     unboundedly on a large mount.
     public static func itemsToEvict(
         from items: [CachedItem],
         policies: [UUID: CachePolicy],
+        pinned: Set<String> = [],
         limit: Int
     ) -> [String] {
         guard limit > 0 else { return [] }
@@ -53,7 +56,7 @@ public enum CacheEvictionPlan {
             // Stalest first: an item with no date is treated as the stalest,
             // since nothing suggests it is still wanted.
             let owned = items
-                .filter { $0.serverID == serverID }
+                .filter { $0.serverID == serverID && !pinned.contains($0.identifier) }
                 .sorted { lhs, rhs in
                     (lhs.modifiedAt ?? .distantPast) < (rhs.modifiedAt ?? .distantPast)
                 }
@@ -64,7 +67,10 @@ public enum CacheEvictionPlan {
             case .keepNothing:
                 planned.append(contentsOf: owned.map(\.identifier))
             case .keepUpTo(let allowance):
-                var excess = owned.reduce(Int64(0)) { $0 + $1.byteCount } - allowance
+                let pinnedBytes = items
+                    .filter { $0.serverID == serverID && pinned.contains($0.identifier) }
+                    .reduce(Int64(0)) { $0 + $1.byteCount }
+                var excess = owned.reduce(pinnedBytes) { $0 + $1.byteCount } - allowance
                 guard excess > 0 else { continue }
                 for item in owned where excess > 0 {
                     planned.append(item.identifier)

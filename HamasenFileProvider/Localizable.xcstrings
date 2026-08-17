@@ -95,6 +95,30 @@
         }
       }
     },
+    "ACTION_KEEP_ON_MAC": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep on This Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このMacに保持"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留在這台 Mac"
+          }
+        }
+      }
+    },
     "ACTION_REFRESH": {
       "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
       "extractionState": "manual",
@@ -115,6 +139,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新整理"
+          }
+        }
+      }
+    },
+    "ACTION_STOP_KEEPING_ON_MAC": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Keeping on This Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このMacへの保持をやめる"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消保留在這台 Mac"
           }
         }
       }

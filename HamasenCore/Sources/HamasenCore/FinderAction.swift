@@ -18,4 +18,8 @@ public enum FinderAction: String, CaseIterable, Sendable {
     case unmountServer = "dev.hamasen.action.unmountServer"
     /// Evicts the local copies of the selection so they become dataless again.
     case freeLocalSpace = "dev.hamasen.action.freeLocalSpace"
+    /// Keeps the selection on this Mac, exempt from the cache allowance.
+    case keepOnMac = "dev.hamasen.action.keepOnMac"
+    /// Lets the cache allowance drop the selection again.
+    case stopKeepingOnMac = "dev.hamasen.action.stopKeepingOnMac"
 }

@@ -23,13 +23,21 @@ struct FinderActivationRuleTests {
         let identifier: NSFileProviderItemIdentifier
         let isFolder: Bool
         let isDownloaded: Bool
+        var isPinned = false
 
         static func folder(_ entity: ProviderEntity) -> IndexedItem {
             IndexedItem(identifier: ItemIdentifierMapper.identifier(for: entity), isFolder: true, isDownloaded: true)
         }
 
-        static func file(_ entity: ProviderEntity, isDownloaded: Bool) -> IndexedItem {
-            IndexedItem(identifier: ItemIdentifierMapper.identifier(for: entity), isFolder: false, isDownloaded: isDownloaded)
+        static func file(
+            _ entity: ProviderEntity, isDownloaded: Bool, isPinned: Bool = false
+        ) -> IndexedItem {
+            IndexedItem(
+                identifier: ItemIdentifierMapper.identifier(for: entity),
+                isFolder: false,
+                isDownloaded: isDownloaded,
+                isPinned: isPinned
+            )
         }
     }
 
@@ -43,6 +51,9 @@ struct FinderActivationRuleTests {
     private static let downloadedFile = IndexedItem.file(
         .item(serverID: serverID, path: "/docs/notes.md"), isDownloaded: true
     )
+    private static let pinnedFile = IndexedItem.file(
+        .item(serverID: serverID, path: "/docs/kept.md"), isDownloaded: true, isPinned: true
+    )
     /// The system normalises this spelling to the server root; the rule has
     /// to accept it as well.
     private static let serverRootWithSlash = IndexedItem.folder(.item(serverID: serverID, path: RemotePath.root))
@@ -50,12 +61,16 @@ struct FinderActivationRuleTests {
     /// Every selection the rules are expected to tell apart, with the
     /// entries each one must show.
     private static let expectations: [(selection: [IndexedItem], visible: Set<FinderAction>, label: String)] = [
-        ([datalessFile], [.copyRemotePath, .copyLocalPath, .refresh], "single dataless file"),
-        ([downloadedFile], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace], "single downloaded file"),
+        ([datalessFile], [.copyRemotePath, .copyLocalPath, .refresh, .keepOnMac], "single dataless file"),
+        ([downloadedFile], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace, .keepOnMac], "single downloaded file"),
+        // The pair is exclusive: a kept file offers only the way back.
+        ([pinnedFile], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace, .stopKeepingOnMac], "a kept file"),
+        ([datalessFile, pinnedFile], [.refresh, .freeLocalSpace], "a kept file mixed with an unkept one"),
         ([innerFolder], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace], "single folder"),
         ([serverRoot], [.copyRemotePath, .copyLocalPath, .refresh, .unmountServer, .freeLocalSpace], "single server folder"),
         ([serverRootWithSlash], [.copyRemotePath, .copyLocalPath, .refresh, .unmountServer, .freeLocalSpace], "server folder as srv:<uuid>:/"),
-        ([datalessFile, downloadedFile], [.refresh, .freeLocalSpace], "two files, one downloaded"),
+        // Several unkept files can be kept in one go.
+        ([datalessFile, downloadedFile], [.refresh, .freeLocalSpace, .keepOnMac], "two files, one downloaded"),
         ([datalessFile, innerFolder], [.refresh, .freeLocalSpace], "a file and a folder"),
         ([serverRoot, otherServerRoot], [.refresh, .freeLocalSpace], "two server folders"),
         // The root has no address on a server, but it does have one on this Mac.
@@ -131,6 +146,7 @@ struct FinderActivationRuleTests {
                 "itemIdentifier": item.identifier.rawValue,
                 "isFolder": item.isFolder,
                 "isDownloaded": item.isDownloaded,
+                "userInfo": ["isPinned": item.isPinned],
             ]
         }
         return ["fileproviderItems": items, "domainUserInfo": [String: Any]()]

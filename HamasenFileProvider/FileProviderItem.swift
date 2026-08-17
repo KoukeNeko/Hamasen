@@ -59,6 +59,10 @@ final class ServerFolderItem: NSObject, NSFileProviderItem {
 
 /// A file or directory inside a server, adapted from a RemoteItem.
 final class RemoteFileItem: NSObject, NSFileProviderItem {
+    /// The key the Info.plist activation rules read to decide whether to
+    /// offer "keep on this Mac" or "stop keeping".
+    static let pinnedUserInfoKey = "isPinned"
+
     /// Bumped whenever this class changes what it reports about an item.
     ///
     /// The system keeps the metadata it was last given and only asks again
@@ -71,10 +75,16 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
 
     private let serverID: UUID
     private let remoteItem: RemoteItem
+    private let isPinned: Bool
 
-    init(serverID: UUID, remoteItem: RemoteItem) {
+    /// The pin is looked up rather than passed in, so every site that vends
+    /// an item reports it without having to remember to.
+    init(serverID: UUID, remoteItem: RemoteItem, isPinned: Bool? = nil) {
         self.serverID = serverID
         self.remoteItem = remoteItem
+        self.isPinned = isPinned ?? PinnedItems.contains(
+            ItemIdentifierMapper.identifier(for: .item(serverID: serverID, path: remoteItem.path))
+        )
     }
 
     private var entity: ProviderEntity {
@@ -105,6 +115,16 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
         }
     }
 
+    var userInfo: [AnyHashable: Any]? {
+        [Self.pinnedUserInfoKey: isPinned]
+    }
+
+    /// A pinned item is downloaded and kept; everything else inherits its
+    /// server folder's policy.
+    var contentPolicy: NSFileProviderContentPolicy {
+        isPinned ? .downloadEagerlyAndKeepDownloaded : .inherited
+    }
+
     var documentSize: NSNumber? {
         remoteItem.kind == .file ? NSNumber(value: remoteItem.size) : nil
     }
@@ -118,7 +138,11 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
         // remote content changes between enumerations.
         let modificationEpoch = remoteItem.modificationDate?.timeIntervalSince1970 ?? 0
         let contentToken = Data("\(remoteItem.size)-\(modificationEpoch)".utf8)
-        let metadataToken = Data("\(remoteItem.size)-\(modificationEpoch)-\(Self.metadataRevision)".utf8)
+        // The pin travels in the metadata version, or the system keeps the
+        // old policy and the old menu entry after the user pins an item.
+        let metadataToken = Data(
+            "\(remoteItem.size)-\(modificationEpoch)-\(Self.metadataRevision)-\(isPinned)".utf8
+        )
         return NSFileProviderItemVersion(contentVersion: contentToken, metadataVersion: metadataToken)
     }
 

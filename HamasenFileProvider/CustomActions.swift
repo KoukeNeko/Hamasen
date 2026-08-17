@@ -86,6 +86,12 @@ enum CustomActionRunner {
         case .freeLocalSpace:
             try await freeLocalSpace(of: entities)
             return nil
+        case .keepOnMac:
+            try setPinned(true, on: entities)
+            return nil
+        case .stopKeepingOnMac:
+            try setPinned(false, on: entities)
+            return nil
         }
     }
 
@@ -143,6 +149,23 @@ enum CustomActionRunner {
             return nil
         }
         return { await removeDomainPreservingEdits() }
+    }
+
+    /// Records that the user wants the selection kept on this Mac, or no
+    /// longer wants it.
+    ///
+    /// The pin only has to be written: the item reports it, and the cache
+    /// sweep reads the same file, so nothing here has to touch content. The
+    /// system is told through the item's metadata version the next time it
+    /// asks, which is why the pin is part of that version.
+    private static func setPinned(_ isPinned: Bool, on entities: [ProviderEntity]) throws {
+        let store = try PinnedItemsStore()
+        for entity in entities {
+            guard case .item = entity else { continue }
+            try store.setPinned(isPinned, for: ItemIdentifierMapper.identifier(for: entity).rawValue)
+        }
+        PinnedItems.invalidate()
+        log.debug("\(isPinned ? "Pinned" : "Unpinned") \(entities.count) items")
     }
 
     /// Makes the selection dataless again. The system does the actual work

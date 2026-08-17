@@ -72,6 +72,24 @@
 				<key>NSExtensionFileProviderActionActivationRule</key>
 				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier MATCHES "srv:[0-9A-Fa-f-]{36}(:/)?").@count == 1</string>
 			</dict>
+			<!-- Offered on files that are not already kept; the item reports
+			     the pin in its userInfo, so the pair never both appear. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.keepOnMac</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_KEEP_ON_MAC</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count &gt;= 1 AND SUBQUERY(fileproviderItems, $item, $item.isFolder == NO AND $item.userInfo.isPinned != YES).@count == fileproviderItems.@count</string>
+			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.stopKeepingOnMac</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_STOP_KEEPING_ON_MAC</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count &gt;= 1 AND SUBQUERY(fileproviderItems, $item, $item.userInfo.isPinned == YES).@count == fileproviderItems.@count</string>
+			</dict>
 			<!-- Something in the selection can hold local content: a folder (its
 			     subtree may be downloaded) or a downloaded file. A lone dataless
 			     file has nothing to free. -->

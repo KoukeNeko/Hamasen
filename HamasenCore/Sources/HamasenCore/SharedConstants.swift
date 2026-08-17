@@ -32,6 +32,9 @@ public enum SharedConstants {
     /// File name of the mounted-server set inside the App Group container.
     public static let mountedServersFileName = "mounted-servers.json"
 
+    /// File name of the set of items the user pinned to this Mac.
+    public static let pinnedItemsFileName = "pinned-items.json"
+
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar
     /// label comes from the app's localized display name (哈瑪星 / Hamasen);

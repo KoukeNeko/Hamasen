@@ -70,8 +70,10 @@ actor CacheEvictor {
                     modifiedAt: item.contentModificationDate ?? nil
                 )
             }
+            // What the user pinned is exempt, whatever the allowance says.
+            let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
             let candidates = CacheEvictionPlan.itemsToEvict(
-                from: cached, policies: policies, limit: Self.maximumPerPass
+                from: cached, policies: policies, pinned: pinned, limit: Self.maximumPerPass
             ).map(NSFileProviderItemIdentifier.init(rawValue:))
             guard !candidates.isEmpty else {
                 // Reported rather than returned in silence: "nothing to free"
