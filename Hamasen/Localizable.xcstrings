@@ -525,6 +525,38 @@
         }
       }
     },
+    "尚未選擇": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None selected"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未選択"
+          }
+        }
+      }
+    },
+    "已儲存金鑰": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key stored"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鍵を保存済み"
+          }
+        }
+      }
+    },
     "已掛載": {
       "localizations": {
         "en": {
@@ -745,6 +777,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "この鍵にはパスフレーズが必要です"
+          }
+        }
+      }
+    },
+    "沒有可用的 SSH 金鑰，請先選擇金鑰檔案": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No SSH key is available. Choose a key file first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用できるSSH鍵がありません。先に鍵ファイルを選択してください。"
+          }
+        }
+      }
+    },
+    "沒有已儲存的密碼，請先輸入密碼再測試": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No password is stored. Enter one before testing."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存されたパスワードがありません。テストの前に入力してください。"
           }
         }
       }
@@ -1145,6 +1209,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "リモートパス"
+          }
+        }
+      }
+    },
+    "選擇": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択"
+          }
+        }
+      }
+    },
+    "選擇 OpenSSH 私密金鑰檔案": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose an OpenSSH private key file"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSSH秘密鍵ファイルを選択"
           }
         }
       }

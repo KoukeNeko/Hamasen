@@ -26,8 +26,8 @@ enum PrivateKeyImporter {
     @MainActor
     static func promptForKey() throws -> ImportedKey? {
         let panel = NSOpenPanel()
-        panel.message = "選擇 OpenSSH 私密金鑰檔案"
-        panel.prompt = "選擇"
+        panel.message = String(localized: "選擇 OpenSSH 私密金鑰檔案")
+        panel.prompt = String(localized: "選擇")
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         // Keys normally live in ~/.ssh, which is hidden by default.

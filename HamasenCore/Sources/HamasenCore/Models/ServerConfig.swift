@@ -50,8 +50,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
 
         public var displayName: String {
             switch self {
-            case .password: return "密碼"
-            case .privateKey: return "SSH 金鑰"
+            case .password: return String(localized: "密碼", bundle: .module)
+            case .privateKey: return String(localized: "SSH 金鑰", bundle: .module)
             }
         }
     }

@@ -86,6 +86,23 @@
         }
       }
     },
+    "SSH 金鑰": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH Key"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH鍵"
+          }
+        }
+      }
+    },
     "上傳": {
       "extractionState": "manual",
       "localizations": {
@@ -201,6 +218,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "ディレクトリの削除"
+          }
+        }
+      }
+    },
+    "密碼": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワード"
           }
         }
       }

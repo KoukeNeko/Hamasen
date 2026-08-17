@@ -217,8 +217,8 @@ final class ServerListModel {
             credentials = try draft.resolve(for: config, using: credentialStore)
         } catch {
             return config.authenticationMethod == .password
-                ? "沒有已儲存的密碼，請先輸入密碼再測試"
-                : "沒有可用的 SSH 金鑰，請先選擇金鑰檔案"
+                ? String(localized: "沒有已儲存的密碼，請先輸入密碼再測試")
+                : String(localized: "沒有可用的 SSH 金鑰，請先選擇金鑰檔案")
         }
 
         let service = RemoteFileServiceFactory.makeService(for: config, credentials: credentials)

@@ -91,7 +91,9 @@ struct AuthenticationFields: View {
         if let importedKey {
             return "\(importedKey.fileName)（\(importedKey.info.keyType.displayName)）"
         }
-        return hasStoredKey ? "已儲存金鑰" : "尚未選擇"
+        return hasStoredKey
+            ? String(localized: "已儲存金鑰")
+            : String(localized: "尚未選擇")
     }
 
     private func importKey() {
