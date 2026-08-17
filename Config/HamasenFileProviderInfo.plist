@@ -2,11 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Shown by Finder next to this provider's context-menu entries; other
-	     providers (Google Drive, Synology Drive) give their extension an icon
-	     of its own for the same reason. -->
+	<!-- The extension's icon is what Finder shows next to this provider's
+	     context-menu entries and on the mounted folder under CloudStorage.
+	     Both keys are needed: the folder in CloudStorage stays a plain folder
+	     with CFBundleIconFile alone, which is why Google Drive and Synology
+	     Drive declare the primary-icon dictionary as well. -->
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFile</key>
+			<string>AppIcon.icns</string>
+		</dict>
+	</dict>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>
