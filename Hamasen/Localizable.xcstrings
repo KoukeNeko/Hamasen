@@ -1,5 +1,5 @@
 {
-  "sourceLanguage": "zh-Hant",
+  "sourceLanguage": "zxx",
   "strings": {
     "%@@%@": {
       "localizations": {
@@ -58,6 +58,12 @@
             "state": "translated",
             "value": "%lld秒"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒"
+          }
         }
       }
     },
@@ -70,6 +76,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "/"
@@ -90,6 +102,12 @@
             "state": "translated",
             "value": "Finderのショートカットメニューはシステムの言語に従うため、この設定の影響を受けません。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder 右鍵選單的語言由系統決定，不受這個設定影響。"
+          }
         }
       }
     },
@@ -102,6 +120,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hamasen"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "Hamasen"
@@ -122,6 +146,12 @@
             "state": "translated",
             "value": "SSH鍵"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 金鑰"
+          }
         }
       }
     },
@@ -134,6 +164,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "example.com"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "example.com"
@@ -154,6 +190,12 @@
             "state": "translated",
             "value": "一般"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一般"
+          }
         }
       }
     },
@@ -169,6 +211,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ホスト"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主機"
           }
         }
       }
@@ -186,6 +234,12 @@
             "state": "translated",
             "value": "サーバ"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器"
+          }
         }
       }
     },
@@ -201,6 +255,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ユーザ名"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用者名稱"
           }
         }
       }
@@ -218,6 +278,12 @@
             "state": "translated",
             "value": "保存"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存"
+          }
         }
       }
     },
@@ -233,6 +299,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "サーバを保存できませんでした：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存伺服器失敗：%@"
           }
         }
       }
@@ -250,6 +322,12 @@
             "state": "translated",
             "value": "マウント状態を保存できませんでした：%@"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存掛載狀態失敗：%@"
+          }
         }
       }
     },
@@ -265,6 +343,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存方法"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存方式"
           }
         }
       }
@@ -282,6 +366,12 @@
             "state": "translated",
             "value": "変更を保存"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存變更"
+          }
         }
       }
     },
@@ -297,6 +387,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "削除"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除"
           }
         }
       }
@@ -314,6 +410,12 @@
             "state": "translated",
             "value": "サーバを削除"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除伺服器"
+          }
         }
       }
     },
@@ -329,6 +431,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "サーバを削除…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除伺服器…"
           }
         }
       }
@@ -346,6 +454,12 @@
             "state": "translated",
             "value": "サーバを削除できませんでした：%@"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除伺服器失敗：%@"
+          }
         }
       }
     },
@@ -361,6 +475,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "プロトコル"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "協定"
           }
         }
       }
@@ -378,6 +498,12 @@
             "state": "translated",
             "value": "取り出す"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸載"
+          }
         }
       }
     },
@@ -393,6 +519,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "キャンセル"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
           }
         }
       }
@@ -410,6 +542,12 @@
             "state": "translated",
             "value": "この設定は「サーバを追加」フォームの初期値にのみ適用され、既存のサーバは変更されません。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只影響「新增伺服器」表單的預設值，不會改動既有伺服器。"
+          }
         }
       }
     },
@@ -425,6 +563,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "名前"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名稱"
           }
         }
       }
@@ -442,6 +586,12 @@
             "state": "translated",
             "value": "デバッグログを有効にする"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "啟用除錯記錄"
+          }
         }
       }
     },
@@ -457,6 +607,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "コンソールAppでサブシステム dev.hamasen を指定するとログを確認できます。Appとファイルプロバイダ機能拡張の両方に適用されます。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Console.app 以子系統 dev.hamasen 檢視記錄。App 與 File Provider 擴充功能都會套用。"
           }
         }
       }
@@ -474,6 +630,12 @@
             "state": "translated",
             "value": "Finderに表示"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Finder 中顯示"
+          }
         }
       }
     },
@@ -489,6 +651,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "システム設定で管理…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在系統設定中管理…"
           }
         }
       }
@@ -506,6 +674,12 @@
             "state": "translated",
             "value": "パスワード"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密碼"
+          }
         }
       }
     },
@@ -521,6 +695,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "サーバがありません"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未新增伺服器"
           }
         }
       }
@@ -538,6 +718,12 @@
             "state": "translated",
             "value": "未選択"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未選擇"
+          }
         }
       }
     },
@@ -553,6 +739,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "鍵を保存済み"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已儲存金鑰"
           }
         }
       }
@@ -570,6 +762,12 @@
             "state": "translated",
             "value": "マウント済み"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已掛載"
+          }
         }
       }
     },
@@ -585,6 +783,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "マウント済みのサーバの接続にも適用されます。変更は次回の接続から有効になります。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已掛載伺服器的連線也適用；變更會在下次連線時生效。"
           }
         }
       }
@@ -602,6 +806,12 @@
             "state": "translated",
             "value": "マウント中の内容はFinderから取り除かれ、保存されたパスワードも削除されます。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已掛載的內容會從 Finder 移除，儲存的密碼也會一併刪除。"
+          }
         }
       }
     },
@@ -617,6 +827,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ツールバーの＋ボタンから最初のサーバを追加できます。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "從工具列的＋新增第一台伺服器"
           }
         }
       }
@@ -634,6 +850,12 @@
             "state": "translated",
             "value": "左のリストからサーバを選択すると、設定の表示と編集ができます。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "從左側清單選擇伺服器以檢視與編輯設定"
+          }
         }
       }
     },
@@ -649,6 +871,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "マイNAS"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的 NAS"
           }
         }
       }
@@ -666,6 +894,12 @@
             "state": "translated",
             "value": "マウント"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "掛載"
+          }
         }
       }
     },
@@ -681,6 +915,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "マウントはシステムが維持するため、Appを常駐させる必要はありません。ログイン時に起動するのは、メニューバーアイコンをいつでも使えるようにするためです。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "掛載由系統維持，App 不需常駐；登入時啟動只是讓選單列圖示隨時可用。"
           }
         }
       }
@@ -698,6 +938,12 @@
             "state": "translated",
             "value": "新規サーバのデフォルトポート"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新伺服器預設連接埠"
+          }
         }
       }
     },
@@ -713,6 +959,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "追加"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增"
           }
         }
       }
@@ -730,6 +982,12 @@
             "state": "translated",
             "value": "SFTPサーバを追加すると、Finderにマウントできます"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增 SFTP 伺服器後即可掛載到 Finder"
+          }
         }
       }
     },
@@ -745,6 +1003,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "サーバを追加"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增伺服器"
           }
         }
       }
@@ -762,6 +1026,12 @@
             "state": "translated",
             "value": "Finderの場所を更新できませんでした：%@"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 Finder 位置失敗：%@"
+          }
         }
       }
     },
@@ -777,6 +1047,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "この鍵にはパスフレーズが必要です"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此金鑰需要密碼"
           }
         }
       }
@@ -794,6 +1070,12 @@
             "state": "translated",
             "value": "使用できるSSH鍵がありません。先に鍵ファイルを選択してください。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有可用的 SSH 金鑰，請先選擇金鑰檔案"
+          }
         }
       }
     },
@@ -809,6 +1091,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存されたパスワードがありません。テストの前に入力してください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有已儲存的密碼，請先輸入密碼再測試"
           }
         }
       }
@@ -826,6 +1114,12 @@
             "state": "translated",
             "value": "接続をテスト"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "測試連線"
+          }
         }
       }
     },
@@ -841,6 +1135,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "App Groupコンテナにアクセスできません。App Groupsの設定を確認してください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法存取 App Group 容器，請確認簽章設定（App Groups）"
           }
         }
       }
@@ -858,6 +1158,12 @@
             "state": "translated",
             "value": "鍵ファイルを読み込めませんでした：%@"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法讀取金鑰檔案：%@"
+          }
         }
       }
     },
@@ -873,6 +1179,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Finderの場所を開けませんでした：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法開啟 Finder 位置：%@"
           }
         }
       }
@@ -890,6 +1202,12 @@
             "state": "translated",
             "value": "空欄の場合は変更しません"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空表示不變更"
+          }
         }
       }
     },
@@ -905,6 +1223,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ログイン"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入"
           }
         }
       }
@@ -922,6 +1246,12 @@
             "state": "translated",
             "value": "ログイン時に起動"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入時啟動"
+          }
         }
       }
     },
@@ -937,6 +1267,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "エラーが発生しました"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "發生錯誤"
           }
         }
       }
@@ -954,6 +1290,12 @@
             "state": "translated",
             "value": "OK"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確定"
+          }
         }
       }
     },
@@ -969,6 +1311,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "「%@」を削除してもよろしいですか?"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確定要刪除「%@」嗎？"
           }
         }
       }
@@ -986,6 +1334,12 @@
             "state": "translated",
             "value": "今すぐ再起動"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即重新啟動"
+          }
         }
       }
     },
@@ -1001,6 +1355,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "オンラインのみ"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "純線上模式"
           }
         }
       }
@@ -1018,6 +1378,12 @@
             "state": "translated",
             "value": "Hamasenを終了"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束 Hamasen"
+          }
         }
       }
     },
@@ -1034,6 +1400,12 @@
             "state": "translated",
             "value": "鍵がパスフレーズで保護されている場合"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "若金鑰有密碼保護"
+          }
         }
       }
     },
@@ -1046,6 +1418,12 @@
           }
         },
         "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定…"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "設定…"
@@ -1066,6 +1444,12 @@
             "state": "translated",
             "value": "認証方式"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認證方式"
+          }
         }
       }
     },
@@ -1081,6 +1465,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "言語"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "語言"
           }
         }
       }
@@ -1098,6 +1488,12 @@
             "state": "translated",
             "value": "サーバ設定を読み込めませんでした：%@"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀取伺服器設定失敗：%@"
+          }
         }
       }
     },
@@ -1113,6 +1509,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "システム設定に従う"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟隨系統"
           }
         }
       }
@@ -1130,6 +1532,12 @@
             "state": "translated",
             "value": "ポート"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連接埠"
+          }
         }
       }
     },
@@ -1145,6 +1553,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "接続"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線"
           }
         }
       }
@@ -1162,6 +1576,12 @@
             "state": "translated",
             "value": "接続に成功しました"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線成功"
+          }
         }
       }
     },
@@ -1177,6 +1597,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "接続タイムアウト"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線逾時"
           }
         }
       }
@@ -1194,6 +1620,12 @@
             "state": "translated",
             "value": "詳細"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進階"
+          }
         }
       }
     },
@@ -1209,6 +1641,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "リモートパス"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遠端路徑"
           }
         }
       }
@@ -1226,6 +1664,12 @@
             "state": "translated",
             "value": "選択"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇"
+          }
         }
       }
     },
@@ -1241,6 +1685,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "OpenSSH秘密鍵ファイルを選択"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇 OpenSSH 私密金鑰檔案"
           }
         }
       }
@@ -1258,6 +1708,12 @@
             "state": "translated",
             "value": "サーバを選択"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇一台伺服器"
+          }
         }
       }
     },
@@ -1273,6 +1729,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "鍵ファイルを選択…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇金鑰檔…"
           }
         }
       }
@@ -1290,6 +1752,12 @@
             "state": "translated",
             "value": "一部のコンテンツは「オンラインのみ」の導入前にダウンロードされたもので、そのままでは解放できません。サーバを一度取り出してからマウントし直すと解消します。以降にダウンロードされたものは自動的に解放されます。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分既有內容是在「純線上」推出前下載的，無法直接釋放。將這台伺服器卸載再重新掛載即可清除，之後下載的內容都會自動釋放。"
+          }
         }
       }
     },
@@ -1305,6 +1773,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "再起動後に反映されます"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新啟動後生效"
           }
         }
       }
@@ -1322,6 +1796,12 @@
             "state": "translated",
             "value": "鍵のパスフレーズ"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金鑰密碼"
+          }
         }
       }
     },
@@ -1337,6 +1817,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hamasenを開く…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟 Hamasen…"
           }
         }
       }
@@ -1354,6 +1840,12 @@
             "state": "translated",
             "value": "Dockアイコンを隠したあとは、メニューバーアイコンからメインウインドウを開けます。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏 Dock 圖示後，從選單列圖示即可開啟主視窗。"
+          }
         }
       }
     },
@@ -1370,6 +1862,12 @@
             "state": "translated",
             "value": "Dockアイコンを隠す（メニューバーのみ）"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏 Dock 圖示（純選單列模式）"
+          }
         }
       }
     },
@@ -1385,6 +1883,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "メニューバーアイコンを表示"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示選單列圖示"
           }
         }
       }

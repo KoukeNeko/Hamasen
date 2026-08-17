@@ -154,12 +154,7 @@
 				};
 			};
 			buildConfigurationList = 000000000000000010000000 /* Build configuration list for PBXProject "Hamasen" */;
-			/* The source strings are written in Traditional Chinese and are their
-			   own catalog keys, so a String Catalog emits no zh-Hant table: the key
-			   is the value. The fallback for a missing key is this region, which
-			   therefore has to be zh-Hant — with "en" the Chinese UI resolved to
-			   English. */
-			developmentRegion = "zh-Hant";
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,

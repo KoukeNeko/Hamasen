@@ -3,9 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "HamasenCore",
-    // The user-facing error strings are written in Traditional Chinese and
-    // are their own catalog keys, so that is the language they fall back to.
-    defaultLocalization: "zh-Hant",
+    // Every language, Chinese included, is a real translation in the
+    // catalog, so this is the fallback for a language none of them match.
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v15),
         .iOS(.v18),

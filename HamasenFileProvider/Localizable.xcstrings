@@ -1,5 +1,5 @@
 {
-  "sourceLanguage": "en",
+  "sourceLanguage": "zxx",
   "strings": {
     "%lld 個項目無法釋放本機空間：%@": {
       "localizations": {
@@ -13,6 +13,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld個の項目でローカルの空き容量を増やせませんでした：%2$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個項目無法釋放本機空間：%@"
           }
         }
       }
@@ -150,6 +156,12 @@
             "state": "translated",
             "value": "サポートされていない操作：%@"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不支援的動作：%@"
+          }
         }
       }
     },
@@ -165,6 +177,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "サーバのフォルダからのみ取り出せます"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只能從伺服器資料夾卸載"
           }
         }
       }
@@ -182,6 +200,12 @@
             "state": "translated",
             "value": "クリップボードに書き込めませんでした"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法寫入剪貼簿"
+          }
         }
       }
     },
@@ -197,6 +221,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "この項目はHamasenのマウントに含まれていません"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個項目不屬於 Hamasen 掛載"
           }
         }
       }
