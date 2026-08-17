@@ -59,6 +59,16 @@ final class ServerFolderItem: NSObject, NSFileProviderItem {
 
 /// A file or directory inside a server, adapted from a RemoteItem.
 final class RemoteFileItem: NSObject, NSFileProviderItem {
+    /// Bumped whenever this class changes what it reports about an item.
+    ///
+    /// The system keeps the metadata it was last given and only asks again
+    /// when the version changes. Deriving the version from the remote file
+    /// alone means a change here — a capability, a content type — never
+    /// reaches items already in the replica, because nothing about the file
+    /// itself moved. Only the metadata version carries it: putting it in the
+    /// content version would re-download every file.
+    private static let metadataRevision = "2"
+
     private let serverID: UUID
     private let remoteItem: RemoteItem
 
@@ -107,8 +117,9 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
         // Version derived from size + mtime: enough for the system to detect
         // remote content changes between enumerations.
         let modificationEpoch = remoteItem.modificationDate?.timeIntervalSince1970 ?? 0
-        let versionToken = Data("\(remoteItem.size)-\(modificationEpoch)".utf8)
-        return NSFileProviderItemVersion(contentVersion: versionToken, metadataVersion: versionToken)
+        let contentToken = Data("\(remoteItem.size)-\(modificationEpoch)".utf8)
+        let metadataToken = Data("\(remoteItem.size)-\(modificationEpoch)-\(Self.metadataRevision)".utf8)
+        return NSFileProviderItemVersion(contentVersion: contentToken, metadataVersion: metadataToken)
     }
 
     var capabilities: NSFileProviderItemCapabilities {
