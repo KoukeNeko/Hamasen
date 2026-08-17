@@ -26,6 +26,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         self.domain = domain
         self.evictor = OnlineOnlyEvictor(domain: domain)
         super.init()
+        // Content materialized before a server was switched to online-only is
+        // not covered by any later signal: the switch changes no file, and the
+        // materialized set only reports what moves. A pass at startup is what
+        // clears that backlog.
+        Task { [evictor] in await evictor.scheduleEvictionPass(afterQuietPeriod: false) }
     }
 
     func invalidate() {
@@ -389,7 +394,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         case .rootContainer, .workingSet:
             // The working set is how a replicated extension propagates
             // changes, so it enumerates the same server folders as the root.
-            return ServerListEnumerator()
+            return ServerListEnumerator { [evictor] in
+                Task { await evictor.scheduleEvictionPass() }
+            }
         default:
             switch ItemIdentifierMapper.entity(for: containerItemIdentifier) {
             case .serverRoot(let serverID):

@@ -20,6 +20,13 @@ actor OnlineOnlyEvictor {
     /// between two saves only to be fetched again.
     private static let quietPeriod = Duration.seconds(20)
 
+    /// At startup the manager is not usable yet — asking it anything as the
+    /// extension is still being set up fails with "could not communicate with
+    /// the helper application" — so the backlog pass waits for the connection
+    /// to come up. Short, because the system stops an idle extension within
+    /// about half a minute.
+    private static let startupDelay = Duration.seconds(3)
+
     private let domain: NSFileProviderDomain
     private let log = HamasenLog(category: "OnlineOnly")
     private var pass: Task<Void, Never>?
@@ -30,13 +37,30 @@ actor OnlineOnlyEvictor {
 
     /// Restarts the quiet period, so a run happens once the churn stops
     /// rather than once per change.
-    func scheduleEvictionPass() {
-        pass?.cancel()
+    ///
+    /// The system stops this extension whenever it goes idle — often within
+    /// half a minute — so a delayed pass is easily killed before it runs.
+    /// Only the churn-driven case can afford to wait; clearing what is
+    /// already on disk cannot, and asks for `afterQuietPeriod: false`.
+    /// Requests a pass, coalescing with one already pending.
+    ///
+    /// Restarting the wait on every request would starve the pass outright:
+    /// the triggers fire on enumerations, which arrive faster than the wait,
+    /// so each request would cancel the last and the extension would be
+    /// stopped before any of them ran.
+    func scheduleEvictionPass(afterQuietPeriod: Bool = true) {
+        guard pass == nil else { return }
+        let delay = afterQuietPeriod ? Self.quietPeriod : Self.startupDelay
         pass = Task { [weak self] in
-            try? await Task.sleep(for: Self.quietPeriod)
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             await self?.evictOnlineOnlyContent()
+            await self?.clearPass()
         }
+    }
+
+    private func clearPass() {
+        pass = nil
     }
 
     func cancel() {
@@ -61,9 +85,13 @@ actor OnlineOnlyEvictor {
                     guard case .item = entity else { return false }
                     return onlineOnlyServerIDs.contains(serverID)
                 }
-            guard !identifiers.isEmpty else { return }
+                guard !identifiers.isEmpty else {
+                log.notice("Online-only pass: no materialized items to free")
+                return
+            }
 
             var evicted = 0
+            var firstRefusal: String?
             for identifier in identifiers {
                 do {
                     try await manager.evictItem(identifier: identifier)
@@ -71,10 +99,15 @@ actor OnlineOnlyEvictor {
                 } catch {
                     // In use, edited but not yet uploaded, or pinned by the
                     // user: all reasons to leave it alone until next time.
-                    log.debug("Kept \(identifier.rawValue): \(error.localizedDescription)")
+                    firstRefusal = firstRefusal ?? error.localizedDescription
                 }
             }
-            log.debug("Freed \(evicted) of \(identifiers.count) online-only items")
+            // Reported whatever the outcome: "nothing was freed" is the case
+            // worth seeing, and it is invisible if only successes are logged.
+            log.notice(
+                "Online-only pass: \(identifiers.count) candidates, \(evicted) freed"
+                    + (firstRefusal.map { ", first refusal: \($0)" } ?? "")
+            )
         } catch {
             log.error("Could not list materialized items: \(error.localizedDescription)")
         }
