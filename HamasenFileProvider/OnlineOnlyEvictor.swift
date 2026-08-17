@@ -27,6 +27,12 @@ actor OnlineOnlyEvictor {
     /// about half a minute.
     private static let startupDelay = Duration.seconds(3)
 
+    /// A whole mounted filesystem can hold thousands of materialized items.
+    /// A pass takes a slice rather than the lot, because the extension is
+    /// stopped when it goes idle and an unbounded pass would never finish.
+    private static let maximumPerPass = 100
+    private static let evictionSpacing = Duration.milliseconds(50)
+
     private let domain: NSFileProviderDomain
     private let log = HamasenLog(category: "OnlineOnly")
     private var pass: Task<Void, Never>?
@@ -69,10 +75,19 @@ actor OnlineOnlyEvictor {
     }
 
     private func evictOnlineOnlyContent() async {
+        // Every exit reports why. A pass that returns in silence is
+        // indistinguishable from one that never ran, which is what made the
+        // earlier failures so hard to place.
         let onlineOnlyServerIDs = onlineOnlyServers()
-        guard !onlineOnlyServerIDs.isEmpty else { return }
+        guard !onlineOnlyServerIDs.isEmpty else {
+            log.notice("Online-only pass: no server is set to online only")
+            return
+        }
 
-        guard let manager = NSFileProviderManager(for: domain) else { return }
+        guard let manager = NSFileProviderManager(for: domain) else {
+            log.notice("Online-only pass: the domain is not registered")
+            return
+        }
         do {
             let identifiers = try await materializedIdentifiers(from: manager)
                 .filter { identifier in
@@ -92,15 +107,20 @@ actor OnlineOnlyEvictor {
 
             var evicted = 0
             var firstRefusal: String?
-            for identifier in identifiers {
+            for identifier in identifiers.prefix(Self.maximumPerPass) {
                 do {
                     try await manager.evictItem(identifier: identifier)
                     evicted += 1
                 } catch {
                     // In use, edited but not yet uploaded, or pinned by the
                     // user: all reasons to leave it alone until next time.
-                    firstRefusal = firstRefusal ?? error.localizedDescription
+                    let refusal = error as NSError
+                    firstRefusal = firstRefusal
+                        ?? "\(refusal.domain) \(refusal.code) (\(identifier.rawValue))"
                 }
+                // Evicting without a pause competes with the sync the
+                // extension is doing for the same items.
+                try? await Task.sleep(for: Self.evictionSpacing)
             }
             // Reported whatever the outcome: "nothing was freed" is the case
             // worth seeing, and it is invisible if only successes are logged.
