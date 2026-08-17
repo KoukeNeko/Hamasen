@@ -129,6 +129,11 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
                 .allowsRenaming,
                 .allowsReparenting,
                 .allowsDeleting,
+                // Deprecated in favour of NSFileProviderContentPolicy, but
+                // still enforced: without it the system refuses every
+                // eviction with NSFileProviderErrorNonEvictable, whatever the
+                // content policy says.
+                .allowsEvicting,
             ]
         }
     }

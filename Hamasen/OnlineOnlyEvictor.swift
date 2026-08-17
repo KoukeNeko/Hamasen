@@ -1,6 +1,7 @@
 import FileProvider
 import Foundation
 import HamasenCore
+import UniformTypeIdentifiers
 
 /// Drops the local copies of servers set to "online only".
 ///
@@ -46,16 +47,31 @@ actor OnlineOnlyEvictor {
         }
 
         do {
-            let candidates = try await materializedItemIdentifiers(from: manager)
-                .filter { identifier in
-                    // Only leaves: evicting a server folder recurses and stops
-                    // at the first child that cannot be dropped.
-                    guard case .item(let serverID, _)? = ItemIdentifierMapper.entity(for: identifier)
+            let materialized = try await materializedItems(from: manager)
+            let candidates = materialized
+                .filter { item in
+                    // Files only. Evicting a directory recurses and stops at
+                    // the first child it cannot drop, so a tree of folders
+                    // fails as a block while its files could have been freed
+                    // one by one.
+                    guard item.contentType != .folder,
+                          case .item(let serverID, _)? = ItemIdentifierMapper.entity(for: item.itemIdentifier)
                     else { return false }
                     return onlineOnlyServerIDs.contains(serverID)
                 }
                 .prefix(Self.maximumPerPass)
-            guard !candidates.isEmpty else { return }
+                .map(\.itemIdentifier)
+            guard !candidates.isEmpty else {
+                // Reported rather than returned in silence: "nothing to free"
+                // and "the filter matched nothing" look identical from
+                // outside, and telling them apart is the whole diagnosis.
+                let folders = materialized.filter { $0.contentType == .folder }.count
+                log.notice(
+                    "Online-only pass: nothing to free"
+                        + " (\(materialized.count) materialized, \(folders) of them folders)"
+                )
+                return
+            }
 
             var evicted = 0
             var firstRefusal: String?
@@ -80,9 +96,9 @@ actor OnlineOnlyEvictor {
 
     /// The materialized set is served as an enumerator, so it has to be
     /// drained page by page.
-    private func materializedItemIdentifiers(
+    private func materializedItems(
         from manager: NSFileProviderManager
-    ) async throws -> [NSFileProviderItemIdentifier] {
+    ) async throws -> [any NSFileProviderItemProtocol] {
         try await withCheckedThrowingContinuation { continuation in
             let collector = MaterializedItemCollector(continuation: continuation)
             collector.start(manager.enumeratorForMaterializedItems())
@@ -93,14 +109,14 @@ actor OnlineOnlyEvictor {
 /// Collects one enumeration of the materialized set and resumes its
 /// continuation exactly once, whichever way the enumeration ends.
 private final class MaterializedItemCollector: NSObject, NSFileProviderEnumerationObserver, @unchecked Sendable {
-    private let continuation: CheckedContinuation<[NSFileProviderItemIdentifier], Error>
-    private var identifiers: [NSFileProviderItemIdentifier] = []
+    private let continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>
+    private var items: [any NSFileProviderItemProtocol] = []
     private var hasResumed = false
     /// Held because the enumerator is otherwise only referenced by the call
     /// that started it, and it has to outlive that call.
     private var enumerator: (any NSFileProviderEnumerator)?
 
-    init(continuation: CheckedContinuation<[NSFileProviderItemIdentifier], Error>) {
+    init(continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>) {
         self.continuation = continuation
     }
 
@@ -110,7 +126,7 @@ private final class MaterializedItemCollector: NSObject, NSFileProviderEnumerati
     }
 
     func didEnumerate(_ items: [any NSFileProviderItemProtocol]) {
-        identifiers.append(contentsOf: items.map(\.itemIdentifier))
+        self.items.append(contentsOf: items)
     }
 
     func finishEnumerating(upTo nextPage: NSFileProviderPage?) {
@@ -118,7 +134,7 @@ private final class MaterializedItemCollector: NSObject, NSFileProviderEnumerati
             enumerator?.enumerateItems(for: self, startingAt: nextPage)
             return
         }
-        finish { $0.resume(returning: identifiers) }
+        finish { $0.resume(returning: items) }
     }
 
     func finishEnumeratingWithError(_ error: any Error) {
@@ -126,7 +142,7 @@ private final class MaterializedItemCollector: NSObject, NSFileProviderEnumerati
     }
 
     private func finish(
-        _ resume: (CheckedContinuation<[NSFileProviderItemIdentifier], Error>) -> Void
+        _ resume: (CheckedContinuation<[any NSFileProviderItemProtocol], Error>) -> Void
     ) {
         guard !hasResumed else { return }
         hasResumed = true
