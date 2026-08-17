@@ -16,6 +16,11 @@ struct HamasenMainView: View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+                .safeAreaInset(edge: .bottom) {
+                    TransferStatusView(monitor: model.transfers)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                }
         } detail: {
             detail
         }

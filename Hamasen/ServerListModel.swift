@@ -17,6 +17,8 @@ final class ServerListModel {
     /// Shown once, when online-only content turns out to predate the change
     /// that made it evictable.
     var remountNotice: String?
+    /// What the system is currently transferring for this domain.
+    let transfers = TransferMonitor()
 
     private let credentialStore = KeychainCredentialStore()
     private let evictor = CacheEvictor()
