@@ -20,36 +20,16 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
     private let domain: NSFileProviderDomain
     private let registry = ConnectionRegistry()
-    private let evictor: OnlineOnlyEvictor
 
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
-        self.evictor = OnlineOnlyEvictor(domain: domain)
         super.init()
-        // Content materialized before a server was switched to online-only is
-        // not covered by any later signal: the switch changes no file, and the
-        // materialized set only reports what moves. A pass at startup is what
-        // clears that backlog.
-        Task { [evictor] in await evictor.scheduleEvictionPass(afterQuietPeriod: false) }
     }
 
     func invalidate() {
         let registry = registry
-        let evictor = evictor
         Task {
-            await evictor.cancel()
             await registry.shutdownAll()
-        }
-    }
-
-    /// Called on every change to the set of materialized items, so it only
-    /// arms the eviction pass; the work happens once the churn settles, as
-    /// NSFileProviderReplicatedExtension.h advises.
-    func materializedItemsDidChange(completionHandler: @escaping () -> Void) {
-        let evictor = evictor
-        Task {
-            await evictor.scheduleEvictionPass()
-            completionHandler()
         }
     }
 
@@ -394,9 +374,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         case .rootContainer, .workingSet:
             // The working set is how a replicated extension propagates
             // changes, so it enumerates the same server folders as the root.
-            return ServerListEnumerator { [evictor] in
-                Task { await evictor.scheduleEvictionPass() }
-            }
+            return ServerListEnumerator()
         default:
             switch ItemIdentifierMapper.entity(for: containerItemIdentifier) {
             case .serverRoot(let serverID):

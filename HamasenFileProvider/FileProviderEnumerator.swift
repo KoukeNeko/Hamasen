@@ -14,16 +14,6 @@ import HamasenCore
 /// lets `enumerateChanges` report a precise diff without keeping state
 /// between calls.
 final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
-    /// Called when the server list turns out to have changed. A switch to
-    /// online-only arrives here and nowhere else: it changes no file on disk,
-    /// so nothing else tells the extension that content it already holds is
-    /// no longer wanted.
-    private let onServerListChanged: @Sendable () -> Void
-
-    init(onServerListChanged: @escaping @Sendable () -> Void = {}) {
-        self.onServerListChanged = onServerListChanged
-    }
-
     func invalidate() {}
 
     private static func mountedConfigs() -> [ServerConfig] {
@@ -41,7 +31,6 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
             let items = try ConnectionRegistry.mountedConfigs().map(ServerFolderItem.init)
             observer.didEnumerate(items)
             observer.finishEnumerating(upTo: nil)
-            onServerListChanged()
         } catch {
             observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
         }
@@ -65,9 +54,6 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
 
         if !diff.updated.isEmpty {
             observer.didUpdate(diff.updated.map(ServerFolderItem.init))
-        }
-        if !diff.isEmpty {
-            onServerListChanged()
         }
         if !diff.removedServerIDs.isEmpty {
             observer.didDeleteItems(

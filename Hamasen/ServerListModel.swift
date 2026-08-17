@@ -16,6 +16,8 @@ final class ServerListModel {
     var errorMessage: String?
 
     private let credentialStore = KeychainCredentialStore()
+    private let evictor = OnlineOnlyEvictor()
+    private var evictionTimer: Task<Void, Never>?
 
     private var configStore: ServerConfigStore? {
         do {
@@ -57,6 +59,7 @@ final class ServerListModel {
         }
         await migrateLegacyDomains()
         await syncDomainRegistration()
+        startEvictionSchedule()
     }
 
     /// Earlier versions registered one domain per server (identifier = server
@@ -105,6 +108,7 @@ final class ServerListModel {
             // picks the rename up anyway.
             try? await FinderDomain.signalServerListChanged()
         }
+        evictOnlineOnlyContent()
         return true
     }
 
@@ -252,5 +256,45 @@ final class ServerListModel {
         if let preservedLocation {
             NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
         }
+        evictOnlineOnlyContent()
+    }
+
+    // MARK: - Online-only storage
+
+    /// Servers whose content the user asked not to keep on this Mac. Only
+    /// mounted ones: an unmounted server has no local replica to free.
+    private var onlineOnlyServerIDs: Set<UUID> {
+        Set(
+            servers
+                .filter { mountedServerIDs.contains($0.id) && $0.storageMode == .onlineOnly }
+                .map(\.id)
+        )
+    }
+
+    /// Frees what online-only servers are holding, without making the caller
+    /// wait for a sweep that can cover thousands of items.
+    private func evictOnlineOnlyContent() {
+        let serverIDs = onlineOnlyServerIDs
+        guard !serverIDs.isEmpty else { return }
+        Task { [evictor] in await evictor.evictContent(of: serverIDs) }
+    }
+
+    /// A pass runs on every change, but content also becomes evictable
+    /// without anything changing here — a file is closed, an upload
+    /// finishes — so the sweep repeats while the app is running.
+    private func startEvictionSchedule() {
+        guard evictionTimer == nil else { return }
+        evictionTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.evictOnlineOnlyContentNow()
+                try? await Task.sleep(for: .seconds(300))
+            }
+        }
+    }
+
+    private func evictOnlineOnlyContentNow() async {
+        let serverIDs = onlineOnlyServerIDs
+        guard !serverIDs.isEmpty else { return }
+        await evictor.evictContent(of: serverIDs)
     }
 }
