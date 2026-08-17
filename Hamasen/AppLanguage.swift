@@ -50,10 +50,27 @@ enum AppLanguage: Hashable, Identifiable, CaseIterable {
 
     private static let preferenceKey = "AppleLanguages"
 
+    /// Only this app's own preferences. `UserDefaults.standard` merges them
+    /// with the global domain, where `AppleLanguages` is the system's own
+    /// language list — reading it there reports a per-app choice that was
+    /// never made, and one whose value (`ja-TW`) is not even among the
+    /// languages this bundle ships.
+    private static var ownPreferences: [String: Any] {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return [:] }
+        return UserDefaults.standard.persistentDomain(forName: bundleIdentifier) ?? [:]
+    }
+
     static var selected: AppLanguage {
-        guard let identifier = UserDefaults.standard.stringArray(forKey: preferenceKey)?.first
+        guard let stored = ownPreferences[preferenceKey] as? [String],
+              let identifier = stored.first
         else { return .system }
-        return .fixed(identifier)
+        // System Settings may store a regional variant (ja-TW); the picker
+        // offers the localizations the bundle actually has (ja), so the
+        // stored value is resolved against them rather than compared raw.
+        let resolved = Bundle.preferredLocalizations(
+            from: availableIdentifiers, forPreferences: [identifier]
+        ).first
+        return .fixed(resolved ?? identifier)
     }
 
     /// The language the app is actually running in, which stays on the old

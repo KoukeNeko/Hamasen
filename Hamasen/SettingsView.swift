@@ -127,6 +127,9 @@ private struct LanguageSection: View {
             Text("Finder 右鍵選單的語言由系統決定，不受這個設定影響。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                // A wrapped footer is measured as one line unless it is told
+                // to keep its own height, and the window then clips it.
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
