@@ -15,6 +15,7 @@ struct ServerFormView: View {
     @State private var username: String
     @State private var remotePath: String
     @State private var storageMode: ServerConfig.StorageMode
+    @State private var cacheAllowance: CacheAllowance
 
     @State private var authenticationMethod: ServerConfig.AuthenticationMethod
     @State private var password: String = ""
@@ -31,6 +32,7 @@ struct ServerFormView: View {
         _username = State(initialValue: existingServer?.username ?? "")
         _remotePath = State(initialValue: existingServer?.remotePath ?? ServerConfig.defaultRemotePath)
         _storageMode = State(initialValue: existingServer?.storageMode ?? .automatic)
+        _cacheAllowance = State(initialValue: CacheAllowance(bytes: existingServer?.cacheLimitBytes))
         _authenticationMethod = State(initialValue: existingServer?.authenticationMethod ?? .password)
     }
 
@@ -84,6 +86,12 @@ struct ServerFormView: View {
                             Text(mode.displayName).tag(mode)
                         }
                     }
+                    Picker("本機空間上限", selection: $cacheAllowance) {
+                        ForEach(CacheAllowance.allCases) { allowance in
+                            Text(allowance.displayName).tag(allowance)
+                    }
+                    }
+                    .disabled(storageMode == .onlineOnly)
                 }
             }
             .formStyle(.grouped)
@@ -119,7 +127,8 @@ struct ServerFormView: View {
             username: username.trimmingCharacters(in: .whitespaces),
             authenticationMethod: authenticationMethod,
             remotePath: remotePath,
-            storageMode: storageMode
+            storageMode: storageMode,
+            cacheLimitBytes: cacheAllowance.bytes
         )
         let usesKey = authenticationMethod == .privateKey
         let credentials = CredentialUpdate(

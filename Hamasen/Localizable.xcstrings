@@ -1035,6 +1035,28 @@
         }
       }
     },
+    "本機空間上限": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Space Limit"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル容量の上限"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本機空間上限"
+          }
+        }
+      }
+    },
     "此金鑰需要密碼": {
       "localizations": {
         "en": {

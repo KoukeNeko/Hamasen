@@ -19,7 +19,7 @@ final class ServerListModel {
     var remountNotice: String?
 
     private let credentialStore = KeychainCredentialStore()
-    private let evictor = OnlineOnlyEvictor()
+    private let evictor = CacheEvictor()
     private var evictionTimer: Task<Void, Never>?
 
     private var configStore: ServerConfigStore? {
@@ -111,7 +111,7 @@ final class ServerListModel {
             // picks the rename up anyway.
             try? await FinderDomain.signalServerListChanged()
         }
-        evictOnlineOnlyContent()
+        scheduleCacheEviction()
         return true
     }
 
@@ -259,25 +259,21 @@ final class ServerListModel {
         if let preservedLocation {
             NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
         }
-        evictOnlineOnlyContent()
+        scheduleCacheEviction()
     }
 
     // MARK: - Online-only storage
 
-    /// Servers whose content the user asked not to keep on this Mac. Only
-    /// mounted ones: an unmounted server has no local replica to free.
-    private var onlineOnlyServerIDs: Set<UUID> {
-        Set(
-            servers
-                .filter { mountedServerIDs.contains($0.id) && $0.storageMode == .onlineOnly }
-                .map(\.id)
-        )
+    /// The mounted servers, which are the only ones with a local replica to
+    /// keep within bounds.
+    private var mountedServers: [ServerConfig] {
+        servers.filter { mountedServerIDs.contains($0.id) }
     }
 
     /// Frees what online-only servers are holding, without making the caller
     /// wait for a sweep that can cover thousands of items.
-    private func evictOnlineOnlyContent() {
-        Task { await evictOnlineOnlyContentNow() }
+    private func scheduleCacheEviction() {
+        Task { await evictExcessCachedContent() }
     }
 
     /// A pass runs on every change, but content also becomes evictable
@@ -287,16 +283,16 @@ final class ServerListModel {
         guard evictionTimer == nil else { return }
         evictionTimer = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.evictOnlineOnlyContentNow()
+                await self?.evictExcessCachedContent()
                 try? await Task.sleep(for: .seconds(300))
             }
         }
     }
 
-    private func evictOnlineOnlyContentNow() async {
-        let serverIDs = onlineOnlyServerIDs
-        guard !serverIDs.isEmpty else { return }
-        let foundUnfreeableContent = await evictor.evictContent(of: serverIDs)
+    private func evictExcessCachedContent() async {
+        let servers = mountedServers
+        guard !servers.isEmpty else { return }
+        let foundUnfreeableContent = await evictor.evictContent(for: servers)
         if foundUnfreeableContent {
             noteContentThatOnlyARemountCanFree()
         }

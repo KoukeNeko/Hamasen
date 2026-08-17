@@ -92,6 +92,9 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     public var remotePath: String
     /// Whether this server's content may stay on the Mac.
     public var storageMode: StorageMode
+    /// How much of it may stay, in bytes; nil leaves it to the system.
+    /// Ignored while the mode is online only, which keeps nothing anyway.
+    public var cacheLimitBytes: Int64?
 
     public init(
         id: UUID = UUID(),
@@ -102,7 +105,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         username: String,
         authenticationMethod: AuthenticationMethod = .password,
         remotePath: String = ServerConfig.defaultRemotePath,
-        storageMode: StorageMode = .automatic
+        storageMode: StorageMode = .automatic,
+        cacheLimitBytes: Int64? = nil
     ) {
         self.id = id
         self.name = name
@@ -113,6 +117,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.authenticationMethod = authenticationMethod
         self.remotePath = ServerConfig.normalizedRemotePath(remotePath)
         self.storageMode = storageMode
+        self.cacheLimitBytes = cacheLimitBytes
     }
 
     /// Configurations written before key authentication existed have no
@@ -143,6 +148,9 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             StorageMode.self,
             forKey: .storageMode
         ) ?? .automatic
+        // Absent before a limit could be set, and absent again whenever the
+        // user chooses not to have one.
+        self.cacheLimitBytes = try container.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes)
     }
 
     /// Normalizes remotePath: always starts with "/" and, except for the

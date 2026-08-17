@@ -3,7 +3,7 @@ import Foundation
 import HamasenCore
 import UniformTypeIdentifiers
 
-/// Drops the local copies of servers set to "online only".
+/// Keeps each server's cached content within what the user allowed.
 ///
 /// This runs in the app rather than in the File Provider extension. The
 /// extension cannot drive it: asking `NSFileProviderManager` for the
@@ -16,7 +16,7 @@ import UniformTypeIdentifiers
 /// Nothing here decides whether a file is safe to drop: `evictItem` refuses an
 /// item that has unsynced edits, is open, or was pinned by the user, and those
 /// refusals are expected rather than exceptional.
-actor OnlineOnlyEvictor {
+actor CacheEvictor {
     /// A whole mounted filesystem can hold thousands of materialized items.
     /// A pass takes a slice, and the next pass continues, so one sweep cannot
     /// occupy the app indefinitely.
@@ -29,17 +29,21 @@ actor OnlineOnlyEvictor {
     private let log = HamasenLog(category: "OnlineOnly")
     private var isRunning = false
 
-    /// Frees what the given servers are holding on this Mac.
+    /// Frees whatever the given servers are holding beyond their allowance.
     ///
-    /// - Parameter onlineOnlyServerIDs: the mounted servers set to online
-    ///   only. Passed in because the app already knows the list; reading it
-    ///   again here could disagree with what the user sees.
+    /// - Parameter servers: the mounted servers. Passed in because the app
+    ///   already knows them; reading them again here could disagree with what
+    ///   the user sees.
     /// - Returns: whether the system refused anything as non-evictable, which
     ///   means content that predates the evicting capability is still on
     ///   disk and only a remount can clear it.
     @discardableResult
-    func evictContent(of onlineOnlyServerIDs: Set<UUID>) async -> Bool {
-        guard !onlineOnlyServerIDs.isEmpty, !isRunning else { return false }
+    func evictContent(for servers: [ServerConfig]) async -> Bool {
+        let policies = Dictionary(
+            servers.map { ($0.id, $0.cachePolicy) }, uniquingKeysWith: { first, _ in first }
+        )
+        let isManaged = policies.values.contains { $0 != .unlimited }
+        guard isManaged, !isRunning else { return false }
         isRunning = true
         defer { isRunning = false }
 
@@ -52,27 +56,30 @@ actor OnlineOnlyEvictor {
 
         do {
             let materialized = try await materializedItems(from: manager)
-            let candidates = materialized
-                .filter { item in
-                    // Files only. Evicting a directory recurses and stops at
-                    // the first child it cannot drop, so a tree of folders
-                    // fails as a block while its files could have been freed
-                    // one by one.
-                    guard item.contentType != .folder,
-                          case .item(let serverID, _)? = ItemIdentifierMapper.entity(for: item.itemIdentifier)
-                    else { return false }
-                    return onlineOnlyServerIDs.contains(serverID)
-                }
-                .prefix(Self.maximumPerPass)
-                .map(\.itemIdentifier)
+            // Files only. Evicting a directory recurses and stops at the first
+            // child it cannot drop, so a tree of folders fails as a block
+            // while its files could have been freed one by one.
+            let cached = materialized.compactMap { item -> CachedItem? in
+                guard item.contentType != .folder,
+                      case .item(let serverID, _)? = ItemIdentifierMapper.entity(for: item.itemIdentifier)
+                else { return nil }
+                return CachedItem(
+                    identifier: item.itemIdentifier.rawValue,
+                    serverID: serverID,
+                    byteCount: item.documentSize??.int64Value ?? 0,
+                    modifiedAt: item.contentModificationDate ?? nil
+                )
+            }
+            let candidates = CacheEvictionPlan.itemsToEvict(
+                from: cached, policies: policies, limit: Self.maximumPerPass
+            ).map(NSFileProviderItemIdentifier.init(rawValue:))
             guard !candidates.isEmpty else {
                 // Reported rather than returned in silence: "nothing to free"
                 // and "the filter matched nothing" look identical from
                 // outside, and telling them apart is the whole diagnosis.
-                let folders = materialized.filter { $0.contentType == .folder }.count
                 log.notice(
-                    "Online-only pass: nothing to free"
-                        + " (\(materialized.count) materialized, \(folders) of them folders)"
+                    "Cache pass: nothing to free"
+                        + " (\(cached.count) cached files across \(policies.count) servers)"
                 )
                 return false
             }
@@ -97,7 +104,7 @@ actor OnlineOnlyEvictor {
                 try? await Task.sleep(for: Self.evictionSpacing)
             }
             log.notice(
-                "Online-only pass: \(candidates.count) candidates, \(evicted) freed"
+                "Cache pass: \(candidates.count) candidates, \(evicted) freed"
                     + (firstRefusal.map { ", first refusal: \($0)" } ?? "")
             )
             return sawNonEvictable

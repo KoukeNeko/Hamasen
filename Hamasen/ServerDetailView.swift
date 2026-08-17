@@ -24,6 +24,7 @@ struct ServerDetailView: View {
     @State private var draftPassword: String = ""
     @State private var draftRemotePath: String
     @State private var draftStorageMode: ServerConfig.StorageMode
+    @State private var draftCacheAllowance: CacheAllowance
     @State private var draftAuthenticationMethod: ServerConfig.AuthenticationMethod
     @State private var importedKey: PrivateKeyImporter.ImportedKey?
     @State private var draftKeyPassphrase: String = ""
@@ -49,6 +50,7 @@ struct ServerDetailView: View {
         _draftUsername = State(initialValue: server.username)
         _draftRemotePath = State(initialValue: server.remotePath)
         _draftStorageMode = State(initialValue: server.storageMode)
+        _draftCacheAllowance = State(initialValue: CacheAllowance(bytes: server.cacheLimitBytes))
         _draftAuthenticationMethod = State(initialValue: server.authenticationMethod)
     }
 
@@ -74,7 +76,8 @@ struct ServerDetailView: View {
             username: username,
             authenticationMethod: draftAuthenticationMethod,
             remotePath: draftRemotePath,
-            storageMode: draftStorageMode
+            storageMode: draftStorageMode,
+            cacheLimitBytes: draftCacheAllowance.bytes
         )
     }
 
@@ -228,6 +231,12 @@ struct ServerDetailView: View {
                         Text(mode.displayName).tag(mode)
                     }
                 }
+                Picker("本機空間上限", selection: $draftCacheAllowance) {
+                    ForEach(CacheAllowance.allCases) { allowance in
+                        Text(allowance.displayName).tag(allowance)
+                    }
+                }
+                .disabled(draftStorageMode == .onlineOnly)
             }
         }
         .formStyle(.grouped)
