@@ -12,6 +12,9 @@ public enum AppSettings {
         public static let connectTimeoutSeconds = "connectTimeoutSeconds"
         public static let defaultServerPort = "defaultServerPort"
         public static let debugLoggingEnabled = "debugLoggingEnabled"
+        /// Whether the user has been told that content stored before the
+        /// online-only mode existed can only be freed by remounting.
+        public static let hasShownRemountForOnlineOnly = "hasShownRemountForOnlineOnly"
     }
 
     public static let defaultConnectTimeoutSeconds = 30

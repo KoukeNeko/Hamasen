@@ -49,6 +49,17 @@ struct HamasenMainView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        .alert(
+            "純線上模式",
+            isPresented: Binding(
+                get: { model.remountNotice != nil },
+                set: { if !$0 { model.remountNotice = nil } }
+            )
+        ) {
+            Button("確定", role: .cancel) {}
+        } message: {
+            Text(model.remountNotice ?? "")
+        }
         .task {
             await model.loadIfNeeded()
             if selectedServerID == nil {

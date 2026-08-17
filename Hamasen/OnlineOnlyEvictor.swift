@@ -34,8 +34,12 @@ actor OnlineOnlyEvictor {
     /// - Parameter onlineOnlyServerIDs: the mounted servers set to online
     ///   only. Passed in because the app already knows the list; reading it
     ///   again here could disagree with what the user sees.
-    func evictContent(of onlineOnlyServerIDs: Set<UUID>) async {
-        guard !onlineOnlyServerIDs.isEmpty, !isRunning else { return }
+    /// - Returns: whether the system refused anything as non-evictable, which
+    ///   means content that predates the evicting capability is still on
+    ///   disk and only a remount can clear it.
+    @discardableResult
+    func evictContent(of onlineOnlyServerIDs: Set<UUID>) async -> Bool {
+        guard !onlineOnlyServerIDs.isEmpty, !isRunning else { return false }
         isRunning = true
         defer { isRunning = false }
 
@@ -43,7 +47,7 @@ actor OnlineOnlyEvictor {
         do {
             manager = try FinderDomain.manager()
         } catch {
-            return
+            return false
         }
 
         do {
@@ -70,11 +74,12 @@ actor OnlineOnlyEvictor {
                     "Online-only pass: nothing to free"
                         + " (\(materialized.count) materialized, \(folders) of them folders)"
                 )
-                return
+                return false
             }
 
             var evicted = 0
             var firstRefusal: String?
+            var sawNonEvictable = false
             for identifier in candidates {
                 do {
                     try await manager.evictItem(identifier: identifier)
@@ -82,6 +87,12 @@ actor OnlineOnlyEvictor {
                 } catch {
                     let refusal = error as NSError
                     firstRefusal = firstRefusal ?? "\(refusal.domain) \(refusal.code)"
+                    // The capability that permits eviction reaches the system
+                    // with the item, so content stored before it was declared
+                    // can never be freed in place.
+                    sawNonEvictable = sawNonEvictable
+                        || (refusal.domain == NSFileProviderError.errorDomain
+                            && refusal.code == NSFileProviderError.nonEvictable.rawValue)
                 }
                 try? await Task.sleep(for: Self.evictionSpacing)
             }
@@ -89,8 +100,10 @@ actor OnlineOnlyEvictor {
                 "Online-only pass: \(candidates.count) candidates, \(evicted) freed"
                     + (firstRefusal.map { ", first refusal: \($0)" } ?? "")
             )
+            return sawNonEvictable
         } catch {
             log.error("Could not list materialized items: \(error.localizedDescription)")
+            return false
         }
     }
 

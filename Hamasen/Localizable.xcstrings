@@ -925,6 +925,22 @@
         }
       }
     },
+    "純線上模式": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online Only"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンラインのみ"
+          }
+        }
+      }
+    },
     "結束 Hamasen": {
       "localizations": {
         "en": {
@@ -1161,6 +1177,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "鍵ファイルを選択…"
+          }
+        }
+      }
+    },
+    "部分既有內容是在「純線上」推出前下載的，無法直接釋放。將這台伺服器卸載再重新掛載即可清除，之後下載的內容都會自動釋放。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some content was downloaded before Online Only existed and cannot be freed in place. Unmount the server and mount it again to clear it; anything downloaded from then on is freed automatically."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部のコンテンツは「オンラインのみ」の導入前にダウンロードされたもので、そのままでは解放できません。サーバを一度取り出してからマウントし直すと解消します。以降にダウンロードされたものは自動的に解放されます。"
           }
         }
       }

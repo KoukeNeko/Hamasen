@@ -14,6 +14,9 @@ final class ServerListModel {
     var servers: [ServerConfig] = []
     var mountedServerIDs: Set<UUID> = []
     var errorMessage: String?
+    /// Shown once, when online-only content turns out to predate the change
+    /// that made it evictable.
+    var remountNotice: String?
 
     private let credentialStore = KeychainCredentialStore()
     private let evictor = OnlineOnlyEvictor()
@@ -274,9 +277,7 @@ final class ServerListModel {
     /// Frees what online-only servers are holding, without making the caller
     /// wait for a sweep that can cover thousands of items.
     private func evictOnlineOnlyContent() {
-        let serverIDs = onlineOnlyServerIDs
-        guard !serverIDs.isEmpty else { return }
-        Task { [evictor] in await evictor.evictContent(of: serverIDs) }
+        Task { await evictOnlineOnlyContentNow() }
     }
 
     /// A pass runs on every change, but content also becomes evictable
@@ -295,6 +296,23 @@ final class ServerListModel {
     private func evictOnlineOnlyContentNow() async {
         let serverIDs = onlineOnlyServerIDs
         guard !serverIDs.isEmpty else { return }
-        await evictor.evictContent(of: serverIDs)
+        let foundUnfreeableContent = await evictor.evictContent(of: serverIDs)
+        if foundUnfreeableContent {
+            noteContentThatOnlyARemountCanFree()
+        }
+    }
+
+    /// Content stored before Hamasen declared it evictable cannot be freed in
+    /// place — the permission travels with the item, and those items were
+    /// written without it. Remounting rebuilds the local copy, which is the
+    /// only way out, and it is worth saying once rather than leaving the
+    /// setting looking broken.
+    private func noteContentThatOnlyARemountCanFree() {
+        let store = AppSettings.sharedStore
+        guard !store.bool(forKey: AppSettings.Keys.hasShownRemountForOnlineOnly) else { return }
+        store.set(true, forKey: AppSettings.Keys.hasShownRemountForOnlineOnly)
+        remountNotice = String(
+            localized: "部分既有內容是在「純線上」推出前下載的，無法直接釋放。將這台伺服器卸載再重新掛載即可清除，之後下載的內容都會自動釋放。"
+        )
     }
 }
