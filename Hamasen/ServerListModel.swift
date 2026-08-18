@@ -14,9 +14,14 @@ final class ServerListModel {
     var servers: [ServerConfig] = []
     var mountedServerIDs: Set<UUID> = []
     var errorMessage: String?
-    /// Shown once, when online-only content turns out to predate the change
-    /// that made it evictable.
-    var remountNotice: String?
+    /// Something the user may want to act on. One channel rather than one
+    /// property per condition, so the window shows one alert at a time.
+    var notice: Notice?
+
+    struct Notice: Equatable {
+        let title: String
+        let message: String
+    }
     /// What the system is currently transferring for this domain.
     let transfers = TransferMonitor()
 
@@ -295,11 +300,43 @@ final class ServerListModel {
     private func evictExcessCachedContent() async {
         let servers = mountedServers
         guard !servers.isEmpty else { return }
-        let foundUnfreeableContent = await evictor.evictContent(for: servers)
-        if foundUnfreeableContent {
+        let outcome = await evictor.evictContent(for: servers)
+        if outcome.needsRemount {
             noteContentThatOnlyARemountCanFree()
         }
+        noteServersHeldOverByPins(outcome.heldOverByPins, among: servers)
     }
+
+    /// Warns once that an allowance cannot be met, because the content over it
+    /// is content the user asked to keep.
+    ///
+    /// A limit that silently does not hold is worse than no limit: the disk
+    /// keeps filling and the setting says otherwise. Once per run rather than
+    /// once ever — the condition is fixable, and someone who fixes it should
+    /// hear about it again if it comes back.
+    private func noteServersHeldOverByPins(
+        _ overages: [UUID: PinnedOverage],
+        among servers: [ServerConfig]
+    ) {
+        guard !overages.isEmpty, !hasReportedPinnedOverage else { return }
+        let affected = servers
+            .filter { overages[$0.id] != nil }
+            .map(\.name)
+            .sorted()
+        guard let first = affected.first, let overage = overages.first?.value else { return }
+        hasReportedPinnedOverage = true
+
+        let pinned = ByteCountFormatter.string(fromByteCount: overage.pinnedBytes, countStyle: .file)
+        let allowance = ByteCountFormatter.string(fromByteCount: overage.allowanceBytes, countStyle: .file)
+        notice = Notice(
+            title: String(localized: "超出本機空間上限"),
+            message: affected.count == 1
+                ? String(localized: "「\(first)」保留在本機的檔案已達 \(pinned)，超過上限 \(allowance)。取消保留部分檔案，或把上限調高。")
+                : String(localized: "\(affected.count) 台伺服器保留的檔案超過各自的上限。取消保留部分檔案，或把上限調高。")
+        )
+    }
+
+    private var hasReportedPinnedOverage = false
 
     /// Content stored before Hamasen declared it evictable cannot be freed in
     /// place — the permission travels with the item, and those items were
@@ -310,8 +347,11 @@ final class ServerListModel {
         let store = AppSettings.sharedStore
         guard !store.bool(forKey: AppSettings.Keys.hasShownRemountForOnlineOnly) else { return }
         store.set(true, forKey: AppSettings.Keys.hasShownRemountForOnlineOnly)
-        remountNotice = String(
-            localized: "部分既有內容是在「純線上」推出前下載的，無法直接釋放。將這台伺服器卸載再重新掛載即可清除，之後下載的內容都會自動釋放。"
+        notice = Notice(
+            title: String(localized: "純線上模式"),
+            message: String(
+                localized: "部分既有內容是在「純線上」推出前下載的，無法直接釋放。將這台伺服器卸載再重新掛載即可清除，之後下載的內容都會自動釋放。"
+            )
         )
     }
 }

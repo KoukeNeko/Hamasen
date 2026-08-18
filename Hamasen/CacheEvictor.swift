@@ -34,16 +34,24 @@ actor CacheEvictor {
     /// - Parameter servers: the mounted servers. Passed in because the app
     ///   already knows them; reading them again here could disagree with what
     ///   the user sees.
-    /// - Returns: whether the system refused anything as non-evictable, which
-    ///   means content that predates the evicting capability is still on
-    ///   disk and only a remount can clear it.
+    /// What one pass found that the user may need to act on.
+    struct Outcome {
+        /// The system refused something as non-evictable, which means content
+        /// predating the evicting capability is still on disk and only a
+        /// remount can clear it.
+        var needsRemount = false
+        /// Servers whose pinned content alone exceeds their allowance. No
+        /// sweep can bring these under it.
+        var heldOverByPins: [UUID: PinnedOverage] = [:]
+    }
+
     @discardableResult
-    func evictContent(for servers: [ServerConfig]) async -> Bool {
+    func evictContent(for servers: [ServerConfig]) async -> Outcome {
         let policies = Dictionary(
             servers.map { ($0.id, $0.cachePolicy) }, uniquingKeysWith: { first, _ in first }
         )
         let isManaged = policies.values.contains { $0 != .unlimited }
-        guard isManaged, !isRunning else { return false }
+        guard isManaged, !isRunning else { return Outcome() }
         isRunning = true
         defer { isRunning = false }
 
@@ -51,7 +59,7 @@ actor CacheEvictor {
         do {
             manager = try FinderDomain.manager()
         } catch {
-            return false
+            return Outcome()
         }
 
         do {
@@ -72,6 +80,11 @@ actor CacheEvictor {
             }
             // What the user pinned is exempt, whatever the allowance says.
             let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
+            var outcome = Outcome(
+                heldOverByPins: CacheEvictionPlan.serversHeldOverAllowanceByPins(
+                    items: cached, policies: policies, pinned: pinned
+                )
+            )
             let candidates = CacheEvictionPlan.itemsToEvict(
                 from: cached, policies: policies, pinned: pinned, limit: Self.maximumPerPass
             ).map(NSFileProviderItemIdentifier.init(rawValue:))
@@ -83,12 +96,11 @@ actor CacheEvictor {
                     "Cache pass: nothing to free"
                         + " (\(cached.count) cached files across \(policies.count) servers)"
                 )
-                return false
+                return outcome
             }
 
             var evicted = 0
             var firstRefusal: String?
-            var sawNonEvictable = false
             for identifier in candidates {
                 do {
                     try await manager.evictItem(identifier: identifier)
@@ -99,7 +111,7 @@ actor CacheEvictor {
                     // The capability that permits eviction reaches the system
                     // with the item, so content stored before it was declared
                     // can never be freed in place.
-                    sawNonEvictable = sawNonEvictable
+                    outcome.needsRemount = outcome.needsRemount
                         || (refusal.domain == NSFileProviderError.errorDomain
                             && refusal.code == NSFileProviderError.nonEvictable.rawValue)
                 }
@@ -109,10 +121,10 @@ actor CacheEvictor {
                 "Cache pass: \(candidates.count) candidates, \(evicted) freed"
                     + (firstRefusal.map { ", first refusal: \($0)" } ?? "")
             )
-            return sawNonEvictable
+            return outcome
         } catch {
             log.error("Could not list materialized items: \(error.localizedDescription)")
-            return false
+            return Outcome()
         }
     }
 

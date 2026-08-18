@@ -55,15 +55,15 @@ struct HamasenMainView: View {
             Text(model.errorMessage ?? "")
         }
         .alert(
-            "純線上模式",
+            model.notice?.title ?? "",
             isPresented: Binding(
-                get: { model.remountNotice != nil },
-                set: { if !$0 { model.remountNotice = nil } }
+                get: { model.notice != nil },
+                set: { if !$0 { model.notice = nil } }
             )
         ) {
             Button("確定", role: .cancel) {}
         } message: {
-            Text(model.remountNotice ?? "")
+            Text(model.notice?.message ?? "")
         }
         .task {
             await model.loadIfNeeded()

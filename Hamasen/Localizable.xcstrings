@@ -67,6 +67,28 @@
         }
       }
     },
+    "%lld 台伺服器保留的檔案超過各自的上限。取消保留部分檔案，或把上限調高。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld servers are keeping more on this Mac than their limits allow. Stop keeping some files, or raise the limits."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld台のサーバが上限を超えてファイルを保持しています。一部の保持をやめるか、上限を引き上げてください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 台伺服器保留的檔案超過各自的上限。取消保留部分檔案，或把上限調高。"
+          }
+        }
+      }
+    },
     "%lld 秒": {
       "localizations": {
         "en": {
@@ -195,6 +217,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "example.com"
+          }
+        }
+      }
+    },
+    "「%@」保留在本機的檔案已達 %@，超過上限 %@。取消保留部分檔案，或把上限調高。": {
+      "localizations": {
+        "zxx": {
+          "stringUnit": {
+            "state": "new",
+            "value": "「%1$@」保留在本機的檔案已達 %2$@，超過上限 %3$@。取消保留部分檔案，或把上限調高。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files kept on this Mac for “%1$@” now total %2$@, over its %3$@ limit. Stop keeping some of them, or raise the limit."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」でこのMacに保持しているファイルが%2$@になり、上限の%3$@を超えました。一部の保持をやめるか、上限を引き上げてください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」保留在本機的檔案已達 %@，超過上限 %@。取消保留部分檔案，或把上限調高。"
           }
         }
       }
@@ -1581,6 +1631,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "讀取伺服器設定失敗：%@"
+          }
+        }
+      }
+    },
+    "超出本機空間上限": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Over the Local Space Limit"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル容量の上限を超えています"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超出本機空間上限"
           }
         }
       }

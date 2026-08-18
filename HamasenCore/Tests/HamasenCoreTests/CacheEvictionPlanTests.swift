@@ -88,6 +88,40 @@ struct CacheEvictionPlanTests {
         #expect(plan == ["managed"])
     }
 
+    /// The sweep cannot fix this one: everything unpinned is already gone and
+    /// the server is still over, because the user asked for that content.
+    @Test("光是釘選就超額時會被指出來")
+    func reportsServersHeldOverByPins() {
+        let items = [Self.item("kept", 900, daysOld: 1), Self.item("other", 100, daysOld: 2)]
+        let overages = CacheEvictionPlan.serversHeldOverAllowanceByPins(
+            items: items,
+            policies: [Self.serverID: .keepUpTo(bytes: 500_000_000)],
+            pinned: ["kept"]
+        )
+        #expect(overages[Self.serverID] == PinnedOverage(pinnedBytes: 900_000_000, allowanceBytes: 500_000_000))
+    }
+
+    @Test("釘選仍在額度內時不算超額")
+    func reportsNothingWhenPinsFitTheAllowance() {
+        let items = [Self.item("kept", 100, daysOld: 1), Self.item("other", 900, daysOld: 2)]
+        let overages = CacheEvictionPlan.serversHeldOverAllowanceByPins(
+            items: items,
+            policies: [Self.serverID: .keepUpTo(bytes: 500_000_000)],
+            pinned: ["kept"]
+        )
+        #expect(overages.isEmpty)
+    }
+
+    @Test("沒有上限的伺服器不會被指出來")
+    func reportsNothingWithoutAnAllowance() {
+        let overages = CacheEvictionPlan.serversHeldOverAllowanceByPins(
+            items: [Self.item("kept", 900, daysOld: 1)],
+            policies: [Self.serverID: .unlimited],
+            pinned: ["kept"]
+        )
+        #expect(overages.isEmpty)
+    }
+
     @Test("一次處理的數量有上限")
     func respectsTheLimit() {
         let items = (0..<10).map { Self.item("item-\($0)", 1, daysOld: $0) }

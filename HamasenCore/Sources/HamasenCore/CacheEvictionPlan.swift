@@ -80,6 +80,40 @@ public enum CacheEvictionPlan {
         }
         return Array(planned.prefix(limit))
     }
+
+    /// How far a server's pinned content alone puts it over its allowance.
+    ///
+    /// This is the one case a sweep cannot resolve: everything else has been
+    /// dropped and the server is still over, because the user asked for that
+    /// content to stay. Reporting it is the only remedy — the alternative is
+    /// a limit that silently does not hold.
+    public static func serversHeldOverAllowanceByPins(
+        items: [CachedItem],
+        policies: [UUID: CachePolicy],
+        pinned: Set<String>
+    ) -> [UUID: PinnedOverage] {
+        var overages: [UUID: PinnedOverage] = [:]
+        for (serverID, policy) in policies {
+            guard case .keepUpTo(let allowance) = policy else { continue }
+            let pinnedBytes = items
+                .filter { $0.serverID == serverID && pinned.contains($0.identifier) }
+                .reduce(Int64(0)) { $0 + $1.byteCount }
+            guard pinnedBytes > allowance else { continue }
+            overages[serverID] = PinnedOverage(pinnedBytes: pinnedBytes, allowanceBytes: allowance)
+        }
+        return overages
+    }
+}
+
+/// A server kept over its allowance by what the user pinned.
+public struct PinnedOverage: Equatable, Sendable {
+    public let pinnedBytes: Int64
+    public let allowanceBytes: Int64
+
+    public init(pinnedBytes: Int64, allowanceBytes: Int64) {
+        self.pinnedBytes = pinnedBytes
+        self.allowanceBytes = allowanceBytes
+    }
 }
 
 extension ServerConfig {
