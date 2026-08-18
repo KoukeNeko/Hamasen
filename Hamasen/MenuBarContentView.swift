@@ -86,7 +86,10 @@ struct MenuBarContentView: View {
                     }
                 }
             }
-            .frame(maxHeight: CGFloat(Self.maximumVisibleRows) * ServerRow.height)
+            // An exact height, not a maximum: a scroll view has no height of
+            // its own, and the popover sizes itself to its contents, so a
+            // maximum alone collapses the whole list to nothing.
+            .frame(height: CGFloat(min(model.servers.count, Self.maximumVisibleRows)) * ServerRow.height)
             .scrollBounceBehavior(.basedOnSize)
         }
     }
