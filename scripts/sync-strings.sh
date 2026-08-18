@@ -42,9 +42,22 @@ call = re.compile(r'String\(localized: "((?:[^"\\]|\\.)*)"')
 interpolation = re.compile(r'\\\(([^()]*(?:\([^()]*\))?[^()]*)\)')
 
 def key_for(literal):
+    # The compiler picks a specifier from the expression's type, which is not
+    # visible here, so the names that are integers in this code base are
+    # listed instead. A wrong guess is not cosmetic: the key stops matching
+    # what the compiler emits and the string silently falls back to Chinese.
     def specifier(match):
-        expression = match.group(1)
-        return "%lld" if re.search(r'\bcount\b|Count\b', expression) else "%@"
+        expression = match.group(1).strip()
+        # Only a bare identifier can be judged by its name. Anything with a
+        # call in it — Self.message(for: status) — is whatever that call
+        # returns, which is not knowable here, so it stays %@.
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", expression):
+            return "%@"
+        if re.search(r"count$|Count$", expression):
+            return "%lld"
+        if re.search(r"status$|Status$|code$|Code$", expression):
+            return "%d"
+        return "%@"
     return interpolation.sub(specifier, literal)
 
 keys = []

@@ -93,25 +93,25 @@
         }
       }
     },
-    "Keychain 操作失敗（%@: %@）": {
+    "Keychain 操作失敗（%d: %@）": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keychain operation failed (%1$@: %2$@)"
+            "value": "Keychain operation failed (%1$d: %2$@)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "キーチェーンの操作に失敗しました（%1$@: %2$@）"
+            "value": "キーチェーンの操作に失敗しました（%1$d: %2$@）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keychain 操作失敗（%@: %@）"
+            "value": "Keychain 操作失敗（%d: %@）"
           }
         }
       }
@@ -438,48 +438,48 @@
         }
       }
     },
-    "無法建立 Keychain ACL（%@: %@）": {
+    "無法建立 Keychain ACL（%d: %@）": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Could not create the Keychain ACL (%1$@: %2$@)"
+            "value": "Could not create the Keychain ACL (%1$d: %2$@)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "キーチェーンのACLを作成できませんでした（%1$@: %2$@）"
+            "value": "キーチェーンのACLを作成できませんでした（%1$d: %2$@）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法建立 Keychain ACL（%@: %@）"
+            "value": "無法建立 Keychain ACL（%d: %@）"
           }
         }
       }
     },
-    "無法建立受信任程式 %@（%@: %@）": {
+    "無法建立受信任程式 %@（%d: %@）": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Could not create the trusted application %1$@ (%2$@: %3$@)"
+            "value": "Could not create the trusted application %1$@ (%2$d: %3$@)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "信頼済みアプリケーション%1$@を作成できませんでした（%2$@: %3$@）"
+            "value": "信頼済みアプリケーション%1$@を作成できませんでした（%2$d: %3$@）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法建立受信任程式 %@（%@: %@）"
+            "value": "無法建立受信任程式 %@（%d: %@）"
           }
         }
       }
