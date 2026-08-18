@@ -213,17 +213,6 @@ struct ServerDetailView: View {
                 TextField("連接埠", text: $draftPortText)
                 TextField("使用者名稱", text: $draftUsername)
             }
-            AuthenticationFields(
-                method: $draftAuthenticationMethod,
-                password: $draftPassword,
-                importedKey: $importedKey,
-                keyPassphrase: $draftKeyPassphrase,
-                hasStoredKey: hasStoredPrivateKey,
-                // Only offer "leave blank to keep" when there is in fact a
-                // stored password to keep.
-                allowsBlankPassword: hasStoredPassword,
-                allowsPrivateKey: draftProtocol.supportsPrivateKeyAuthentication
-            )
             Section("掛載") {
                 TextField("遠端路徑", text: $draftRemotePath, prompt: Text("/"))
                 Picker("儲存方式", selection: $draftStorageMode) {
@@ -238,6 +227,17 @@ struct ServerDetailView: View {
                 }
                 .disabled(draftStorageMode == .onlineOnly)
             }
+            AuthenticationFields(
+                method: $draftAuthenticationMethod,
+                password: $draftPassword,
+                importedKey: $importedKey,
+                keyPassphrase: $draftKeyPassphrase,
+                hasStoredKey: hasStoredPrivateKey,
+                // Only offer "leave blank to keep" when there is in fact a
+                // stored password to keep.
+                allowsBlankPassword: hasStoredPassword,
+                allowsPrivateKey: draftProtocol.supportsPrivateKeyAuthentication
+            )
         }
         .formStyle(.grouped)
     }

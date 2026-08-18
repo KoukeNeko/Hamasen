@@ -89,7 +89,7 @@ struct ServerFormView: View {
                     Picker("本機空間上限", selection: $cacheAllowance) {
                         ForEach(CacheAllowance.allCases) { allowance in
                             Text(allowance.displayName).tag(allowance)
-                    }
+                        }
                     }
                     .disabled(storageMode == .onlineOnly)
                 }

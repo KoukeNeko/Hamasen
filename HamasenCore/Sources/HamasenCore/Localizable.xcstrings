@@ -1,788 +1,824 @@
 {
-  "sourceLanguage": "zxx",
-  "strings": {
-    "%@ 不支援 SSH 金鑰認證，請改用密碼": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ does not support SSH key authentication. Use a password instead."
+  "sourceLanguage" : "zxx",
+  "strings" : {
+    "%@ 不支援 SSH 金鑰認證，請改用密碼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ does not support SSH key authentication. Use a password instead."
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@はSSH鍵認証に対応していません。パスワードをお使いください。"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はSSH鍵認証に対応していません。パスワードをお使いください。"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 不支援 SSH 金鑰認證，請改用密碼"
-          }
-        }
-      }
-    },
-    "%@ 失敗（%@）：%@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ failed (%2$@): %3$@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@に失敗しました（%2$@）：%3$@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 失敗（%@）：%@"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不支援 SSH 金鑰認證，請改用密碼"
           }
         }
       }
     },
-    "Hamasen 目前沒有掛載中的位置": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hamasen has no mounted location right now"
+    "%@ 失敗（%@）：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ failed (%2$@): %3$@"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在マウント中の場所がありません"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@に失敗しました（%2$@）：%3$@"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hamasen 目前沒有掛載中的位置"
-          }
-        }
-      }
-    },
-    "Keychain 憑證格式無法辨識": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Keychain item is in an unrecognized format"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーチェーン項目の形式を認識できません"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keychain 憑證格式無法辨識"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 失敗（%@）：%@"
           }
         }
       }
     },
-    "Keychain 操作失敗（%@: %@）": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keychain operation failed (%1$@: %2$@)"
+    "Hamasen 目前沒有掛載中的位置" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hamasen has no mounted location right now"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーチェーンの操作に失敗しました（%1$@: %2$@）"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在マウント中の場所がありません"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keychain 操作失敗（%@: %@）"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hamasen 目前沒有掛載中的位置"
           }
         }
       }
     },
-    "SSH 金鑰": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SSH Key"
+    "Keychain 憑證格式無法辨識" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Keychain item is in an unrecognized format"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SSH鍵"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーチェーン項目の形式を認識できません"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SSH 金鑰"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keychain 憑證格式無法辨識"
           }
         }
       }
     },
-    "上傳": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Upload"
+    "Keychain 操作失敗（%@: %@）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keychain operation failed (%1$@: %2$@)"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アップロード"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーチェーンの操作に失敗しました（%1$@: %2$@）"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上傳"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keychain 操作失敗（%@: %@）"
           }
         }
       }
     },
-    "下載": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ダウンロード"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下載"
+    "Keychain 操作失敗（%d: %@）" : {
+      "comment" : "A localized error message for a failed keychain operation. The first argument is the OSStatus code. The second argument is the string “unknown error”.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "zxx" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Keychain 操作失敗（%1$d: %2$@）"
           }
         }
       }
     },
-    "下載區間": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Range download"
+    "SSH 金鑰" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH Key"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "範囲のダウンロード"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH鍵"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下載區間"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH 金鑰"
           }
         }
       }
     },
-    "不支援的金鑰類型：%@（目前支援 Ed25519 與 RSA）": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unsupported key type: %@ (Ed25519 and RSA are supported)"
+    "上傳" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サポートされていない鍵の種類：%@（Ed25519とRSAに対応しています）"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップロード"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不支援的金鑰類型：%@（目前支援 Ed25519 與 RSA）"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上傳"
           }
         }
       }
     },
-    "不限制": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unlimited"
+    "下載" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "制限なし"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不限制"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載"
           }
         }
       }
     },
-    "列出目錄": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Directory listing"
+    "下載區間" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Range download"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ディレクトリの一覧取得"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "範囲のダウンロード"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "列出目錄"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載區間"
           }
         }
       }
     },
-    "刪除檔案": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "File deletion"
+    "不支援的金鑰類型：%@（目前支援 Ed25519 與 RSA）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported key type: %@ (Ed25519 and RSA are supported)"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ファイルの削除"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サポートされていない鍵の種類：%@（Ed25519とRSAに対応しています）"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刪除檔案"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支援的金鑰類型：%@（目前支援 Ed25519 與 RSA）"
           }
         }
       }
     },
-    "刪除目錄": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Directory deletion"
+    "不限制" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlimited"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ディレクトリの削除"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "制限なし"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刪除目錄"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不限制"
           }
         }
       }
     },
-    "密碼": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Password"
+    "列出目錄" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Directory listing"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "パスワード"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディレクトリの一覧取得"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "密碼"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "列出目錄"
           }
         }
       }
     },
-    "尚未連線到伺服器": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not connected to the server"
+    "刪除檔案" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File deletion"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバに接続していません"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルの削除"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚未連線到伺服器"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除檔案"
           }
         }
       }
     },
-    "建立目錄": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Directory creation"
+    "刪除目錄" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Directory deletion"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ディレクトリの作成"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディレクトリの削除"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "建立目錄"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除目錄"
           }
         }
       }
     },
-    "找不到 Keychain 憑證": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No such Keychain item"
+    "密碼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーチェーン項目が見つかりません"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パスワード"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "找不到 Keychain 憑證"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密碼"
           }
         }
       }
     },
-    "找不到遠端項目：%@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No such item on the server: %@"
+    "尚未連線到伺服器" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not connected to the server"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバに項目が見つかりません：%@"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバに接続していません"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "找不到遠端項目：%@"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未連線到伺服器"
           }
         }
       }
     },
-    "無法建立 Keychain ACL（%@: %@）": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not create the Keychain ACL (%1$@: %2$@)"
+    "建立目錄" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Directory creation"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーチェーンのACLを作成できませんでした（%1$@: %2$@）"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディレクトリの作成"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法建立 Keychain ACL（%@: %@）"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建立目錄"
           }
         }
       }
     },
-    "無法建立受信任程式 %@（%@: %@）": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not create the trusted application %1$@ (%2$@: %3$@)"
+    "找不到 Keychain 憑證" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No such Keychain item"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "信頼済みアプリケーション%1$@を作成できませんでした（%2$@: %3$@）"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーチェーン項目が見つかりません"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法建立受信任程式 %@（%@: %@）"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到 Keychain 憑證"
           }
         }
       }
     },
-    "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：%@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not read the SSH key (the passphrase may be wrong): %@"
+    "找不到遠端項目：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No such item on the server: %@"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SSH鍵を読み込めませんでした（パスフレーズが違う可能性があります）：%@"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバに項目が見つかりません：%@"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：%@"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到遠端項目：%@"
           }
         }
       }
     },
-    "無法讀取本地檔案：%@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not read the local file: %@"
+    "無法建立 Keychain ACL（%@: %@）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not create the Keychain ACL (%1$@: %2$@)"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ローカルファイルを読み込めませんでした：%@"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーチェーンのACLを作成できませんでした（%1$@: %2$@）"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法讀取本地檔案：%@"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法建立 Keychain ACL（%@: %@）"
           }
         }
       }
     },
-    "無法連線到伺服器：%@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not connect to the server: %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバに接続できませんでした：%@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法連線到伺服器：%@"
+    "無法建立 Keychain ACL（%d: %@）" : {
+      "comment" : "A localized error message for when the system can't create the Keychain ACL. The argument is the string “unknown error”.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "zxx" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "無法建立 Keychain ACL（%1$d: %2$@）"
           }
         }
       }
     },
-    "移動": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move"
+    "無法建立受信任程式 %@（%@: %@）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not create the trusted application %1$@ (%2$@: %3$@)"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移動"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "信頼済みアプリケーション%1$@を作成できませんでした（%2$@: %3$@）"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移動"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法建立受信任程式 %@（%@: %@）"
           }
         }
       }
     },
-    "純線上": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Online Only"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "オンラインのみ"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "純線上"
+    "無法建立受信任程式 %@（%d: %@）" : {
+      "comment" : "A localized error message. The first argument is the path to the app. The second argument is the OSStatus. The third argument is the string “unknown error”.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "zxx" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "無法建立受信任程式 %1$@（%2$d: %3$@）"
           }
         }
       }
     },
-    "組合網址": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "URL construction"
+    "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not read the SSH key (the passphrase may be wrong): %@"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "URLの組み立て"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH鍵を読み込めませんでした（パスフレーズが違う可能性があります）：%@"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "組合網址"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取 SSH 金鑰（金鑰密碼可能有誤）：%@"
           }
         }
       }
     },
-    "自動": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatic"
+    "無法讀取本地檔案：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not read the local file: %@"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自動"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカルファイルを読み込めませんでした：%@"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自動"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取本地檔案：%@"
           }
         }
       }
     },
-    "認證失敗，請檢查帳號與密碼": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Authentication failed. Check the username and password."
+    "無法連線到伺服器：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not connect to the server: %@"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "認証に失敗しました。ユーザ名とパスワードを確認してください。"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバに接続できませんでした：%@"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "認證失敗，請檢查帳號與密碼"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線到伺服器：%@"
           }
         }
       }
     },
-    "讀取屬性": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Attribute read"
+    "移動" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "属性の読み込み"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移動"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "讀取屬性"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移動"
           }
         }
       }
     },
-    "這不是 OpenSSH 私密金鑰檔案": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This is not an OpenSSH private key file"
+    "純線上" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online Only"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenSSH秘密鍵ファイルではありません"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オンラインのみ"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "這不是 OpenSSH 私密金鑰檔案"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "純線上"
           }
         }
       }
     },
-    "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This SSH key is protected. Enter its passphrase."
+    "組合網址" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL construction"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このSSH鍵は保護されています。パスフレーズを入力してください。"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URLの組み立て"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組合網址"
           }
         }
       }
     },
-    "這是舊式 PEM 金鑰，請以 ssh-keygen -p -f <金鑰> 轉換為 OpenSSH 格式": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This is a legacy PEM key. Convert it with ssh-keygen -p -f <key>."
+    "自動" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "旧形式のPEM鍵です。ssh-keygen -p -f <鍵> でOpenSSH形式に変換してください。"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "這是舊式 PEM 金鑰，請以 ssh-keygen -p -f <金鑰> 轉換為 OpenSSH 格式"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動"
           }
         }
       }
     },
-    "金鑰檔案內容損毀或格式不正確": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The key file is damaged or malformed"
+    "認證失敗，請檢查帳號與密碼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authentication failed. Check the username and password."
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "鍵ファイルが破損しているか、形式が正しくありません"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証に失敗しました。ユーザ名とパスワードを確認してください。"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "金鑰檔案內容損毀或格式不正確"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認證失敗，請檢查帳號與密碼"
+          }
+        }
+      }
+    },
+    "讀取屬性" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attribute read"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "属性の読み込み"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取屬性"
+          }
+        }
+      }
+    },
+    "這不是 OpenSSH 私密金鑰檔案" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is not an OpenSSH private key file"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenSSH秘密鍵ファイルではありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這不是 OpenSSH 私密金鑰檔案"
+          }
+        }
+      }
+    },
+    "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This SSH key is protected. Enter its passphrase."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このSSH鍵は保護されています。パスフレーズを入力してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼"
+          }
+        }
+      }
+    },
+    "這是舊式 PEM 金鑰，請以 ssh-keygen -p -f <金鑰> 轉換為 OpenSSH 格式" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a legacy PEM key. Convert it with ssh-keygen -p -f <key>."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧形式のPEM鍵です。ssh-keygen -p -f <鍵> でOpenSSH形式に変換してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這是舊式 PEM 金鑰，請以 ssh-keygen -p -f <金鑰> 轉換為 OpenSSH 格式"
+          }
+        }
+      }
+    },
+    "金鑰檔案內容損毀或格式不正確" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The key file is damaged or malformed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鍵ファイルが破損しているか、形式が正しくありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "金鑰檔案內容損毀或格式不正確"
           }
         }
       }
     }
   },
-  "version": "1.0"
+  "version" : "1.1"
 }
