@@ -78,6 +78,9 @@ struct HamasenApp: App {
         ) {
             MenuBarContentView(model: model)
         }
+        // A window rather than a menu: progress bars and usage figures are
+        // not menu items.
+        .menuBarExtraStyle(.window)
     }
 }
 

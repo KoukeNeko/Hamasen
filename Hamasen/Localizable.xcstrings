@@ -865,6 +865,28 @@
         }
       }
     },
+    "已掛載 %lld 台": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mounted"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld台をマウント中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已掛載 %lld 台"
+          }
+        }
+      }
+    },
     "已掛載伺服器的連線也適用；變更會在下次連線時生效。": {
       "localizations": {
         "en": {
