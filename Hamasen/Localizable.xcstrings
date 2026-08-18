@@ -223,12 +223,6 @@
     },
     "「%@」保留在本機的檔案已達 %@，超過上限 %@。取消保留部分檔案，或把上限調高。": {
       "localizations": {
-        "zxx": {
-          "stringUnit": {
-            "state": "new",
-            "value": "「%1$@」保留在本機的檔案已達 %2$@，超過上限 %3$@。取消保留部分檔案，或把上限調高。"
-          }
-        },
         "en": {
           "stringUnit": {
             "state": "translated",
@@ -245,6 +239,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "「%@」保留在本機的檔案已達 %@，超過上限 %@。取消保留部分檔案，或把上限調高。"
+          }
+        },
+        "zxx": {
+          "stringUnit": {
+            "state": "new",
+            "value": "「%1$@」保留在本機的檔案已達 %2$@，超過上限 %3$@。取消保留部分檔案，或把上限調高。"
           }
         }
       }
@@ -333,6 +333,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用者名稱"
+          }
+        }
+      }
+    },
+    "保留": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kept"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留"
           }
         }
       }
@@ -927,6 +949,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "從左側清單選擇伺服器以檢視與編輯設定"
+          }
+        }
+      }
+    },
+    "快取": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cached"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャッシュ"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快取"
           }
         }
       }

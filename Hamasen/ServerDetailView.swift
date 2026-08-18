@@ -226,6 +226,12 @@ struct ServerDetailView: View {
                     }
                 }
                 .disabled(draftStorageMode == .onlineOnly)
+
+                StorageBarView(
+                    usage: model.cacheUsage[server.id] ?? CacheUsage(pinnedBytes: 0, evictableBytes: 0),
+                    allowance: draftCacheAllowance.bytes
+                )
+                .padding(.vertical, 4)
             }
             AuthenticationFields(
                 method: $draftAuthenticationMethod,
@@ -240,6 +246,7 @@ struct ServerDetailView: View {
             )
         }
         .formStyle(.grouped)
+        .task(id: server.id) { await model.refreshCacheUsage() }
     }
 
     // MARK: - Footer

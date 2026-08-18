@@ -105,6 +105,49 @@ public enum CacheEvictionPlan {
     }
 }
 
+/// What one server is holding on this Mac, split by what may be dropped.
+public struct CacheUsage: Equatable, Sendable {
+    /// Kept at the user's request; an allowance cannot drop these.
+    public let pinnedBytes: Int64
+    /// Cached, and free to go when the allowance calls for it.
+    public let evictableBytes: Int64
+
+    public var totalBytes: Int64 { pinnedBytes + evictableBytes }
+
+    public init(pinnedBytes: Int64, evictableBytes: Int64) {
+        self.pinnedBytes = pinnedBytes
+        self.evictableBytes = evictableBytes
+    }
+}
+
+extension CacheEvictionPlan {
+    /// What each server is holding, for showing rather than for deciding.
+    public static func usage(
+        of items: [CachedItem],
+        pinned: Set<String>
+    ) -> [UUID: CacheUsage] {
+        var pinnedBytes: [UUID: Int64] = [:]
+        var evictableBytes: [UUID: Int64] = [:]
+        for item in items {
+            if pinned.contains(item.identifier) {
+                pinnedBytes[item.serverID, default: 0] += item.byteCount
+            } else {
+                evictableBytes[item.serverID, default: 0] += item.byteCount
+            }
+        }
+        let serverIDs = Set(pinnedBytes.keys).union(evictableBytes.keys)
+        return Dictionary(uniqueKeysWithValues: serverIDs.map { serverID in
+            (
+                serverID,
+                CacheUsage(
+                    pinnedBytes: pinnedBytes[serverID] ?? 0,
+                    evictableBytes: evictableBytes[serverID] ?? 0
+                )
+            )
+        })
+    }
+}
+
 /// A server kept over its allowance by what the user pinned.
 public struct PinnedOverage: Equatable, Sendable {
     public let pinnedBytes: Int64

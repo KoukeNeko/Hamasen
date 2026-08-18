@@ -24,6 +24,8 @@ final class ServerListModel {
     }
     /// What the system is currently transferring for this domain.
     let transfers = TransferMonitor()
+    /// What each server is holding on this Mac, for the settings to show.
+    private(set) var cacheUsage: [UUID: CacheUsage] = [:]
 
     private let credentialStore = KeychainCredentialStore()
     private let evictor = CacheEvictor()
@@ -305,6 +307,17 @@ final class ServerListModel {
             noteContentThatOnlyARemountCanFree()
         }
         noteServersHeldOverByPins(outcome.heldOverByPins, among: servers)
+        cacheUsage = outcome.usage
+    }
+
+    /// Refreshes the figures without enforcing anything, for a view that has
+    /// just appeared and would otherwise show what the last sweep saw.
+    func refreshCacheUsage() async {
+        guard !mountedServers.isEmpty else {
+            cacheUsage = [:]
+            return
+        }
+        cacheUsage = await evictor.measureUsage()
     }
 
     /// Warns once that an allowance cannot be met, because the content over it

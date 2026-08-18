@@ -43,6 +43,18 @@ actor CacheEvictor {
         /// Servers whose pinned content alone exceeds their allowance. No
         /// sweep can bring these under it.
         var heldOverByPins: [UUID: PinnedOverage] = [:]
+        /// What each server is holding, for the settings to show.
+        var usage: [UUID: CacheUsage] = [:]
+    }
+
+    /// Measures without dropping anything, for when the user is looking at a
+    /// server rather than when the allowance needs enforcing.
+    func measureUsage() async -> [UUID: CacheUsage] {
+        guard let manager = try? FinderDomain.manager(),
+              let materialized = try? await materializedItems(from: manager)
+        else { return [:] }
+        let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
+        return CacheEvictionPlan.usage(of: cachedItems(from: materialized), pinned: pinned)
     }
 
     @discardableResult
@@ -63,27 +75,14 @@ actor CacheEvictor {
         }
 
         do {
-            let materialized = try await materializedItems(from: manager)
-            // Files only. Evicting a directory recurses and stops at the first
-            // child it cannot drop, so a tree of folders fails as a block
-            // while its files could have been freed one by one.
-            let cached = materialized.compactMap { item -> CachedItem? in
-                guard item.contentType != .folder,
-                      case .item(let serverID, _)? = ItemIdentifierMapper.entity(for: item.itemIdentifier)
-                else { return nil }
-                return CachedItem(
-                    identifier: item.itemIdentifier.rawValue,
-                    serverID: serverID,
-                    byteCount: item.documentSize??.int64Value ?? 0,
-                    modifiedAt: item.contentModificationDate ?? nil
-                )
-            }
+            let cached = cachedItems(from: try await materializedItems(from: manager))
             // What the user pinned is exempt, whatever the allowance says.
             let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
             var outcome = Outcome(
                 heldOverByPins: CacheEvictionPlan.serversHeldOverAllowanceByPins(
                     items: cached, policies: policies, pinned: pinned
-                )
+                ),
+                usage: CacheEvictionPlan.usage(of: cached, pinned: pinned)
             )
             let candidates = CacheEvictionPlan.itemsToEvict(
                 from: cached, policies: policies, pinned: pinned, limit: Self.maximumPerPass
@@ -125,6 +124,24 @@ actor CacheEvictor {
         } catch {
             log.error("Could not list materialized items: \(error.localizedDescription)")
             return Outcome()
+        }
+    }
+
+    /// Files only. Evicting a directory recurses and stops at the first child
+    /// it cannot drop, so a tree of folders fails as a block while its files
+    /// could have been freed one by one — and a folder reports no size worth
+    /// counting either.
+    private func cachedItems(from materialized: [any NSFileProviderItemProtocol]) -> [CachedItem] {
+        materialized.compactMap { item in
+            guard item.contentType != .folder,
+                  case .item(let serverID, _)? = ItemIdentifierMapper.entity(for: item.itemIdentifier)
+            else { return nil }
+            return CachedItem(
+                identifier: item.itemIdentifier.rawValue,
+                serverID: serverID,
+                byteCount: item.documentSize??.int64Value ?? 0,
+                modifiedAt: item.contentModificationDate ?? nil
+            )
         }
     }
 

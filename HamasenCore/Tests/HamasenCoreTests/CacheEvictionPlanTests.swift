@@ -122,6 +122,20 @@ struct CacheEvictionPlanTests {
         #expect(overages.isEmpty)
     }
 
+    @Test("用量按伺服器分開，並區分保留與可清除")
+    func reportsUsagePerServerSplitByPin() {
+        let items = [
+            Self.item("kept", 300, daysOld: 1),
+            Self.item("cached", 200, daysOld: 2),
+            Self.item("elsewhere", 50, daysOld: 3, server: Self.otherServerID),
+        ]
+        let usage = CacheEvictionPlan.usage(of: items, pinned: ["kept"])
+
+        #expect(usage[Self.serverID] == CacheUsage(pinnedBytes: 300_000_000, evictableBytes: 200_000_000))
+        #expect(usage[Self.serverID]?.totalBytes == 500_000_000)
+        #expect(usage[Self.otherServerID] == CacheUsage(pinnedBytes: 0, evictableBytes: 50_000_000))
+    }
+
     @Test("一次處理的數量有上限")
     func respectsTheLimit() {
         let items = (0..<10).map { Self.item("item-\($0)", 1, daysOld: $0) }
