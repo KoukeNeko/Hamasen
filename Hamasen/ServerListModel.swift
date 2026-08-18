@@ -317,7 +317,7 @@ final class ServerListModel {
             cacheUsage = [:]
             return
         }
-        cacheUsage = await evictor.measureUsage()
+        cacheUsage = await evictor.measureUsage(for: mountedServers)
     }
 
     /// Warns once that an allowance cannot be met, because the content over it

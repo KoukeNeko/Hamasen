@@ -1151,6 +1151,28 @@
         }
       }
     },
+    "本機使用量": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Usage"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの使用量"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本機使用量"
+          }
+        }
+      }
+    },
     "本機空間上限": {
       "localizations": {
         "en": {

@@ -49,12 +49,54 @@ actor CacheEvictor {
 
     /// Measures without dropping anything, for when the user is looking at a
     /// server rather than when the allowance needs enforcing.
-    func measureUsage() async -> [UUID: CacheUsage] {
+    func measureUsage(for servers: [ServerConfig]) async -> [UUID: CacheUsage] {
         guard let manager = try? FinderDomain.manager(),
               let materialized = try? await materializedItems(from: manager)
         else { return [:] }
         let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
-        return CacheEvictionPlan.usage(of: cachedItems(from: materialized), pinned: pinned)
+        let items = await measured(cachedItems(from: materialized), for: servers, using: manager)
+        return CacheEvictionPlan.usage(of: items, pinned: pinned)
+    }
+
+    /// Fills in what each file actually occupies.
+    ///
+    /// The enumerated items carry no `documentSize` — the system reports zero
+    /// for every one of them — so the sizes come from the files themselves.
+    /// Allocated size rather than logical size, which is the same distinction
+    /// the cache cares about: a dataless file occupies nothing.
+    private func measured(
+        _ items: [CachedItem],
+        for servers: [ServerConfig],
+        using manager: NSFileProviderManager
+    ) async -> [CachedItem] {
+        guard let root = try? await manager.getUserVisibleURL(for: .rootContainer) else { return items }
+        // One claim for the whole walk: the app has no standing access to
+        // ~/Library/CloudStorage.
+        let hasAccess = root.startAccessingSecurityScopedResource()
+        defer { if hasAccess { root.stopAccessingSecurityScopedResource() } }
+
+        let folderNames = Dictionary(
+            servers.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }
+        )
+        return items.map { item in
+            guard let folder = folderNames[item.serverID],
+                  case .item(_, let path)? = ItemIdentifierMapper.entity(for: .init(item.identifier))
+            else { return item }
+
+            // The identifier's path is the location inside the server folder,
+            // which is named after the server.
+            let location = path.split(separator: "/").reduce(root.appending(path: folder)) {
+                $0.appending(path: String($1))
+            }
+            let allocated = (try? location.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?
+                .totalFileAllocatedSize
+            return CachedItem(
+                identifier: item.identifier,
+                serverID: item.serverID,
+                byteCount: Int64(allocated ?? 0),
+                modifiedAt: item.modifiedAt
+            )
+        }
     }
 
     @discardableResult
@@ -75,7 +117,11 @@ actor CacheEvictor {
         }
 
         do {
-            let cached = cachedItems(from: try await materializedItems(from: manager))
+            let cached = await measured(
+                cachedItems(from: try await materializedItems(from: manager)),
+                for: servers,
+                using: manager
+            )
             // What the user pinned is exempt, whatever the allowance says.
             let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
             var outcome = Outcome(
@@ -93,7 +139,7 @@ actor CacheEvictor {
                 // outside, and telling them apart is the whole diagnosis.
                 log.notice(
                     "Cache pass: nothing to free"
-                        + " (\(cached.count) cached files across \(policies.count) servers)"
+                        + " (\(cached.count) cached files, \(Self.describe(outcome.usage)))"
                 )
                 return outcome
             }
@@ -118,6 +164,7 @@ actor CacheEvictor {
             }
             log.notice(
                 "Cache pass: \(candidates.count) candidates, \(evicted) freed"
+                    + ", \(Self.describe(outcome.usage))"
                     + (firstRefusal.map { ", first refusal: \($0)" } ?? "")
             )
             return outcome
@@ -125,6 +172,14 @@ actor CacheEvictor {
             log.error("Could not list materialized items: \(error.localizedDescription)")
             return Outcome()
         }
+    }
+
+    private static func describe(_ usage: [UUID: CacheUsage]) -> String {
+        guard !usage.isEmpty else { return "no usage" }
+        return usage
+            .map { "\($0.key.uuidString.prefix(8)) \($0.value.totalBytes) bytes" }
+            .sorted()
+            .joined(separator: ", ")
     }
 
     /// Files only. Evicting a directory recurses and stops at the first child
