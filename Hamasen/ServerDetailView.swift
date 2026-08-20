@@ -228,7 +228,7 @@ struct ServerDetailView: View {
                 .disabled(draftStorageMode == .onlineOnly)
 
                 StorageBarView(
-                    usage: model.cacheUsage[server.id] ?? CacheUsage(pinnedBytes: 0, evictableBytes: 0),
+                    usage: model.cache.usage[server.id] ?? CacheUsage(pinnedBytes: 0, evictableBytes: 0),
                     allowance: draftCacheAllowance.bytes
                 )
                 .padding(.vertical, 4)
@@ -246,15 +246,7 @@ struct ServerDetailView: View {
             )
         }
         .formStyle(.grouped)
-        .task(id: server.id) {
-            // Content is cached by opening files in Finder, which happens
-            // while this pane is already on screen; measuring once on appear
-            // would leave it stale for as long as the window stays put.
-            while !Task.isCancelled {
-                await model.refreshCacheUsage()
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
+        .refreshingCacheUsage(from: model, restartingOn: server.id)
     }
 
     // MARK: - Footer

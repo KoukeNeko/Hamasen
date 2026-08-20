@@ -37,15 +37,10 @@ struct MenuBarContentView: View {
             footer
         }
         .frame(width: Self.width)
-        .task {
-            await model.loadIfNeeded()
-            // The popover is often the only window open, so the figures it
-            // shows have to keep themselves current.
-            while !Task.isCancelled {
-                await model.refreshCacheUsage()
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
+        .task { await model.loadIfNeeded() }
+        // The popover is often the only window open, so the figures it shows
+        // have to keep themselves current.
+        .refreshingCacheUsage(from: model)
     }
 
     private var header: some View {
@@ -79,7 +74,7 @@ struct MenuBarContentView: View {
                     ForEach(model.servers) { server in
                         ServerRow(
                             server: server,
-                            usage: model.cacheUsage[server.id],
+                            usage: model.cache.usage[server.id],
                             isMounted: model.isMounted(server),
                             toggle: { setMounted($0, for: server) }
                         )

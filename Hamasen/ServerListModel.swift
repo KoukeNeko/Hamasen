@@ -14,35 +14,37 @@ final class ServerListModel {
     var servers: [ServerConfig] = []
     var mountedServerIDs: Set<UUID> = []
     var errorMessage: String?
-    /// Something the user may want to act on. One channel rather than one
-    /// property per condition, so the window shows one alert at a time.
+    /// Something the user may want to act on, from here or from the sweep.
     var notice: Notice?
 
-    struct Notice: Equatable {
-        let title: String
-        let message: String
-    }
     /// What the system is currently transferring for this domain.
     let transfers = TransferMonitor()
-    /// What each server is holding on this Mac, for the settings to show.
-    private(set) var cacheUsage: [UUID: CacheUsage] = [:]
+    /// What the mounted servers hold on this Mac, and what keeps it within
+    /// bounds.
+    let cache = CacheSupervisor()
 
     private let credentialStore = KeychainCredentialStore()
-    private let evictor = CacheEvictor()
-    private var evictionTimer: Task<Void, Never>?
 
-    private var configStore: ServerConfigStore? {
-        do {
-            return try ServerConfigStore()
-        } catch {
-            errorMessage = String(localized: "無法存取 App Group 容器，請確認簽章設定（App Groups）")
-            return nil
-        }
+    /// The two stores in the App Group container, which either both open or
+    /// neither does.
+    private struct Stores {
+        let servers: ServerConfigStore
+        let mounted: MountedServersStore
     }
 
-    private var mountedStore: MountedServersStore? {
+    private var openedStores: Stores?
+
+    /// Opens them once, and reports the one failure they share.
+    ///
+    /// A computed property would be tidier to read but would open a store on
+    /// every access and, worse, set an error message from inside a getter —
+    /// state that changes as a side effect of looking at it.
+    private func stores() -> Stores? {
+        if let openedStores { return openedStores }
         do {
-            return try MountedServersStore()
+            let opened = Stores(servers: try ServerConfigStore(), mounted: try MountedServersStore())
+            openedStores = opened
+            return opened
         } catch {
             errorMessage = String(localized: "無法存取 App Group 容器，請確認簽章設定（App Groups）")
             return nil
@@ -61,17 +63,20 @@ final class ServerListModel {
 
     func load() async {
         hasLoaded = true
-        guard let configStore, let mountedStore else { return }
+        guard let stores = stores() else { return }
         do {
-            servers = try configStore.loadServers()
-            mountedServerIDs = try mountedStore.loadMountedServerIDs()
+            servers = try stores.servers.loadServers()
+            mountedServerIDs = try stores.mounted.loadMountedServerIDs()
         } catch {
             errorMessage = String(localized: "讀取伺服器設定失敗：\(error.localizedDescription)")
             return
         }
         await migrateLegacyDomains()
         await syncDomainRegistration()
-        startEvictionSchedule()
+        cache.start(
+            servers: { [weak self] in self?.mountedServers ?? [] },
+            reporting: { [weak self] notice in self?.notice = notice }
+        )
     }
 
     /// Earlier versions registered one domain per server (identifier = server
@@ -97,7 +102,7 @@ final class ServerListModel {
 
     @discardableResult
     func saveServer(_ config: ServerConfig, credentials: CredentialUpdate) async -> Bool {
-        guard let configStore else { return false }
+        guard let stores = stores() else { return false }
         do {
             var updatedServers = servers
             if let existingIndex = updatedServers.firstIndex(where: { $0.id == config.id }) {
@@ -105,7 +110,7 @@ final class ServerListModel {
             } else {
                 updatedServers.append(config)
             }
-            try configStore.saveServers(updatedServers)
+            try stores.servers.saveServers(updatedServers)
             try credentials.apply(to: config.id, using: credentialStore)
             servers = updatedServers
         } catch {
@@ -120,16 +125,16 @@ final class ServerListModel {
             // picks the rename up anyway.
             try? await FinderDomain.signalServerListChanged()
         }
-        scheduleCacheEviction()
+        cache.sweepSoon()
         return true
     }
 
     func removeServer(_ config: ServerConfig) async {
-        guard let configStore else { return }
+        guard let stores = stores() else { return }
         await unmount(config)
         do {
             let remainingServers = servers.filter { $0.id != config.id }
-            try configStore.saveServers(remainingServers)
+            try stores.servers.saveServers(remainingServers)
             try credentialStore.deleteAllCredentials(for: config.id)
             try? PinnedItemsStore().removePins(forServer: config.id)
             servers = remainingServers
@@ -146,13 +151,13 @@ final class ServerListModel {
     /// Nothing is mounted and no credential is written: an imported server
     /// still needs its password or key, which those files do not carry.
     func importBookmarks(from files: [CyberduckBookmarkFile]) {
-        guard let configStore else { return }
+        guard let stores = stores() else { return }
         let summary = CyberduckBookmark.read(files, skippingDuplicatesOf: servers)
         let importedServers = summary.servers.map(\.config)
         if !importedServers.isEmpty {
             let updatedServers = servers + importedServers
             do {
-                try configStore.saveServers(updatedServers)
+                try stores.servers.saveServers(updatedServers)
             } catch {
                 errorMessage = String(localized: "儲存伺服器失敗：\(error.localizedDescription)")
                 return
@@ -175,11 +180,11 @@ final class ServerListModel {
     }
 
     func unmount(_ config: ServerConfig) async {
-        guard mountedServerIDs.contains(config.id), let mountedStore else { return }
+        guard mountedServerIDs.contains(config.id), let stores = stores() else { return }
         do {
             // The store is the truth the File Provider extension also edits
             // (unmounting from Finder), so take the remaining set from it.
-            mountedServerIDs = try mountedStore.removeMountedServer(config.id)
+            mountedServerIDs = try stores.mounted.removeMountedServer(config.id)
         } catch {
             errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
             return
@@ -266,12 +271,18 @@ final class ServerListModel {
         }
     }
 
+    /// The mounted servers, which are the only ones with a local replica to
+    /// keep within bounds.
+    private var mountedServers: [ServerConfig] {
+        servers.filter { mountedServerIDs.contains($0.id) }
+    }
+
     // MARK: - Domain helpers
 
     private func persistMountedSet() {
-        guard let mountedStore else { return }
+        guard let stores = stores() else { return }
         do {
-            try mountedStore.saveMountedServerIDs(mountedServerIDs)
+            try stores.mounted.saveMountedServerIDs(mountedServerIDs)
         } catch {
             errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
         }
@@ -293,102 +304,7 @@ final class ServerListModel {
         if let preservedLocation {
             NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
         }
-        scheduleCacheEviction()
+        cache.sweepSoon()
     }
 
-    // MARK: - Online-only storage
-
-    /// The mounted servers, which are the only ones with a local replica to
-    /// keep within bounds.
-    private var mountedServers: [ServerConfig] {
-        servers.filter { mountedServerIDs.contains($0.id) }
-    }
-
-    /// Frees what online-only servers are holding, without making the caller
-    /// wait for a sweep that can cover thousands of items.
-    private func scheduleCacheEviction() {
-        Task { await evictExcessCachedContent() }
-    }
-
-    /// A pass runs on every change, but content also becomes evictable
-    /// without anything changing here — a file is closed, an upload
-    /// finishes — so the sweep repeats while the app is running.
-    private func startEvictionSchedule() {
-        guard evictionTimer == nil else { return }
-        evictionTimer = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.evictExcessCachedContent()
-                try? await Task.sleep(for: .seconds(300))
-            }
-        }
-    }
-
-    private func evictExcessCachedContent() async {
-        let servers = mountedServers
-        guard !servers.isEmpty else { return }
-        let outcome = await evictor.evictContent(for: servers)
-        if outcome.needsRemount {
-            noteContentThatOnlyARemountCanFree()
-        }
-        noteServersHeldOverByPins(outcome.heldOverByPins, among: servers)
-        cacheUsage = outcome.usage
-    }
-
-    /// Refreshes the figures without enforcing anything, for a view that has
-    /// just appeared and would otherwise show what the last sweep saw.
-    func refreshCacheUsage() async {
-        guard !mountedServers.isEmpty else {
-            cacheUsage = [:]
-            return
-        }
-        cacheUsage = await evictor.measureUsage(for: mountedServers)
-    }
-
-    /// Warns once that an allowance cannot be met, because the content over it
-    /// is content the user asked to keep.
-    ///
-    /// A limit that silently does not hold is worse than no limit: the disk
-    /// keeps filling and the setting says otherwise. Once per run rather than
-    /// once ever — the condition is fixable, and someone who fixes it should
-    /// hear about it again if it comes back.
-    private func noteServersHeldOverByPins(
-        _ overages: [UUID: PinnedOverage],
-        among servers: [ServerConfig]
-    ) {
-        guard !overages.isEmpty, !hasReportedPinnedOverage else { return }
-        let affected = servers
-            .filter { overages[$0.id] != nil }
-            .map(\.name)
-            .sorted()
-        guard let first = affected.first, let overage = overages.first?.value else { return }
-        hasReportedPinnedOverage = true
-
-        let pinned = ByteCountFormatter.string(fromByteCount: overage.pinnedBytes, countStyle: .file)
-        let allowance = ByteCountFormatter.string(fromByteCount: overage.allowanceBytes, countStyle: .file)
-        notice = Notice(
-            title: String(localized: "超出本機空間上限"),
-            message: affected.count == 1
-                ? String(localized: "「\(first)」保留在本機的檔案已達 \(pinned)，超過上限 \(allowance)。取消保留部分檔案，或把上限調高。")
-                : String(localized: "\(affected.count) 台伺服器保留的檔案超過各自的上限。取消保留部分檔案，或把上限調高。")
-        )
-    }
-
-    private var hasReportedPinnedOverage = false
-
-    /// Content stored before Hamasen declared it evictable cannot be freed in
-    /// place — the permission travels with the item, and those items were
-    /// written without it. Remounting rebuilds the local copy, which is the
-    /// only way out, and it is worth saying once rather than leaving the
-    /// setting looking broken.
-    private func noteContentThatOnlyARemountCanFree() {
-        let store = AppSettings.sharedStore
-        guard !store.bool(forKey: AppSettings.Keys.hasShownRemountForOnlineOnly) else { return }
-        store.set(true, forKey: AppSettings.Keys.hasShownRemountForOnlineOnly)
-        notice = Notice(
-            title: String(localized: "純線上模式"),
-            message: String(
-                localized: "部分既有內容是在「純線上」推出前下載的，無法直接釋放。將這台伺服器卸載再重新掛載即可清除，之後下載的內容都會自動釋放。"
-            )
-        )
-    }
 }
