@@ -6,6 +6,10 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Private keys and Cyberduck bookmarks live outside the container;
+	     the open panel only grants access to them with this. -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
 	<!-- The legacy "group.*" entry exists only so development builds can
 	     migrate old data; scripts/install-devid.sh strips it, because under
 	     Developer ID it would demand a provisioning profile. -->

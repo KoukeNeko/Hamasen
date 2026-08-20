@@ -138,6 +138,30 @@ final class ServerListModel {
         }
     }
 
+    // MARK: - Bookmark import
+
+    /// Adds the servers described by Cyberduck or Mountain Duck bookmarks,
+    /// then reports what came across and what did not.
+    ///
+    /// Nothing is mounted and no credential is written: an imported server
+    /// still needs its password or key, which those files do not carry.
+    func importBookmarks(from files: [CyberduckBookmarkFile]) {
+        guard let configStore else { return }
+        let summary = CyberduckBookmark.read(files, skippingDuplicatesOf: servers)
+        let importedServers = summary.servers.map(\.config)
+        if !importedServers.isEmpty {
+            let updatedServers = servers + importedServers
+            do {
+                try configStore.saveServers(updatedServers)
+            } catch {
+                errorMessage = String(localized: "儲存伺服器失敗：\(error.localizedDescription)")
+                return
+            }
+            servers = updatedServers
+        }
+        notice = Notice(title: String(localized: "匯入書籤"), message: summary.report)
+    }
+
     // MARK: - Mounting
 
     func isMounted(_ config: ServerConfig) -> Bool {

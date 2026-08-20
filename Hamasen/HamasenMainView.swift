@@ -27,6 +27,12 @@ struct HamasenMainView: View {
         .frame(minWidth: 780, minHeight: 480)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button(action: importBookmarks) {
+                    Label("匯入書籤", systemImage: "square.and.arrow.down")
+                }
+                .help("匯入 Cyberduck 或 Mountain Duck 的書籤")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     isShowingAddSheet = true
                 } label: {
@@ -115,9 +121,19 @@ struct HamasenMainView: View {
                     Button("新增伺服器") {
                         isShowingAddSheet = true
                     }
+                    Button("匯入書籤", action: importBookmarks)
                 }
             }
         }
+    }
+
+    // MARK: - Bookmark import
+
+    /// The panel is what grants a sandboxed app access to the chosen files,
+    /// so the import always starts from it.
+    private func importBookmarks() {
+        guard let files = BookmarkImporter.promptForBookmarks() else { return }
+        model.importBookmarks(from: files)
     }
 
     // MARK: - Detail

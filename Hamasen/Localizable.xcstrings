@@ -45,6 +45,50 @@
         }
       }
     },
+    "%lld 個書籤已經在清單中，已略過。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld bookmarks are already in the list and were skipped."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld個のブックマークはすでに一覧にあるため省略しました。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個書籤已經在清單中，已略過。"
+          }
+        }
+      }
+    },
+    "%lld 個檔案不是可辨識的書籤。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld files were not bookmarks this app recognizes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld個のファイルはブックマークとして認識できませんでした。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個檔案不是可辨識的書籤。"
+          }
+        }
+      }
+    },
     "%lld 個項目": {
       "localizations": {
         "en": {
@@ -129,6 +173,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "/"
+          }
+        }
+      }
+    },
+    "Cyberduck 的密碼與金鑰存放在它自己的鑰匙圈項目中，無法一併匯入，請為每台伺服器重新設定登入資訊。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cyberduck keeps passwords and keys in its own Keychain items, which cannot be imported. Set up the sign-in for each server again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードと鍵はCyberduck自身のキーチェーン項目にあるため読み込めません。各サーバのログイン情報を設定し直してください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cyberduck 的密碼與金鑰存放在它自己的鑰匙圈項目中，無法一併匯入，請為每台伺服器重新設定登入資訊。"
           }
         }
       }
@@ -289,6 +355,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "主機"
+          }
+        }
+      }
+    },
+    "以下協定尚未支援，使用它們的書籤已略過：%@。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These protocols are not supported yet, so the bookmarks using them were skipped: %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のプロトコルはまだ対応していないため、それを使うブックマークは省略しました：%@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以下協定尚未支援，使用它們的書籤已略過：%@。"
           }
         }
       }
@@ -469,6 +557,28 @@
         }
       }
     },
+    "其中 %lld 台的遠端路徑是相對於登入目錄的，已改為從根目錄掛載。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld of them named a path relative to the login directory, and mount from the root instead."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "うち%lld台はログインディレクトリからの相対パスだったため、ルートからマウントします。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其中 %lld 台的遠端路徑是相對於登入目錄的，已改為從根目錄掛載。"
+          }
+        }
+      }
+    },
     "刪除": {
       "localizations": {
         "en": {
@@ -553,6 +663,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "刪除伺服器失敗：%@"
+          }
+        }
+      }
+    },
+    "匯入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込む"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入"
+          }
+        }
+      }
+    },
+    "匯入 Cyberduck 或 Mountain Duck 的書籤": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Cyberduck or Mountain Duck bookmarks"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CyberduckやMountain Duckのブックマークを読み込みます"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入 Cyberduck 或 Mountain Duck 的書籤"
+          }
+        }
+      }
+    },
+    "匯入書籤": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Bookmarks"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブックマークを読み込む"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入書籤"
           }
         }
       }
@@ -839,6 +1015,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "已儲存金鑰"
+          }
+        }
+      }
+    },
+    "已匯入 %lld 台伺服器。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imported %lld servers."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld台のサーバを読み込みました。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已匯入 %lld 台伺服器。"
           }
         }
       }
@@ -1279,6 +1477,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "此金鑰需要密碼"
+          }
+        }
+      }
+    },
+    "沒有可以匯入的書籤。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There was no bookmark to import."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込めるブックマークはありませんでした。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有可以匯入的書籤。"
           }
         }
       }
@@ -1917,6 +2137,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "選擇"
+          }
+        }
+      }
+    },
+    "選擇 Cyberduck 或 Mountain Duck 的書籤檔案或資料夾": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Cyberduck or Mountain Duck bookmark files, or a folder of them"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CyberduckまたはMountain Duckのブックマークファイルかフォルダを選択"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇 Cyberduck 或 Mountain Duck 的書籤檔案或資料夾"
           }
         }
       }

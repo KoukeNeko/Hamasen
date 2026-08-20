@@ -181,6 +181,10 @@ only validates package tests and the development build.
       local space (evict downloaded copies), unmount a server — provided by
       the File Provider extension itself, so nothing needs enabling in System
       Settings
+- [x] Import from Cyberduck and Mountain Duck: `.duck` bookmarks and
+      `.cyberduckprofile` files, keeping the ones on a protocol this app
+      speaks and naming the ones it does not. Passwords stay behind, in
+      Cyberduck's own Keychain items
 - [ ] Planned: FTP/FTPS, host key verification (TOFU), streaming uploads,
       remote change tracking
 
