@@ -25,6 +25,12 @@
 		<string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
 		<key>NSExtensionFileProviderSupportsEnumeration</key>
 		<true/>
+		<!-- Required by App Store validation, and it has to name a group
+		     this extension's entitlements also list: it is where the system
+		     expects the provider and its app to share state, which for
+		     Hamasen is the server list, the mounted set, and the pins. -->
+		<key>NSExtensionFileProviderDocumentGroup</key>
+		<string>33832Z66QU.group.dev.hamasen.shared</string>
 		<!-- Finder context menu entries, run through NSFileProviderCustomAction.
 		     The system evaluates each rule against `fileproviderItems` (the
 		     selection, as indexed items) and `domainUserInfo`; `$item.itemIdentifier`

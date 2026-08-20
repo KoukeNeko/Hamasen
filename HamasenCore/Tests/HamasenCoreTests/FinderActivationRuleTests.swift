@@ -107,6 +107,25 @@ struct FinderActivationRuleTests {
         }
     }
 
+    /// App Store validation rejects a File Provider extension that does not
+    /// name its document group, and a name that no entitlement grants would
+    /// leave the extension unable to reach the shared state it runs on. Both
+    /// are invisible until an upload is rejected or a mount comes up empty.
+    @Test("擴充功能宣告的文件群組存在，且與權限和程式碼一致")
+    func declaresTheDocumentGroupItsEntitlementsGrant() throws {
+        let declared = try #require(
+            Self.extensionInfo()["NSExtensionFileProviderDocumentGroup"] as? String
+        )
+        let granted = try #require(
+            Self.configuration("HamasenFileProvider.entitlements")[
+                "com.apple.security.application-groups"
+            ] as? [String]
+        )
+
+        #expect(declared == SharedConstants.appGroupIdentifier)
+        #expect(granted.contains(declared))
+    }
+
     // MARK: - Fixtures
 
     private struct DeclaredAction {
@@ -115,19 +134,33 @@ struct FinderActivationRuleTests {
         let rule: String
     }
 
-    /// Reads the extension's Info.plist from the repository, so the test
-    /// runs against what ships and not a copy of it.
-    private static func declaredActions() throws -> [DeclaredAction] {
-        let plistURL = URL(fileURLWithPath: #filePath)
+    /// The repository root, so a test reads what ships rather than a copy.
+    private static var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // HamasenCoreTests
             .deletingLastPathComponent()  // Tests
             .deletingLastPathComponent()  // HamasenCore
             .deletingLastPathComponent()  // repository root
-            .appendingPathComponent("Config/HamasenFileProviderInfo.plist")
+    }
+
+    private static func configuration(_ name: String) throws -> [String: Any] {
+        let url = repositoryRoot.appendingPathComponent("Config/\(name)")
         let plist = try PropertyListSerialization.propertyList(
-            from: Data(contentsOf: plistURL), format: nil
+            from: Data(contentsOf: url), format: nil
         )
-        let extensionInfo = try #require((plist as? [String: Any])?["NSExtension"] as? [String: Any])
+        return try #require(plist as? [String: Any])
+    }
+
+    private static func extensionInfo() throws -> [String: Any] {
+        try #require(
+            configuration("HamasenFileProviderInfo.plist")["NSExtension"] as? [String: Any]
+        )
+    }
+
+    /// Reads the extension's Info.plist from the repository, so the test
+    /// runs against what ships and not a copy of it.
+    private static func declaredActions() throws -> [DeclaredAction] {
+        let extensionInfo = try extensionInfo()
         let entries = try #require(extensionInfo["NSExtensionFileProviderActions"] as? [[String: Any]])
         return try entries.map { entry in
             DeclaredAction(
