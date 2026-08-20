@@ -75,13 +75,28 @@ public actor SFTPFileService: RemoteFileService {
         }
     }
 
+    /// The SSH channel's own view of itself: the server closing the session
+    /// takes the channel down, which is visible here without a round trip.
+    public var isConnected: Bool {
+        sftpClient?.isActive ?? false
+    }
+
     public func disconnect() async throws {
         let sftp = sftpClient
         let ssh = sshClient
         sftpClient = nil
         sshClient = nil
-        try? await sftp?.close()
-        try await ssh?.close()
+        // Started rather than awaited. A peer that has gone away never
+        // answers the close handshake, and this service already considers
+        // itself disconnected, so there is nothing left for the caller to
+        // wait for — while waiting would hang an eviction sweep, or a
+        // registry replacing a dead session, for as long as the process
+        // lives. The task suspends on the actor rather than holding it, so
+        // one that never finishes costs a connection, not the service.
+        Task {
+            try? await sftp?.close()
+            try? await ssh?.close()
+        }
     }
 
     // MARK: - RemoteFileService

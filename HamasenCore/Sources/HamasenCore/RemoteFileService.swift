@@ -13,6 +13,14 @@ public protocol RemoteFileService: Sendable {
     /// Closes the connection. The service may be reconnected afterwards.
     func disconnect() async throws
 
+    /// Whether the session is still usable.
+    ///
+    /// A connection can go away with nobody watching — the server drops an
+    /// idle session, the machine sleeps, the network changes — and only the
+    /// next operation finds out, by failing. Asking first is what lets a dead
+    /// connection be replaced instead of used and reported.
+    var isConnected: Bool { get async }
+
     /// Lists directory contents (excluding "." and "..").
     func listDirectory(at path: String) async throws -> [RemoteItem]
 

@@ -34,6 +34,42 @@ struct SFTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    /// What the File Provider's connection registry asks before handing a
+    /// cached connection to the next request. A session can go away with
+    /// nobody watching — the server drops an idle one, the machine sleeps —
+    /// and a registry that cannot tell keeps serving the dead one, failing
+    /// every request until the extension restarts.
+    ///
+    /// The peer-vanished case is not reproducible here: the in-process
+    /// server's close stops its listener and leaves established connections
+    /// up. What is covered is the property the registry reads, over the
+    /// transitions this harness can produce.
+    @Test("未連線與已連線的狀態分得開")
+    func reportsWhetherItIsConnected() async throws {
+        let server = try await TestSFTPServer.start()
+        let config = ServerConfig(
+            name: "測試伺服器",
+            host: "127.0.0.1",
+            port: server.port,
+            username: TestSFTPServer.username
+        )
+        let service = SFTPFileService(
+            config: config,
+            credentials: .password(TestSFTPServer.password)
+        )
+
+        #expect(await service.isConnected == false)
+        try await service.connect()
+        #expect(await service.isConnected == true)
+
+        // Returns without waiting on a close the peer may never answer, so
+        // reaching the next line at all is part of what is being checked.
+        try await service.disconnect()
+        #expect(await service.isConnected == false)
+
+        try await server.stop()
+    }
+
     @Test("密碼錯誤時登入失敗")
     func authenticationFailsWithWrongPassword() async throws {
         let server = try await TestSFTPServer.start()

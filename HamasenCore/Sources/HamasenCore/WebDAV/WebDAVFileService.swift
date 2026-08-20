@@ -186,6 +186,12 @@ public actor WebDAVFileService: RemoteFileService {
         session = candidate
     }
 
+    /// HTTP keeps no session to lose, so this only reports whether the
+    /// service has been connected and not torn down.
+    public var isConnected: Bool {
+        session != nil && !isTearingDown
+    }
+
     public func disconnect() async throws {
         isTearingDown = true
         discardCachedBody()
