@@ -40,34 +40,30 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void
     ) -> Progress {
-        let progress = Progress(totalUnitCount: 1)
-        let registry = registry
-        Task {
-            defer { progress.completedUnitCount = 1 }
-
-            switch ItemIdentifierMapper.entity(for: identifier) {
-            case .root:
-                completionHandler(RootItem(), nil)
-            case .serverRoot(let serverID):
-                do {
-                    let config = try ConnectionRegistry.config(for: serverID)
-                    completionHandler(ServerFolderItem(config: config), nil)
-                } catch {
-                    completionHandler(nil, FileProviderErrorMapper.map(error))
+        switch ItemIdentifierMapper.entity(for: identifier) {
+        case .root:
+            completionHandler(RootItem(), nil)
+            return Self.answered()
+        case .serverRoot(let serverID):
+            do {
+                completionHandler(ServerFolderItem(config: try ConnectionRegistry.config(for: serverID)), nil)
+            } catch {
+                completionHandler(nil, FileProviderErrorMapper.map(error))
+            }
+            return Self.answered()
+        case .item, nil:
+            return performing(at: Self.location(of: identifier)) { service, location in
+                RemoteFileItem(
+                    serverID: location.serverID,
+                    remoteItem: try await service.itemInfo(at: location.path)
+                )
+            } answer: { result in
+                switch result {
+                case .success(let item): completionHandler(item, nil)
+                case .failure(let error): completionHandler(nil, error)
                 }
-            case .item(let serverID, let path):
-                do {
-                    let service = try await registry.service(for: serverID)
-                    let info = try await service.itemInfo(at: path)
-                    completionHandler(RemoteFileItem(serverID: serverID, remoteItem: info), nil)
-                } catch {
-                    completionHandler(nil, FileProviderErrorMapper.map(error))
-                }
-            case nil:
-                completionHandler(nil, NSFileProviderError(.noSuchItem))
             }
         }
-        return progress
     }
 
     // MARK: - Contents
@@ -78,27 +74,18 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         request: NSFileProviderRequest,
         completionHandler: @escaping (URL?, NSFileProviderItem?, Error?) -> Void
     ) -> Progress {
-        let progress = Progress(totalUnitCount: 1)
-        let registry = registry
         let domain = domain
-        Task {
-            defer { progress.completedUnitCount = 1 }
-
-            guard case .item(let serverID, let path) = ItemIdentifierMapper.entity(for: itemIdentifier) else {
-                completionHandler(nil, nil, NSFileProviderError(.noSuchItem))
-                return
-            }
-            do {
-                let service = try await registry.service(for: serverID)
-                let info = try await service.itemInfo(at: path)
-                let localURL = try Self.makeTemporaryFileURL(for: domain)
-                try await service.downloadFile(at: path, to: localURL)
-                completionHandler(localURL, RemoteFileItem(serverID: serverID, remoteItem: info), nil)
-            } catch {
-                completionHandler(nil, nil, FileProviderErrorMapper.map(error))
+        return performing(at: Self.location(of: itemIdentifier)) { service, location in
+            let info = try await service.itemInfo(at: location.path)
+            let localURL = try Self.makeTemporaryFileURL(for: domain)
+            try await service.downloadFile(at: location.path, to: localURL)
+            return (localURL, RemoteFileItem(serverID: location.serverID, remoteItem: info))
+        } answer: { result in
+            switch result {
+            case .success(let (localURL, item)): completionHandler(localURL, item, nil)
+            case .failure(let error): completionHandler(nil, nil, error)
             }
         }
-        return progress
     }
 
     // MARK: - Partial contents
@@ -117,72 +104,63 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             URL?, NSFileProviderItem?, NSRange, NSFileProviderMaterializationFlags, Error?
         ) -> Void
     ) -> Progress {
-        let progress = Progress(totalUnitCount: 1)
-        let registry = registry
         let domain = domain
+        return performing(at: Self.location(of: itemIdentifier)) { service, location in
+            let info = try await service.itemInfo(at: location.path)
 
-        guard case .item(let serverID, let path) = ItemIdentifierMapper.entity(for: itemIdentifier) else {
-            completionHandler(nil, nil, NSRange(location: 0, length: 0), [], NSFileProviderError(.noSuchItem))
-            progress.completedUnitCount = 1
-            return progress
-        }
-
-        let task = Task {
-            defer { progress.completedUnitCount = 1 }
-            do {
-                let service = try await registry.service(for: serverID)
-                let info = try await service.itemInfo(at: path)
-
-                // A server that does not report a size leaves no way to align
-                // a range; fetching the whole item is the only way to avoid
-                // handing back an empty file that looks correctly versioned.
-                guard info.size > 0 else {
-                    let localURL = try Self.makeTemporaryFileURL(for: domain)
-                    try await service.downloadFile(at: path, to: localURL)
-                    let attributes = try? FileManager.default.attributesOfItem(atPath: localURL.path)
-                    let byteCount = (attributes?[.size] as? NSNumber)?.intValue ?? 0
-                    completionHandler(
-                        localURL,
-                        RemoteFileItem(serverID: serverID, remoteItem: info),
-                        NSRange(location: 0, length: byteCount),
-                        [],
-                        nil
-                    )
-                    return
-                }
-
-                let range = ByteRangeAlignment.align(
-                    offset: Int64(requestedRange.location),
-                    length: requestedRange.length,
-                    alignment: alignment,
-                    fileSize: info.size
-                )
-
-                let contents = try await service.downloadRange(
-                    at: path,
-                    offset: range.offset,
-                    length: range.length
-                )
-                try Task.checkCancellation()
-
+            // A server that does not report a size leaves no way to align a
+            // range; fetching the whole item is the only way to avoid handing
+            // back an empty file that looks correctly versioned.
+            guard info.size > 0 else {
                 let localURL = try Self.makeTemporaryFileURL(for: domain)
-                try Self.write(contents, at: range.offset, to: localURL)
-
-                completionHandler(
-                    localURL,
-                    RemoteFileItem(serverID: serverID, remoteItem: info),
-                    NSRange(location: Int(range.offset), length: contents.count),
-                    [],
-                    nil
+                try await service.downloadFile(at: location.path, to: localURL)
+                let attributes = try? FileManager.default.attributesOfItem(atPath: localURL.path)
+                let byteCount = (attributes?[.size] as? NSNumber)?.intValue ?? 0
+                return FetchedRange(
+                    localURL: localURL,
+                    item: RemoteFileItem(serverID: location.serverID, remoteItem: info),
+                    range: NSRange(location: 0, length: byteCount)
                 )
-            } catch is CancellationError {
-                completionHandler(nil, nil, requestedRange, [], CocoaError(.userCancelled))
-            } catch {
-                completionHandler(nil, nil, requestedRange, [], FileProviderErrorMapper.map(error))
+            }
+
+            let range = ByteRangeAlignment.align(
+                offset: Int64(requestedRange.location),
+                length: requestedRange.length,
+                alignment: alignment,
+                fileSize: info.size
+            )
+            let contents = try await service.downloadRange(
+                at: location.path,
+                offset: range.offset,
+                length: range.length
+            )
+            try Task.checkCancellation()
+
+            let localURL = try Self.makeTemporaryFileURL(for: domain)
+            try Self.write(contents, at: range.offset, to: localURL)
+            return FetchedRange(
+                localURL: localURL,
+                item: RemoteFileItem(serverID: location.serverID, remoteItem: info),
+                range: NSRange(location: Int(range.offset), length: contents.count)
+            )
+        } answer: { result in
+            switch result {
+            case .success(let fetched):
+                completionHandler(fetched.localURL, fetched.item, fetched.range, [], nil)
+            case .failure(let error):
+                // The range is echoed back so the system knows which request
+                // failed, not that anything was fetched.
+                completionHandler(nil, nil, requestedRange, [], error)
             }
         }
-        progress.cancellationHandler = { task.cancel() }
-        return progress
+    }
+
+    /// The bytes one partial fetch produced, kept together so the operation
+    /// returns a value rather than calling back from inside itself.
+    private struct FetchedRange {
+        let localURL: URL
+        let item: NSFileProviderItem
+        let range: NSRange
     }
 
     /// Writes a fetched range at its own offset, leaving the rest of the file
@@ -205,41 +183,33 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void
     ) -> Progress {
-        let progress = Progress(totalUnitCount: 1)
-        let registry = registry
         let domain = domain
-        Task {
-            defer { progress.completedUnitCount = 1 }
-
-            guard let (serverID, parentPath) = Self.containerLocation(
-                of: itemTemplate.parentItemIdentifier
-            ) else {
-                completionHandler(nil, fields, false, NSFileProviderError(.noSuchItem))
-                return
+        return performing(
+            at: Self.containerLocation(of: itemTemplate.parentItemIdentifier)
+        ) { service, parent in
+            let newItemPath = RemotePath.join(parent.path, itemTemplate.filename)
+            if itemTemplate.contentType == .folder {
+                try await service.createDirectory(at: newItemPath)
+            } else if let url {
+                try await service.uploadFile(from: url, to: newItemPath)
+            } else {
+                // A file with no contents yet (e.g. Finder creating a
+                // placeholder): create it empty on the server.
+                let emptyFileURL = try Self.makeTemporaryFileURL(for: domain)
+                try Data().write(to: emptyFileURL)
+                defer { try? FileManager.default.removeItem(at: emptyFileURL) }
+                try await service.uploadFile(from: emptyFileURL, to: newItemPath)
             }
-
-            let newItemPath = RemotePath.join(parentPath, itemTemplate.filename)
-            do {
-                let service = try await registry.service(for: serverID)
-                if itemTemplate.contentType == .folder {
-                    try await service.createDirectory(at: newItemPath)
-                } else if let url {
-                    try await service.uploadFile(from: url, to: newItemPath)
-                } else {
-                    // A file with no contents yet (e.g. Finder creating a
-                    // placeholder): create it empty on the server.
-                    let emptyFileURL = try Self.makeTemporaryFileURL(for: domain)
-                    try Data().write(to: emptyFileURL)
-                    defer { try? FileManager.default.removeItem(at: emptyFileURL) }
-                    try await service.uploadFile(from: emptyFileURL, to: newItemPath)
-                }
-                let info = try await service.itemInfo(at: newItemPath)
-                completionHandler(RemoteFileItem(serverID: serverID, remoteItem: info), [], false, nil)
-            } catch {
-                completionHandler(nil, fields, false, FileProviderErrorMapper.map(error))
+            return RemoteFileItem(
+                serverID: parent.serverID,
+                remoteItem: try await service.itemInfo(at: newItemPath)
+            )
+        } answer: { result in
+            switch result {
+            case .success(let item): completionHandler(item, [], false, nil)
+            case .failure(let error): completionHandler(nil, fields, false, error)
             }
         }
-        return progress
     }
 
     func modifyItem(
@@ -251,80 +221,67 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void
     ) -> Progress {
-        let progress = Progress(totalUnitCount: 1)
-        let registry = registry
-        Task {
-            defer { progress.completedUnitCount = 1 }
-
-            let serverID: UUID
-            let currentPath: String
-            switch ItemIdentifierMapper.entity(for: item.itemIdentifier) {
-            case .item(let itemServerID, let itemPath):
-                serverID = itemServerID
-                currentPath = itemPath
-            case .serverRoot(let folderServerID):
-                // Server folders are configured in the app, but Finder still
-                // stamps metadata such as lastUsedDate on them when they are
-                // opened. Accept the call and report the fields as unsupported.
-                do {
-                    let config = try ConnectionRegistry.config(for: folderServerID)
-                    completionHandler(ServerFolderItem(config: config), changedFields, false, nil)
-                } catch {
-                    completionHandler(nil, changedFields, false, FileProviderErrorMapper.map(error))
-                }
-                return
-            case .root:
-                completionHandler(RootItem(), changedFields, false, nil)
-                return
-            case nil:
-                completionHandler(nil, changedFields, false, NSFileProviderError(.noSuchItem))
-                return
-            }
-
+        switch ItemIdentifierMapper.entity(for: item.itemIdentifier) {
+        case .serverRoot(let folderServerID):
+            // Server folders are configured in the app, but Finder still
+            // stamps metadata such as lastUsedDate on them when they are
+            // opened. Accept the call and report the fields as unsupported.
             do {
-                let service = try await registry.service(for: serverID)
-                var effectivePath = currentPath
-
-                let isRenamed = changedFields.contains(.filename)
-                let isReparented = changedFields.contains(.parentItemIdentifier)
-                if isRenamed || isReparented {
-                    let newParentPath: String
-                    if isReparented {
-                        guard let (targetServerID, parentPath) = Self.containerLocation(
-                            of: item.parentItemIdentifier
-                        ), targetServerID == serverID else {
-                            // Moving between servers is not a rename; Finder
-                            // falls back to copy + delete on this error.
-                            throw NSFileProviderError(.noSuchItem)
-                        }
-                        newParentPath = parentPath
-                    } else {
-                        newParentPath = RemotePath.parent(of: currentPath)
-                    }
-                    let newName = isRenamed ? item.filename : RemotePath.name(of: currentPath)
-                    let destinationPath = RemotePath.join(newParentPath, newName)
-                    if destinationPath != currentPath {
-                        try await service.moveItem(from: currentPath, to: destinationPath)
-                        effectivePath = destinationPath
-                    }
-                }
-
-                if changedFields.contains(.contents), let newContents {
-                    try await service.uploadFile(from: newContents, to: effectivePath)
-                }
-
-                let info = try await service.itemInfo(at: effectivePath)
-                completionHandler(
-                    RemoteFileItem(serverID: serverID, remoteItem: info),
-                    changedFields.subtracting(Self.modifiableFields),
-                    false,
-                    nil
-                )
+                let config = try ConnectionRegistry.config(for: folderServerID)
+                completionHandler(ServerFolderItem(config: config), changedFields, false, nil)
             } catch {
                 completionHandler(nil, changedFields, false, FileProviderErrorMapper.map(error))
             }
+            return Self.answered()
+        case .root:
+            completionHandler(RootItem(), changedFields, false, nil)
+            return Self.answered()
+        case .item, nil:
+            break
         }
-        return progress
+
+        return performing(at: Self.location(of: item.itemIdentifier)) { service, location in
+            var effectivePath = location.path
+
+            let isRenamed = changedFields.contains(.filename)
+            let isReparented = changedFields.contains(.parentItemIdentifier)
+            if isRenamed || isReparented {
+                let newParentPath: String
+                if isReparented {
+                    guard let parent = Self.containerLocation(of: item.parentItemIdentifier),
+                          parent.serverID == location.serverID else {
+                        // Moving between servers is not a rename; Finder
+                        // falls back to copy + delete on this error.
+                        throw NSFileProviderError(.noSuchItem)
+                    }
+                    newParentPath = parent.path
+                } else {
+                    newParentPath = RemotePath.parent(of: location.path)
+                }
+                let newName = isRenamed ? item.filename : RemotePath.name(of: location.path)
+                let destinationPath = RemotePath.join(newParentPath, newName)
+                if destinationPath != location.path {
+                    try await service.moveItem(from: location.path, to: destinationPath)
+                    effectivePath = destinationPath
+                }
+            }
+
+            if changedFields.contains(.contents), let newContents {
+                try await service.uploadFile(from: newContents, to: effectivePath)
+            }
+
+            return RemoteFileItem(
+                serverID: location.serverID,
+                remoteItem: try await service.itemInfo(at: effectivePath)
+            )
+        } answer: { result in
+            switch result {
+            case .success(let item):
+                completionHandler(item, changedFields.subtracting(Self.modifiableFields), false, nil)
+            case .failure(let error):
+                completionHandler(nil, changedFields, false, error)
+            }
+        }
     }
 
     func deleteItem(
@@ -334,32 +291,22 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         request: NSFileProviderRequest,
         completionHandler: @escaping (Error?) -> Void
     ) -> Progress {
-        let progress = Progress(totalUnitCount: 1)
-        let registry = registry
-        Task {
-            defer { progress.completedUnitCount = 1 }
-
-            guard case .item(let serverID, let path) = ItemIdentifierMapper.entity(for: identifier) else {
-                // Server folders and the root are managed from the app.
-                completionHandler(NSFileProviderError(.noSuchItem))
-                return
+        // Server folders and the root are managed from the app, so anything
+        // that is not an item on a server resolves to no location.
+        performing(at: Self.location(of: identifier)) { service, location in
+            if try await service.itemInfo(at: location.path).isDirectory {
+                // Recursive by contract: WebDAV does it in one request,
+                // SFTP walks the tree itself.
+                try await service.deleteDirectory(at: location.path)
+            } else {
+                try await service.deleteFile(at: location.path)
             }
-            do {
-                let service = try await registry.service(for: serverID)
-                let info = try await service.itemInfo(at: path)
-                if info.isDirectory {
-                    // Recursive by contract: WebDAV does it in one request,
-                    // SFTP walks the tree itself.
-                    try await service.deleteDirectory(at: path)
-                } else {
-                    try await service.deleteFile(at: path)
-                }
-                completionHandler(nil)
-            } catch {
-                completionHandler(FileProviderErrorMapper.map(error))
+        } answer: { result in
+            switch result {
+            case .success: completionHandler(nil)
+            case .failure(let error): completionHandler(error)
             }
         }
-        return progress
     }
 
     // MARK: - Enumeration
@@ -387,19 +334,79 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         }
     }
 
+    // MARK: - Running one operation
+
+    /// Somewhere on a server that an operation acts on.
+    struct ItemLocation {
+        let serverID: UUID
+        let path: String
+    }
+
+    /// Runs one server-side operation the way every entry point here runs
+    /// one: on a progress the system can watch, against the connection for
+    /// that item's server, answering exactly once and only ever with an
+    /// error the system accepts.
+    ///
+    /// This shape was written out at each entry point before, which is why a
+    /// session that died had to be handled in the connection registry: there
+    /// was no single place where "how an operation runs" could be changed.
+    private func performing<Success>(
+        at location: ItemLocation?,
+        work: @escaping (any RemoteFileService, ItemLocation) async throws -> Success,
+        answer: @escaping (Result<Success, Error>) -> Void
+    ) -> Progress {
+        let progress = Progress(totalUnitCount: 1)
+        let registry = registry
+        let task = Task {
+            defer { progress.completedUnitCount = 1 }
+            guard let location else {
+                answer(.failure(NSFileProviderError(.noSuchItem)))
+                return
+            }
+            do {
+                let service = try await registry.service(for: location.serverID)
+                answer(.success(try await work(service, location)))
+            } catch is CancellationError {
+                answer(.failure(CocoaError(.userCancelled)))
+            } catch {
+                answer(.failure(FileProviderErrorMapper.map(error)))
+            }
+        }
+        progress.cancellationHandler = { task.cancel() }
+        return progress
+    }
+
+    /// A progress for an answer that took no work, so a synchronous reply
+    /// still returns what the system expects.
+    private static func answered() -> Progress {
+        let progress = Progress(totalUnitCount: 1)
+        progress.completedUnitCount = 1
+        return progress
+    }
+
     // MARK: - Helpers
 
-    /// Resolves a container identifier to (server, directory path) for
-    /// creating or moving items. Returns nil for the domain root, which does
-    /// not accept items.
+    /// The item an identifier names, or nil for anything that is not a file
+    /// or folder on a server.
+    private static func location(
+        of identifier: NSFileProviderItemIdentifier
+    ) -> ItemLocation? {
+        guard case .item(let serverID, let path) = ItemIdentifierMapper.entity(for: identifier) else {
+            return nil
+        }
+        return ItemLocation(serverID: serverID, path: path)
+    }
+
+    /// Resolves a container identifier to the directory items are created in
+    /// or moved to. Returns nil for the domain root, which accepts none.
     private static func containerLocation(
         of identifier: NSFileProviderItemIdentifier
-    ) -> (serverID: UUID, path: String)? {
+    ) -> ItemLocation? {
         switch ItemIdentifierMapper.entity(for: identifier) {
         case .serverRoot(let serverID):
-            return (serverID, RemotePath.root)
+            return ItemLocation(serverID: serverID, path: RemotePath.root)
         case .item(let serverID, let path):
-            return (serverID, path)
+            return ItemLocation(serverID: serverID, path: path)
         case .root, nil:
             return nil
         }
