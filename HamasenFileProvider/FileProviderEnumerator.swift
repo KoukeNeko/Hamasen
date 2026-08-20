@@ -16,10 +16,6 @@ import HamasenCore
 final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     func invalidate() {}
 
-    private static func mountedConfigs() -> [ServerConfig] {
-        (try? ConnectionRegistry.mountedConfigs()) ?? []
-    }
-
     private static func anchor(for configs: [ServerConfig]) -> NSFileProviderSyncAnchor {
         NSFileProviderSyncAnchor(
             ServerListChangeTracker.encode(ServerListChangeTracker.snapshot(of: configs))
@@ -68,7 +64,16 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        completionHandler(Self.anchor(for: Self.mountedConfigs()))
+        // No anchor rather than one built from an empty list. The system
+        // reads nil as "no common ground, enumerate from scratch", where an
+        // anchor claiming the mount was empty would make the next diff read
+        // as every server having been deleted — the very thing
+        // enumerateChanges refuses to do.
+        guard let configs = try? ConnectionRegistry.mountedConfigs() else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(Self.anchor(for: configs))
     }
 }
 
