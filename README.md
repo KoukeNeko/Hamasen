@@ -9,7 +9,7 @@
 **Your servers, docked in Finder.**\
 Mount remote SFTP servers as native Finder locations — browse, edit, and drag files like local folders.
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue?style=for-the-badge&logo=apple)](https://github.com/KoukeNeko/Hamasen)
+[![Platform](https://img.shields.io/badge/platform-macOS%2015.6%2B-blue?style=for-the-badge&logo=apple)](https://github.com/KoukeNeko/Hamasen)
 [![Swift](https://img.shields.io/badge/Swift-5-orange?style=for-the-badge&logo=swift)](https://github.com/KoukeNeko/Hamasen)
 [![File Provider](https://img.shields.io/badge/File%20Provider-no%20kexts%2C%20no%20macFUSE-green?style=for-the-badge)](https://developer.apple.com/documentation/fileprovider)
 [![Stars](https://img.shields.io/github/stars/KoukeNeko/Hamasen?style=for-the-badge&logo=github)](https://github.com/KoukeNeko/Hamasen/stargazers)
