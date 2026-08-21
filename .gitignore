@@ -7,3 +7,6 @@ xcuserdata/
 # Swift Package Manager
 .build/
 .omx/
+
+# Release archives, rebuilt from a notarized app rather than tracked.
+dist/
