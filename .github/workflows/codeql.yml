@@ -1,0 +1,73 @@
+name: CodeQL
+
+# Replaces GitHub's default setup, whose autobuild cannot build an Xcode
+# project: it segfaulted (exit 139) before the extractor saw a single Swift
+# file, which left the language silently dropped from the analysis. A manual
+# build mode hands the extractor the real compilations instead.
+on:
+  push:
+    branches: [main, beta, dev]
+  pull_request:
+    branches: [main, beta, dev]
+  schedule:
+    # Queries improve between commits; a weekly run catches what the rules
+    # learned since the code last changed.
+    - cron: '17 4 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Only Swift needs a Mac; workflow analysis is cheaper on Linux.
+          - language: actions
+            build-mode: none
+            runner: ubuntu-latest
+          - language: swift
+            build-mode: manual
+            runner: macos-26
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - if: matrix.language == 'swift'
+        uses: ./.github/actions/pin-xcode
+
+      # Unsigned, for the same reason the harness is: a runner has no signing
+      # identity and must not mint one. The extractor only needs the
+      # compilations, not a runnable product.
+      - if: matrix.language == 'swift'
+        name: Build for the extractor
+        run: |
+          xcodebuild \
+              -project Hamasen.xcodeproj \
+              -scheme Hamasen \
+              -configuration Debug \
+              -destination 'platform=macOS' \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY= \
+              build
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
