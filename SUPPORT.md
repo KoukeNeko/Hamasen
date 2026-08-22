@@ -5,6 +5,7 @@ channels:
 
 - Email: [develop@doeshing.uk](mailto:develop@doeshing.uk)
 - GitHub Issues: [KoukeNeko/Hamasen](https://github.com/KoukeNeko/Hamasen/issues)
+- Privacy policy: [PRIVACY.md](PRIVACY.md)
 
 When reporting a problem, please include:
 

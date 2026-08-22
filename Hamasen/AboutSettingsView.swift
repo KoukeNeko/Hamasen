@@ -43,6 +43,16 @@ struct AboutSettingsView: View {
                 LabeledContent("回報問題") {
                     Link("GitHub Issues", destination: GitHubRepository.issuesURL)
                 }
+                LabeledContent("支援") {
+                    Link(destination: GitHubRepository.supportURL) {
+                        Text(verbatim: "SUPPORT.md")
+                    }
+                }
+                LabeledContent("隱私權政策") {
+                    Link(destination: GitHubRepository.privacyPolicyURL) {
+                        Text(verbatim: "PRIVACY.md")
+                    }
+                }
                 LabeledContent("授權") {
                     Link("Apache License 2.0", destination: GitHubRepository.licenseURL)
                 }

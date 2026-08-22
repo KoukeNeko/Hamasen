@@ -22,6 +22,8 @@ public enum GitHubRepository {
     public static let webURL = URL(string: "https://github.com/\(owner)/\(name)")!
     public static let issuesURL = URL(string: "https://github.com/\(owner)/\(name)/issues")!
     public static let licenseURL = URL(string: "https://github.com/\(owner)/\(name)/blob/main/LICENSE")!
+    public static let supportURL = URL(string: "https://github.com/\(owner)/\(name)/blob/main/SUPPORT.md")!
+    public static let privacyPolicyURL = URL(string: "https://github.com/\(owner)/\(name)/blob/main/PRIVACY.md")!
     public static let contributorsURL = URL(string: "https://github.com/\(owner)/\(name)/graphs/contributors")!
 
     /// The one address in this app that is not a server the user configured.

@@ -78,5 +78,7 @@ struct GitHubRepositoryTests {
     func pointsAtThisRepository() {
         #expect(GitHubRepository.webURL.absoluteString == "https://github.com/KoukeNeko/Hamasen")
         #expect(GitHubRepository.licenseURL.absoluteString.hasSuffix("/blob/main/LICENSE"))
+        #expect(GitHubRepository.supportURL.absoluteString.hasSuffix("/blob/main/SUPPORT.md"))
+        #expect(GitHubRepository.privacyPolicyURL.absoluteString.hasSuffix("/blob/main/PRIVACY.md"))
     }
 }
