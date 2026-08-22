@@ -3,6 +3,9 @@ import FileProvider
 import Foundation
 import HamasenCore
 import Observation
+// For move(fromOffsets:toOffset:), whose handling of a downward move is
+// easy to get subtly wrong by hand.
+import SwiftUI
 
 /// View model for the server list: persistence, credentials, and management
 /// of the single "Hamasen" File Provider domain. Mounting a server means
@@ -141,6 +144,27 @@ final class ServerListModel {
         } catch {
             errorMessage = String(localized: "刪除伺服器失敗：\(error.localizedDescription)")
         }
+    }
+
+    /// Reorders the list, which is the order it is shown and stored in.
+    ///
+    /// Written straight through rather than after a confirmation: a drag is
+    /// its own confirmation, and a list that sprang back would be worse than
+    /// one that saved something the user can simply drag again.
+    func moveServers(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard let stores = stores() else { return }
+        var reordered = servers
+        reordered.move(fromOffsets: source, toOffset: destination)
+        do {
+            try stores.servers.saveServers(reordered)
+        } catch {
+            errorMessage = String(localized: "儲存伺服器失敗：\(error.localizedDescription)")
+            return
+        }
+        servers = reordered
+        // The Finder folders are listed in this order too, so the change has
+        // to reach the extension rather than stopping at the window.
+        Task { try? await FinderDomain.signalServerListChanged() }
     }
 
     // MARK: - Bookmark import

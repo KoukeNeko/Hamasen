@@ -108,6 +108,9 @@ struct HamasenMainView: View {
                             }
                         }
                 }
+                .onMove { source, destination in
+                    model.moveServers(fromOffsets: source, toOffset: destination)
+                }
             }
         }
         .listStyle(.sidebar)
