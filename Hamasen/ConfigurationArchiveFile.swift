@@ -18,7 +18,7 @@ enum ConfigurationArchiveFile {
         panel.allowedContentTypes = [UTType(filenameExtension: fileExtension)].compactMap { $0 }
 
         guard panel.runModal() == .OK, let url = panel.url else { return false }
-        try write(archive.encoded(), to: url)
+        try PrivateFileWrite.write(archive.encoded(), to: url)
         return true
     }
 
@@ -36,7 +36,7 @@ enum ConfigurationArchiveFile {
         panel.allowedContentTypes = [UTType(filenameExtension: fileExtension)].compactMap { $0 }
 
         guard panel.runModal() == .OK, let url = panel.url else { return false }
-        try write(archive.sealed(passphrase: passphrase), to: url)
+        try PrivateFileWrite.write(archive.sealed(passphrase: passphrase), to: url)
         return true
     }
 
@@ -68,20 +68,6 @@ enum ConfigurationArchiveFile {
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return try Data(contentsOf: url)
-    }
-
-    /// Writes a backup readable only by the person who made it.
-    ///
-    /// The default a new file gets is readable by everyone with an account on
-    /// the Mac. A plain backup lists every server and who signs in to them; a
-    /// protected one is encrypted, but leaving it readable is leaving it to
-    /// be carried off and worked on at leisure.
-    private static func write(_ contents: Data, to url: URL) throws {
-        try contents.write(to: url, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: url.path
-        )
     }
 
     /// Dated, because the reason to keep more than one is to go back to an

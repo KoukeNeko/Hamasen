@@ -21,11 +21,20 @@ public final class TestFTPServer {
     public let port: Int
     public let rootDirectory: URL
     private let channel: Channel
+    private let transferred: TransferredBytes
 
-    private init(port: Int, rootDirectory: URL, channel: Channel) {
+    /// How many bytes of the last download the server managed to send.
+    ///
+    /// A client that stops early leaves this short of the file, which is the
+    /// only way from outside to tell a ranged read that stopped from one that
+    /// read everything and discarded the rest.
+    public var bytesSentInLastDownload: Int { transferred.count }
+
+    private init(port: Int, rootDirectory: URL, channel: Channel, transferred: TransferredBytes) {
         self.port = port
         self.rootDirectory = rootDirectory
         self.channel = channel
+        self.transferred = transferred
     }
 
     /// - Parameter preferredPort: a fixed port, for a server someone is
@@ -39,6 +48,7 @@ public final class TestFTPServer {
             .appendingPathComponent("ftp-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
 
+        let transferred = TransferredBytes()
         var lastError: Error?
         for _ in 0..<maxBindAttempts {
             let candidatePort = preferredPort > 0 ? preferredPort : Int.random(in: portRange)
@@ -49,13 +59,22 @@ public final class TestFTPServer {
                         channel.eventLoop.makeCompletedFuture {
                             try channel.pipeline.syncOperations.addHandlers([
                                 ByteToMessageHandler(FTPLineDecoder()),
-                                FTPSessionHandler(root: rootDirectory, advertisesMLSD: advertisingMLSD),
+                                FTPSessionHandler(
+                                    root: rootDirectory,
+                                    advertisesMLSD: advertisingMLSD,
+                                    transferred: transferred
+                                ),
                             ])
                         }
                     }
                     .bind(host: "127.0.0.1", port: candidatePort)
                     .get()
-                return TestFTPServer(port: candidatePort, rootDirectory: rootDirectory, channel: channel)
+                return TestFTPServer(
+                    port: candidatePort,
+                    rootDirectory: rootDirectory,
+                    channel: channel,
+                    transferred: transferred
+                )
             } catch {
                 lastError = error
             }
@@ -77,6 +96,7 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
 
     private let root: URL
     private let advertisesMLSD: Bool
+    private let transferred: TransferredBytes
     private var isAuthenticated = false
     private var workingDirectory = "/"
     private var renameSource: String?
@@ -85,9 +105,10 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
     private var passiveListener: Channel?
     private var passiveConnection: EventLoopFuture<Channel>?
 
-    init(root: URL, advertisesMLSD: Bool) {
+    init(root: URL, advertisesMLSD: Bool, transferred: TransferredBytes) {
         self.root = root
         self.advertisesMLSD = advertisesMLSD
+        self.transferred = transferred
     }
 
     func channelActive(context: ChannelHandlerContext) {
@@ -222,17 +243,46 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
 
     /// Hands `body` to the client over the waiting data connection, then
     /// closes it and reports completion — the two halves the client waits for.
+    /// Written in pieces rather than in one go, so a client that stops
+    /// reading part-way through leaves a write that fails — which is what a
+    /// real server sees, and what makes an early stop visible to a test.
+    private static let chunkSize = 64 * 1024
+
     private func sendOverDataConnection(_ body: Data, _ context: ChannelHandlerContext) {
         guard let pending = passiveConnection else { return reply(context, 425, "Use PASV first") }
+        transferred.reset()
         reply(context, 150, "Opening data connection")
         pending.whenSuccess { [weak self] channel in
+            self?.sendChunk(of: body, from: 0, over: channel, context)
+        }
+    }
+
+    private func sendChunk(
+        of body: Data,
+        from offset: Int,
+        over channel: Channel,
+        _ context: ChannelHandlerContext
+    ) {
+        guard offset < body.count else {
+            channel.close(promise: nil)
+            closePassiveListener()
+            return reply(context, 226, "Transfer complete")
+        }
+        let end = min(offset + Self.chunkSize, body.count)
+        var buffer = channel.allocator.buffer(capacity: end - offset)
+        buffer.writeBytes(body[body.startIndex + offset..<body.startIndex + end])
+
+        channel.writeAndFlush(buffer).whenComplete { [weak self] result in
             guard let self else { return }
-            var buffer = channel.allocator.buffer(capacity: body.count)
-            buffer.writeBytes(body)
-            channel.writeAndFlush(buffer).whenComplete { _ in
-                channel.close(promise: nil)
+            switch result {
+            case .success:
+                self.transferred.add(end - offset)
+                self.sendChunk(of: body, from: end, over: channel, context)
+            case .failure:
+                // The client closed before this finished, which is what a
+                // ranged read looks like from here.
                 self.closePassiveListener()
-                self.reply(context, 226, "Transfer complete")
+                self.reply(context, 426, "Connection closed; transfer aborted")
             }
         }
     }
@@ -363,5 +413,22 @@ private final class UploadCollector: ChannelInboundHandler, @unchecked Sendable 
     func channelInactive(context: ChannelHandlerContext) {
         completion((try? received.write(to: destination)) != nil)
         context.fireChannelInactive()
+    }
+}
+
+/// Counts what one download managed to send, across the event loop that
+/// writes it and the test that reads it afterwards.
+final class TransferredBytes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = 0
+
+    var count: Int { lock.withLock { bytes } }
+
+    func add(_ amount: Int) {
+        lock.withLock { bytes += amount }
+    }
+
+    func reset() {
+        lock.withLock { bytes = 0 }
     }
 }

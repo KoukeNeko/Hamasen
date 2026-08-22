@@ -143,6 +143,29 @@ struct FTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    /// What the fix to the ranged read was for, made observable: the server
+    /// writes in pieces, so how much it got out before the client stopped
+    /// reading says whether the client stopped at all. Reading to the end and
+    /// discarding the rest would leave this equal to the file.
+    @Test("區間讀取會提前中止，不會把整個檔案收完")
+    func stopsReadingOnceItHasTheRange() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+        var contents = Data()
+        while contents.count < 4_000_000 {
+            contents.append(contentsOf: Array("0123456789".utf8))
+        }
+        try contents.write(to: server.rootDirectory.appendingPathComponent("large.bin"))
+
+        let range = try await service.downloadRange(at: "/large.bin", offset: 0, length: 10)
+        #expect(range.count == 10)
+        #expect(
+            server.bytesSentInLastDownload < contents.count,
+            "sent \(server.bytesSentInLastDownload) of \(contents.count) bytes, so the read did not stop early"
+        )
+
+        try await Self.tearDown(service, server)
+    }
+
     @Test("上傳檔案")
     func uploadsAFile() async throws {
         let (service, server) = try await Self.makeConnectedService()
