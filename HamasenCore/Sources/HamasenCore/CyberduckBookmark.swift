@@ -140,8 +140,8 @@ public enum CyberduckBookmark {
     // MARK: - Fields
 
     /// The protocols Hamasen can mount. Anything else — S3, the OAuth
-    /// drives, FTP until it is implemented — is named back to the user
-    /// rather than imported as something it is not.
+    /// drives — is named back to the user rather than imported as something
+    /// it is not.
     private static func transferProtocol(
         for identifier: String
     ) -> ServerConfig.TransferProtocol? {
@@ -149,6 +149,8 @@ public enum CyberduckBookmark {
         case "sftp": return .sftp
         case "dav": return .webdav
         case "davs": return .webdavs
+        case "ftp": return .ftp
+        case "ftps": return .ftps
         default: return nil
         }
     }

@@ -2230,6 +2230,28 @@
         }
       }
     },
+    "這個協定不加密，密碼與檔案內容在網路上是可讀的。同一台伺服器若支援，請改用 SFTP 或 FTPS。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This protocol is not encrypted: the password and the file contents are readable on the network. Use SFTP or FTPS instead if the same server offers one."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロトコルは暗号化されません。パスワードとファイルの内容はネットワーク上で読み取れます。同じサーバがSFTPまたはFTPSに対応しているなら、そちらを使ってください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個協定不加密，密碼與檔案內容在網路上是可讀的。同一台伺服器若支援，請改用 SFTP 或 FTPS。"
+          }
+        }
+      }
+    },
     "連接埠": {
       "localizations": {
         "en": {

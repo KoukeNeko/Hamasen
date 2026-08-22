@@ -1,6 +1,7 @@
 import Foundation
 import NIOCore
 import NIOPosix
+import NIOSSL
 
 /// One transfer's data connection.
 ///
@@ -18,10 +19,11 @@ enum FTPDataConnection {
         fallbackHost: String,
         group: EventLoopGroup,
         timeoutSeconds: Int,
+        protection: FTPDataProtection,
         into receive: @escaping @Sendable (ByteBuffer) throws -> Void
     ) async throws {
         let handler = FTPDataReceiver(receive: receive)
-        let channel = try await open(address, fallbackHost, group, timeoutSeconds) { channel in
+        let channel = try await open(address, fallbackHost, group, timeoutSeconds, protection) { channel in
             try channel.pipeline.syncOperations.addHandler(handler)
         }
         try await handler.finished(on: channel.eventLoop).get()
@@ -33,14 +35,16 @@ enum FTPDataConnection {
         at address: FTPPassiveAddress,
         fallbackHost: String,
         group: EventLoopGroup,
-        timeoutSeconds: Int
+        timeoutSeconds: Int,
+        protection: FTPDataProtection
     ) async throws -> Data {
         let collected = CollectedBytes()
         try await receive(
             at: address,
             fallbackHost: fallbackHost,
             group: group,
-            timeoutSeconds: timeoutSeconds
+            timeoutSeconds: timeoutSeconds,
+            protection: protection
         ) { buffer in
             collected.append(buffer)
         }
@@ -54,9 +58,10 @@ enum FTPDataConnection {
         at address: FTPPassiveAddress,
         fallbackHost: String,
         group: EventLoopGroup,
-        timeoutSeconds: Int
+        timeoutSeconds: Int,
+        protection: FTPDataProtection
     ) async throws {
-        let channel = try await open(address, fallbackHost, group, timeoutSeconds) { _ in }
+        let channel = try await open(address, fallbackHost, group, timeoutSeconds, protection) { _ in }
 
         let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
@@ -77,6 +82,7 @@ enum FTPDataConnection {
         _ fallbackHost: String,
         _ group: EventLoopGroup,
         _ timeoutSeconds: Int,
+        _ protection: FTPDataProtection,
         _ configure: @escaping @Sendable (Channel) throws -> Void
     ) async throws -> Channel {
         // EPSV names only a port: the data connection goes to the host the
@@ -86,11 +92,27 @@ enum FTPDataConnection {
         return try await ClientBootstrap(group: group)
             .connectTimeout(.seconds(Int64(timeoutSeconds)))
             .channelInitializer { channel in
-                channel.eventLoop.makeCompletedFuture { try configure(channel) }
+                channel.eventLoop.makeCompletedFuture {
+                    // Ahead of everything else, so what the handlers see is
+                    // already decrypted.
+                    if case .tls(let context, let hostname) = protection {
+                        try channel.pipeline.syncOperations.addHandler(
+                            FTPTLS.makeHandler(context: context, host: hostname)
+                        )
+                    }
+                    try configure(channel)
+                }
             }
             .connect(host: host, port: address.port)
             .get()
     }
+}
+
+/// Whether a transfer's bytes are protected, which follows what `PROT`
+/// last agreed with the server.
+enum FTPDataProtection: Sendable {
+    case clear
+    case tls(context: NIOSSLContext, hostname: String)
 }
 
 /// Gathers a whole small transfer.

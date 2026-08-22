@@ -92,12 +92,22 @@ struct CyberduckBookmarkTests {
     func namesUnsupportedProtocols() {
         let summary = CyberduckBookmark.read([
             Self.file(["Protocol": "s3", "Hostname": "s3.amazonaws.com"]),
-            Self.file(["Protocol": "ftp", "Hostname": "ftp.example.com"]),
+            Self.file(["Protocol": "googledrive", "Hostname": "drive.google.com"]),
             Self.file(["Protocol": "s3", "Hostname": "other.example.com"]),
         ])
 
         #expect(summary.servers.isEmpty)
-        #expect(summary.unsupportedProtocols == ["s3", "ftp"])
+        #expect(summary.unsupportedProtocols == ["s3", "googledrive"])
+    }
+
+    @Test("FTP 與 FTPS 書籤也匯入")
+    func mapsFTPProtocols() {
+        let summary = CyberduckBookmark.read([
+            Self.file(["Protocol": "ftp", "Hostname": "a.example.com"]),
+            Self.file(["Protocol": "ftps", "Hostname": "b.example.com"]),
+        ])
+
+        #expect(summary.servers.map(\.config.transferProtocol) == [.ftp, .ftps])
     }
 
     @Test("已經在清單中的連線會被略過")

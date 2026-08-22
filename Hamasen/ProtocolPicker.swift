@@ -22,5 +22,19 @@ struct ProtocolPicker: View {
                 portText = String(updated.defaultPort)
             }
         }
+
+        if transferProtocol.isUnencrypted {
+            // Said where the choice is made rather than buried in a footer:
+            // the alternative is one menu item away, and someone picking
+            // this one should know what it costs.
+            Label(
+                "這個協定不加密，密碼與檔案內容在網路上是可讀的。同一台伺服器若支援，請改用 SFTP 或 FTPS。",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .labelStyle(.titleAndIcon)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

@@ -18,6 +18,8 @@ let package = Package(
         // Already in the graph through Citadel; declared so the test target
         // can stand up an in-process WebDAV server.
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
+        // FTPS wraps the FTP connections in TLS; NIOSSL is what does that.
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.27.0"),
     ],
     targets: [
         // Citadel's SSHClient is not marked Sendable yet, which trips Swift 6
@@ -27,6 +29,7 @@ let package = Package(
             name: "HamasenCore",
             dependencies: [
                 .product(name: "Citadel", package: "Citadel"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
             ],
             resources: [.process("Localizable.xcstrings")],
             swiftSettings: [.swiftLanguageMode(.v5)]

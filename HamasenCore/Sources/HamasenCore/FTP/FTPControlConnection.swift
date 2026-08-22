@@ -1,6 +1,7 @@
 import Foundation
 import NIOCore
 import NIOPosix
+import NIOSSL
 
 /// The command channel of an FTP session.
 ///
@@ -29,11 +30,13 @@ actor FTPControlConnection {
 
     var eventLoopGroup: EventLoopGroup { channel.eventLoop }
 
-    /// Opens the channel and reads the greeting the server sends unprompted.
+    /// Opens the channel, reads the greeting the server sends unprompted,
+    /// and upgrades to TLS before anything worth protecting is sent.
     static func connect(
         host: String,
         port: Int,
         timeoutSeconds: Int,
+        tls: FTPTLSMode = .none,
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton
     ) async throws -> (connection: FTPControlConnection, greeting: FTPResponse) {
         let responses = FTPResponseHandler()
@@ -61,7 +64,29 @@ actor FTPControlConnection {
             try? await channel.close()
             throw RemoteFileServiceError.connectionFailed(underlying: greeting.text)
         }
+        if tls == .explicit {
+            do {
+                try await connection.startTLS(host: host)
+            } catch {
+                await connection.close()
+                throw error
+            }
+        }
         return (connection, greeting)
+    }
+
+    /// Upgrades the control connection, which has to happen before the login
+    /// rather than after it: the point is that the password never travels in
+    /// the clear.
+    private func startTLS(host: String) async throws {
+        let response = try await send("AUTH TLS")
+        guard response.isPositiveCompletion else {
+            throw FTPError.commandFailed(command: "AUTH", response: response)
+        }
+        let handler = try FTPTLS.makeHandler(context: FTPTLS.makeContext(), host: host)
+        // At the head, so bytes are decrypted before anything tries to read
+        // lines out of them.
+        try await channel.pipeline.addHandler(handler, position: .first)
     }
 
     /// Sends a command and returns the reply it draws.

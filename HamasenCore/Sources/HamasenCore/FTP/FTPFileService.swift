@@ -1,6 +1,7 @@
 import Foundation
 import NIOCore
 import NIOPosix
+import NIOSSL
 
 /// FTP implementation of RemoteFileService.
 ///
@@ -17,6 +18,9 @@ public actor FTPFileService: RemoteFileService {
     private var control: FTPControlConnection?
     /// What the server said it can do, from FEAT. Absent until login.
     private var features: Set<String> = []
+    /// Set once PROT P has been agreed, and used for every data connection
+    /// after that.
+    private var dataProtection: FTPDataProtection = .clear
 
     public init(
         config: ServerConfig,
@@ -38,10 +42,12 @@ public actor FTPFileService: RemoteFileService {
             )
         }
 
+        let tlsMode: FTPTLSMode = config.transferProtocol == .ftps ? .explicit : .none
         let (connection, _) = try await FTPControlConnection.connect(
             host: config.host,
             port: config.port,
-            timeoutSeconds: connectTimeoutSeconds
+            timeoutSeconds: connectTimeoutSeconds,
+            tls: tlsMode
         )
 
         do {
@@ -65,6 +71,15 @@ public actor FTPFileService: RemoteFileService {
             // Binary, always: the alternative rewrites line endings inside
             // files in transit.
             try await connection.expect("TYPE I")
+
+            if tlsMode == .explicit {
+                // Protecting the commands and leaving the files in the clear
+                // is the mistake this pair exists to prevent. PBSZ is
+                // required first and is always 0 over TLS.
+                try await connection.expect("PBSZ 0")
+                try await connection.expect("PROT P")
+                dataProtection = .tls(context: try FTPTLS.makeContext(), hostname: config.host)
+            }
         } catch {
             await connection.close()
             throw Self.serviceError(error, operation: Self.connectOperation, path: config.host)
@@ -77,6 +92,7 @@ public actor FTPFileService: RemoteFileService {
         let connection = control
         control = nil
         features = []
+        dataProtection = .clear
         guard let connection else { return }
         _ = try? await connection.send("QUIT")
         await connection.close()
@@ -193,7 +209,8 @@ public actor FTPFileService: RemoteFileService {
                 at: address,
                 fallbackHost: await connection.remoteHost ?? config.host,
                 group: MultiThreadedEventLoopGroup.singleton,
-                timeoutSeconds: connectTimeoutSeconds
+                timeoutSeconds: connectTimeoutSeconds,
+                protection: dataProtection
             ) { buffer in
                 try handle.write(contentsOf: Data(buffer.readableBytesView))
             }
@@ -220,7 +237,8 @@ public actor FTPFileService: RemoteFileService {
                 at: address,
                 fallbackHost: await connection.remoteHost ?? config.host,
                 group: MultiThreadedEventLoopGroup.singleton,
-                timeoutSeconds: connectTimeoutSeconds
+                timeoutSeconds: connectTimeoutSeconds,
+                protection: dataProtection
             )
             try await requireTransferCompleted(on: connection)
             // FTP has no way to ask for an end offset, so the rest of the
@@ -246,7 +264,8 @@ public actor FTPFileService: RemoteFileService {
                 at: address,
                 fallbackHost: await connection.remoteHost ?? config.host,
                 group: MultiThreadedEventLoopGroup.singleton,
-                timeoutSeconds: connectTimeoutSeconds
+                timeoutSeconds: connectTimeoutSeconds,
+                protection: dataProtection
             )
             try await requireTransferCompleted(on: connection)
         } catch {
@@ -335,7 +354,8 @@ public actor FTPFileService: RemoteFileService {
             at: address,
             fallbackHost: await connection.remoteHost ?? config.host,
             group: MultiThreadedEventLoopGroup.singleton,
-            timeoutSeconds: connectTimeoutSeconds
+            timeoutSeconds: connectTimeoutSeconds,
+            protection: dataProtection
         )
         try await requireTransferCompleted(on: connection)
         return String(decoding: body, as: UTF8.self)
@@ -377,13 +397,13 @@ public actor FTPFileService: RemoteFileService {
     }
 
     private static var connectOperation: String { String(localized: "連線", bundle: .module) }
-    private static var listOperation: String { String(localized: "目錄的一覽取得", bundle: .module) }
-    private static var infoOperation: String { String(localized: "取得項目資訊", bundle: .module) }
+    private static var listOperation: String { String(localized: "列出目錄", bundle: .module) }
+    private static var infoOperation: String { String(localized: "讀取屬性", bundle: .module) }
     private static var downloadOperation: String { String(localized: "下載", bundle: .module) }
     private static var uploadOperation: String { String(localized: "上傳", bundle: .module) }
     private static var createDirectoryOperation: String { String(localized: "建立目錄", bundle: .module) }
-    private static var deleteOperation: String { String(localized: "刪除", bundle: .module) }
-    private static var moveOperation: String { String(localized: "移動", bundle: .module) }
+    private static var deleteOperation: String { String(localized: "刪除檔案", bundle: .module) }
+    private static var moveOperation: String { String(localized: "移動項目", bundle: .module) }
 }
 
 /// The timestamps FTP replies carry, which RFC 3659 fixes as UTC.

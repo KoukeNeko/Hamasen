@@ -154,6 +154,9 @@ extension that disagree about the macOS they need.
 - [x] SFTP with password or SSH key authentication (Ed25519 / RSA, OpenSSH
       format, encrypted keys supported)
 - [x] WebDAV and WebDAV over HTTPS, with Basic authentication
+- [x] FTP and FTPS (explicit `AUTH TLS`), with passive-mode transfers,
+      MLSD listings where the server offers them and `ls -l` parsing where
+      it does not, and ranged reads through `REST`
 - [x] Finder integration: browse, download on open, upload, new folders,
       rename, move, delete
 - [x] Per-server folders under a single Finder location
@@ -167,8 +170,9 @@ extension that disagree about the macOS they need.
       `.cyberduckprofile` files, keeping the ones on a protocol this app
       speaks and naming the ones it does not. Passwords stay behind, in
       Cyberduck's own Keychain items
-- [ ] Planned: FTP/FTPS, host key verification (TOFU), streaming uploads,
-      remote change tracking
+- [x] SSH host keys recorded on first use and checked on every connection
+      after, with the recorded key shown and clearable per server
+- [ ] Planned: streaming uploads, remote change tracking
 
 Known limitations:
 
@@ -176,7 +180,10 @@ Known limitations:
   ECDSA keys and older PKCS#1 PEM keys are not supported. Convert with
   `ssh-keygen -p -f <key>`.
 - Uploads are read into memory before being sent; downloads stream.
-- Host keys are currently accepted blindly (`acceptAnything`); TOFU pinning
-  is planned.
+- FTPS reuses no TLS session between the control and data connections, so a
+  server configured to require that will refuse the transfers.
+- Plain FTP and plain WebDAV send credentials and contents in the clear. The
+  protocol picker says so; neither is a good choice over a network you do not
+  control.
 - Remote changes are picked up on re-enumeration (Finder refresh), not
   pushed live.

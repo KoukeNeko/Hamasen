@@ -576,6 +576,29 @@
         }
       }
     },
+    "移動項目": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move item"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目の移動"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動項目"
+          }
+        }
+      }
+    },
     "純線上": {
       "extractionState": "manual",
       "localizations": {
@@ -756,6 +779,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "這是舊式 PEM 金鑰，請以 ssh-keygen -p -f <金鑰> 轉換為 OpenSSH 格式"
+          }
+        }
+      }
+    },
+    "連線": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線"
           }
         }
       }

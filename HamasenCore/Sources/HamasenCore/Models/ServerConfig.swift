@@ -8,8 +8,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         case webdav
         case webdavs
         case ftp
-        // FTPS follows once the connection can be wrapped in TLS;
-        // a case that quietly connected in the clear would be a lie.
+        case ftps
 
         public var displayName: String {
             switch self {
@@ -17,6 +16,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .webdav: return "WebDAV"
             case .webdavs: return "WebDAV (HTTPS)"
             case .ftp: return "FTP"
+            case .ftps: return "FTPS"
             }
         }
 
@@ -25,7 +25,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .sftp: return 22
             case .webdav: return 80
             case .webdavs: return 443
-            case .ftp: return 21
+            case .ftp, .ftps: return 21
             }
         }
 
@@ -36,7 +36,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .sftp: return nil
             case .webdav: return "http"
             case .webdavs: return "https"
-            case .ftp: return nil
+            case .ftp, .ftps: return nil
             }
         }
 
@@ -44,6 +44,13 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         /// password.
         public var supportsPrivateKeyAuthentication: Bool {
             self == .sftp
+        }
+
+        /// Whether credentials and contents cross the network readable by
+        /// anyone carrying them. Only plain FTP and plain WebDAV do; it is
+        /// worth saying so where the choice is made.
+        public var isUnencrypted: Bool {
+            self == .ftp || self == .webdav
         }
     }
 
