@@ -7,13 +7,16 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         case sftp
         case webdav
         case webdavs
-        // Phase 3: case ftp, case ftps
+        case ftp
+        // FTPS follows once the connection can be wrapped in TLS;
+        // a case that quietly connected in the clear would be a lie.
 
         public var displayName: String {
             switch self {
             case .sftp: return "SFTP"
             case .webdav: return "WebDAV"
             case .webdavs: return "WebDAV (HTTPS)"
+            case .ftp: return "FTP"
             }
         }
 
@@ -22,6 +25,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .sftp: return 22
             case .webdav: return 80
             case .webdavs: return 443
+            case .ftp: return 21
             }
         }
 
@@ -32,6 +36,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .sftp: return nil
             case .webdav: return "http"
             case .webdavs: return "https"
+            case .ftp: return nil
             }
         }
 

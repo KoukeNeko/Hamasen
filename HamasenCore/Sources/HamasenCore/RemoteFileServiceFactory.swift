@@ -23,6 +23,12 @@ public enum RemoteFileServiceFactory {
                 credentials: credentials,
                 connectTimeoutSeconds: connectTimeoutSeconds
             )
+        case .ftp:
+            return FTPFileService(
+                config: config,
+                credentials: credentials,
+                connectTimeoutSeconds: connectTimeoutSeconds
+            )
         }
     }
 
