@@ -53,6 +53,10 @@ public struct KnownHosts: Equatable, Sendable, Codable {
     }
 
     public var isEmpty: Bool { fingerprintsByEndpoint.isEmpty }
+
+    /// Every endpoint something is known about, for carrying the record
+    /// somewhere else.
+    public var endpoints: [String] { fingerprintsByEndpoint.keys.sorted() }
 }
 
 extension ServerConfig {

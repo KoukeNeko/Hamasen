@@ -6,9 +6,11 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- Private keys and Cyberduck bookmarks live outside the container;
-	     the open panel only grants access to them with this. -->
-	<key>com.apple.security.files.user-selected.read-only</key>
+	<!-- Private keys and bookmarks are read from outside the container, and
+	     a configuration backup is written to it; the panels grant neither
+	     without this. Read-write rather than a second entry: it covers both.
+	     -->
+	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>

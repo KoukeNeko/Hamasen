@@ -74,12 +74,12 @@ public enum CyberduckBookmark {
         var unsupportedProtocols: [String] = []
         var duplicateCount = 0
         var unusableCount = 0
-        var seen = Set(existing.map(connectionKey))
+        var seen = Set(existing.map(\.connectionIdentity))
 
         for file in files {
             switch read(file) {
             case .imported(let imported):
-                let key = connectionKey(of: imported.config)
+                let key = imported.config.connectionIdentity
                 if seen.contains(key) {
                     duplicateCount += 1
                 } else {
@@ -194,18 +194,6 @@ public enum CyberduckBookmark {
         guard let path, !path.isEmpty else { return (RemotePath.root, nil) }
         guard path.hasPrefix(RemotePath.separator) else { return (RemotePath.root, path) }
         return (ServerConfig.normalizedRemotePath(path), nil)
-    }
-
-    /// What makes two entries the same connection. The nickname is left out
-    /// on purpose: renaming a bookmark does not make it another server.
-    private static func connectionKey(of config: ServerConfig) -> String {
-        [
-            config.transferProtocol.rawValue,
-            config.host.lowercased(),
-            String(config.port),
-            config.username,
-            config.remotePath,
-        ].joined(separator: "\u{0}")
     }
 
     // MARK: - Property list

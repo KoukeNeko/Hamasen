@@ -33,7 +33,7 @@ struct HamasenApp: App {
         }
 
         Settings {
-            SettingsView()
+            SettingsView(model: model)
         }
 
         MenuBarExtra(

@@ -11,13 +11,15 @@ enum AppOnlyDefaults {
 
 /// The Settings window (⌘,), split into General / Connection / Advanced.
 struct SettingsView: View {
+    let model: ServerListModel
+
     var body: some View {
         TabView {
             GeneralSettingsView()
                 .tabItem { Label("一般", systemImage: "gearshape") }
             ConnectionSettingsView()
                 .tabItem { Label("連線", systemImage: "network") }
-            AdvancedSettingsView()
+            AdvancedSettingsView(model: model)
                 .tabItem { Label("進階", systemImage: "wrench.and.screwdriver") }
         }
         .frame(width: 440)
@@ -210,11 +212,15 @@ private struct ConnectionSettingsView: View {
 // MARK: - Advanced
 
 private struct AdvancedSettingsView: View {
+    let model: ServerListModel
+
     @AppStorage(AppSettings.Keys.debugLoggingEnabled, store: AppSettings.sharedStore)
     private var debugLoggingEnabled = false
 
     var body: some View {
         Form {
+            BackupSection(model: model)
+
             Section {
                 Toggle("啟用除錯記錄", isOn: $debugLoggingEnabled)
             } footer: {
@@ -227,6 +233,56 @@ private struct AdvancedSettingsView: View {
     }
 }
 
+/// Writes the configuration out and reads one back.
+private struct BackupSection: View {
+    let model: ServerListModel
+
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Section {
+            LabeledContent("設定") {
+                HStack {
+                    Button("匯出…", action: export)
+                    Button("匯入…", action: importArchive)
+                }
+            }
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("備份")
+        } footer: {
+            Text("備份包含伺服器清單、已記錄的主機金鑰與連線偏好設定。密碼與金鑰存放在鑰匙圈，不會寫進備份檔。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func export() {
+        do {
+            _ = try ConfigurationArchiveFile.promptToExport(model.makeArchive())
+            errorMessage = nil
+        } catch {
+            errorMessage = String(localized: "匯出設定失敗：\(error.localizedDescription)")
+        }
+    }
+
+    private func importArchive() {
+        do {
+            guard let archive = try ConfigurationArchiveFile.promptToImport() else { return }
+            model.restore(archive)
+            errorMessage = nil
+        } catch {
+            errorMessage = String(localized: "匯入設定失敗：\(error.localizedDescription)")
+        }
+    }
+}
+
 #Preview {
-    SettingsView()
+    SettingsView(model: ServerListModel())
 }

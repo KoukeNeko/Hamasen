@@ -191,6 +191,67 @@ final class ServerListModel {
         notice = Notice(title: String(localized: "匯入書籤"), message: summary.report)
     }
 
+    // MARK: - Backup
+
+    /// Everything about this configuration that can be written down.
+    func makeArchive() -> ConfigurationArchive {
+        let store = AppSettings.sharedStore
+        return ConfigurationArchive(
+            exportedAt: Date(),
+            servers: servers,
+            knownHosts: (try? KnownHostsStore().load()) ?? KnownHosts(),
+            settings: ConfigurationArchive.Settings(
+                connectTimeoutSeconds: AppSettings.connectTimeoutSeconds(from: store),
+                defaultServerPort: AppSettings.defaultServerPort(from: store)
+            )
+        )
+    }
+
+    /// Restores a backup on top of what is already here.
+    ///
+    /// Merged rather than substituted: importing the wrong file should cost
+    /// a few servers to delete, not everything that was configured.
+    func restore(_ archive: ConfigurationArchive) {
+        guard let stores = stores() else { return }
+        let plan = archive.mergePlan(
+            against: servers,
+            existingHosts: (try? KnownHostsStore().load()) ?? KnownHosts()
+        )
+
+        if !plan.servers.isEmpty {
+            let updatedServers = servers + plan.servers
+            do {
+                try stores.servers.saveServers(updatedServers)
+            } catch {
+                errorMessage = String(localized: "儲存伺服器失敗：\(error.localizedDescription)")
+                return
+            }
+            servers = updatedServers
+        }
+        try? KnownHostsStore().save(plan.knownHosts)
+
+        let store = AppSettings.sharedStore
+        store.set(archive.settings.connectTimeoutSeconds, forKey: AppSettings.Keys.connectTimeoutSeconds)
+        store.set(archive.settings.defaultServerPort, forKey: AppSettings.Keys.defaultServerPort)
+
+        notice = Notice(title: String(localized: "匯入設定"), message: Self.report(for: plan))
+    }
+
+    private static func report(for plan: ConfigurationArchive.MergePlan) -> String {
+        var lines: [String] = []
+        if plan.servers.isEmpty {
+            lines.append(String(localized: "沒有需要加入的伺服器。"))
+        } else {
+            let count = plan.servers.count
+            lines.append(String(localized: "已加入 \(count) 台伺服器。"))
+            lines.append(String(localized: "備份不含密碼與金鑰，請為每台伺服器重新設定登入資訊。"))
+        }
+        if plan.duplicateCount > 0 {
+            lines.append(String(localized: "\(plan.duplicateCount) 台已經在清單中，已略過。"))
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
     // MARK: - Mounting
 
     func isMounted(_ config: ServerConfig) -> Bool {

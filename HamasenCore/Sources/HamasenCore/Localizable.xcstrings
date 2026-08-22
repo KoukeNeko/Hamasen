@@ -737,6 +737,52 @@
         }
       }
     },
+    "這份備份是較新版本（第 %@ 版，這個版本只讀到第 %@ 版）建立的，請先更新 Hamasen": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This backup was made by a newer version (format %1$@, this build reads up to %2$@). Update Hamasen first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバックアップは新しいバージョン（形式%1$@、このビルドは%2$@まで）で作成されています。先にHamasenを更新してください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這份備份是較新版本（第 %@ 版，這個版本只讀到第 %@ 版）建立的，請先更新 Hamasen"
+          }
+        }
+      }
+    },
+    "這個檔案不是 Hamasen 的設定備份": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This file is not a Hamasen configuration backup"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このファイルはHamasenの設定バックアップではありません"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個檔案不是 Hamasen 的設定備份"
+          }
+        }
+      }
+    },
     "這把 SSH 金鑰有密碼保護，請輸入金鑰密碼": {
       "extractionState": "manual",
       "localizations": {

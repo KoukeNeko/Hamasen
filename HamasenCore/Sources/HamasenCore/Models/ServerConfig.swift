@@ -165,6 +165,21 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.cacheLimitBytes = try container.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes)
     }
 
+    /// What makes two entries the same connection.
+    ///
+    /// The name is left out on purpose: renaming a server does not make it
+    /// another one, and an import that added a second copy under a new name
+    /// would be worse than one that skipped it.
+    public var connectionIdentity: String {
+        [
+            transferProtocol.rawValue,
+            host.lowercased(),
+            String(port),
+            username,
+            remotePath,
+        ].joined(separator: "\u{0}")
+    }
+
     /// Normalizes remotePath: always starts with "/" and, except for the
     /// root itself, never ends with "/".
     public static func normalizedRemotePath(_ path: String) -> String {

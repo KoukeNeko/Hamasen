@@ -191,6 +191,9 @@ Ctrl-C stops them; nothing survives.
       Cyberduck's own Keychain items
 - [x] SSH host keys recorded on first use and checked on every connection
       after, with the recorded key shown and clearable per server
+- [x] Configuration backup: export the server list, the recorded host keys
+      and the connection preferences, and merge one back in. Credentials stay
+      in the Keychain and are never written to the file
 - [ ] Planned: streaming uploads, remote change tracking
 
 Known limitations:
