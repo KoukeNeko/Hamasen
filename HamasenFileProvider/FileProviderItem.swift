@@ -178,10 +178,13 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
                 .allowsRenaming,
                 .allowsReparenting,
                 .allowsDeleting,
-                // Deprecated in favour of NSFileProviderContentPolicy, but
+                // Deprecated in favour of NSFileProviderContentPolicy, and
                 // still enforced: without it the system refuses every
                 // eviction with NSFileProviderErrorNonEvictable, whatever the
-                // content policy says.
+                // content policy says. The warning stays because Swift has no
+                // way to silence one use without deprecating whatever reads
+                // it, and so on up — which trades a truthful warning for a
+                // layer of indirection that hides why the line is here.
                 .allowsEvicting,
             ]
         }

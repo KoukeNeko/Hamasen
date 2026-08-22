@@ -38,7 +38,15 @@ struct SettingsView: View {
             AboutSettingsView()
                 .tabItem { Label("關於", systemImage: "info.circle") }
         }
-        .frame(width: 440)
+        // A minimum rather than a fixed height: the tabs differ in length —
+        // About grows with the number of contributors — and a window sized to
+        // the shortest of them makes the others scroll for no reason.
+        .frame(width: 460)
+        // Separately, because a fixed width and a minimum height cannot be
+        // asked for in one call: the tabs differ in length — About grows with
+        // the number of contributors — and sizing the window to the shortest
+        // of them makes the others scroll for no reason.
+        .frame(minHeight: 480)
     }
 }
 

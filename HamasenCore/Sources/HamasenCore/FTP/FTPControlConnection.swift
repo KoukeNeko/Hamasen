@@ -97,10 +97,17 @@ actor FTPControlConnection {
         guard response.isPositiveCompletion else {
             throw FTPError.commandFailed(command: "AUTH", response: response)
         }
-        let handler = try FTPTLS.makeHandler(context: FTPTLS.makeContext(), host: host)
-        // At the head, so bytes are decrypted before anything tries to read
-        // lines out of them.
-        try await channel.pipeline.addHandler(handler, position: .first)
+        // The handler is built on the event loop that will own it, rather
+        // than here and handed over: an SSL handler is not Sendable, and
+        // passing one across an isolation boundary is an error under the
+        // Swift 6 language mode. Only the hostname crosses.
+        let hostname = host
+        try await channel.eventLoop.submit {
+            let handler = try FTPTLS.makeHandler(context: FTPTLS.makeContext(), host: hostname)
+            // At the head, so bytes are decrypted before anything tries to
+            // read lines out of them.
+            try self.channel.pipeline.syncOperations.addHandler(handler, position: .first)
+        }.get()
     }
 
     /// Sends a command and returns the reply it draws.
