@@ -32,13 +32,29 @@ export DEVELOPER_DIR
 
 echo "==> Using DEVELOPER_DIR: ${DEVELOPER_DIR}"
 
-echo "==> [1/3] Linting extension Info.plists"
+echo "==> [1/4] Checking the app and its extension agree on a version"
+# Xcode writes a version bumped in its General tab to the target, not the
+# project, so the two drift apart whenever one is changed there — and an
+# archive is refused outright when they disagree. Structure did not stop
+# this happening three times; noticing it here does.
+app_version="$(xcodebuild -project "${PROJECT_ROOT}/Hamasen.xcodeproj" -target Hamasen \
+    -showBuildSettings 2>/dev/null | awk -F' = ' '/ CURRENT_PROJECT_VERSION/ {print $2; exit}')"
+extension_version="$(xcodebuild -project "${PROJECT_ROOT}/Hamasen.xcodeproj" -target HamasenFileProvider \
+    -showBuildSettings 2>/dev/null | awk -F' = ' '/ CURRENT_PROJECT_VERSION/ {print $2; exit}')"
+if [[ "$app_version" != "$extension_version" ]]; then
+    echo "error: the app is build ${app_version} and its extension is build ${extension_version}" >&2
+    echo "       They must match, or the archive is refused." >&2
+    exit 1
+fi
+echo "    both are build ${app_version}"
+
+echo "==> [2/4] Linting extension Info.plists"
 plutil -lint "${PROJECT_ROOT}"/Config/*Info.plist
 
-echo "==> [2/3] Running HamasenCore tests"
+echo "==> [3/4] Running HamasenCore tests"
 (cd "${PROJECT_ROOT}/HamasenCore" && swift test)
 
-echo "==> [3/3] Building app + File Provider extension"
+echo "==> [4/4] Building app + File Provider extension"
 # pipefail (set above) carries xcodebuild's exit status through the grep, so a
 # failed build fails the script instead of being swallowed.
 xcodebuild \
