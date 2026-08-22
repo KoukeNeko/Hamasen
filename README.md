@@ -1,132 +1,249 @@
-<div align="center">
+<p align="center">
+  <img src="Docs/hamasen-iOS-Default-1024@1x.png" alt="Hamasen" width="160">
+</p>
 
-<img src="Docs/hamasen-iOS-Default-1024@1x.png" width="160" alt="Hamasen app icon">
+<h1 align="center">Hamasen 哈瑪星</h1>
 
-# Hamasen 哈瑪星
+<p align="center">
+  <strong>Your servers, docked in Finder.</strong><br>
+  Mount SFTP, FTP and WebDAV servers as native Finder locations — browse, open,
+  edit and drag files without a separate client window.
+</p>
 
----
+<p align="center">
+  <img alt="macOS 15.6+" src="https://img.shields.io/badge/MACOS-15.6%2B-000000?style=for-the-badge&logo=apple&logoColor=white">
+  <img alt="Swift 6.0" src="https://img.shields.io/badge/SWIFT-6.0-F05138?style=for-the-badge&logo=swift&logoColor=white">
+  <a href="https://developer.apple.com/documentation/fileprovider"><img alt="File Provider" src="https://img.shields.io/badge/FILE_PROVIDER-NO_KEXTS-4CAF50?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://github.com/KoukeNeko/Hamasen/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/KoukeNeko/Hamasen?style=for-the-badge&logo=github&label=STARS&color=2196F3"></a>
+</p>
 
-**Your servers, docked in Finder.**\
-Mount remote SFTP servers as native Finder locations — browse, edit, and drag files like local folders.
+<p align="center">
+  <a href="#getting-started"><strong>Getting started</strong></a>
+  · <a href="#see-it-in-action">See it in action</a>
+  · <a href="#compatibility">Compatibility</a>
+  · <a href="#technical-reference">Technical reference</a>
+</p>
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2015.6%2B-blue?style=for-the-badge&logo=apple)](https://github.com/KoukeNeko/Hamasen)
-[![Swift](https://img.shields.io/badge/Swift-5-orange?style=for-the-badge&logo=swift)](https://github.com/KoukeNeko/Hamasen)
-[![File Provider](https://img.shields.io/badge/File%20Provider-no%20kexts%2C%20no%20macFUSE-green?style=for-the-badge)](https://developer.apple.com/documentation/fileprovider)
-[![Stars](https://img.shields.io/github/stars/KoukeNeko/Hamasen?style=for-the-badge&logo=github)](https://github.com/KoukeNeko/Hamasen/stargazers)
+Hamasen puts a remote server in the Finder sidebar, where iCloud Drive and
+OneDrive already live. Files open in the apps you already use, save straight
+back, and drag between servers and the Desktop like anything else.
 
-[Why "Hamasen"?](#why-hamasen-哈瑪星) · [Architecture](#architecture) · [Development](#development)
+It is built on Apple's own **File Provider** framework — no macFUSE, no kernel
+extension, and nothing to switch on in System Settings. What stays on this Mac
+is your decision, credentials never leave the Keychain, and a server that
+changes its identity is refused rather than trusted quietly.
 
-</div>
+## See it in action
 
-Hamasen mounts remote SFTP servers into the Finder sidebar, the same way
-iCloud Drive and OneDrive appear — browse, open, edit, and drag files
-without a separate client window.
+<p align="center">
+  <img src="Docs/en_home.png" width="85%" alt="The server list, with a mounted SFTP server">
+</p>
 
-It is built on Apple's official **File Provider** framework
-(`NSFileProviderReplicatedExtension`): no macFUSE, no kernel extensions,
-App Store compatible.
+## Every server, in one Finder location
 
-## Why "Hamasen" 哈瑪星?
-
-**哈瑪星 (Hamasen)** is the historic harbor district of Kaohsiung, Taiwan.
-The name is a Taiwanese rendering of the Japanese **浜線 (hamasen)** — the
-shoreline railway that once carried cargo between the docks and the city.
-
-This app plays the same role: a short line that brings remote servers
-ashore, docking each one in Finder like a ship at the pier.
-
-## How it looks
-
-Finder shows a single **Hamasen** location. Every mounted server appears
-inside it as a folder named after the server:
+Finder shows a single **Hamasen** location. Each mounted server is a folder
+inside it, named whatever you named it:
 
 ```
 Finder sidebar
 └── Hamasen
     ├── Production NAS/     ← one folder per mounted server
-    │   └── upload/ …          (live SFTP content)
+    │   └── upload/ …          (live server content)
     └── Staging VPS/
 ```
+
+Mounting and unmounting happen in the app; the folders appear and disappear in
+Finder as you do it. Drag the list into whatever order suits you.
+
+## Open a large file without downloading it
+
+Opening a 4 GB archive fetches the bytes the system actually asks for, not the
+whole file. Preview a video, read a header, seek through a log — the transfer
+stops when it has what it came for.
+
+## The right-click menu you would expect
+
+Right-clicking anything under the Hamasen location offers:
+
+| Action | What it does |
+|---|---|
+| **Copy remote path** | The address on the server |
+| **Copy local path** | Where it sits under `~/Library/CloudStorage` |
+| **Refresh** | Re-read the folder from the server |
+| **Keep on this Mac** | Pin a file so nothing evicts it |
+| **Stop keeping on this Mac** | Release the pin |
+| **Free up local space** | Drop the downloaded copy, keep the file |
+| **Unmount server** | Take that server out of Finder |
+
+These come from the File Provider extension itself, so there is nothing to
+enable and no permission to grant.
+
+## Decide what stays on this Mac
+
+Each server chooses how it uses local storage:
+
+- **Automatic** — the system keeps what you have opened until it needs the room
+- **Online only** — content is dropped as soon as it is no longer in use
+- **A limit** — 1, 5, 20 or 100 GB per server, dropping the stalest content
+  first and never touching anything you pinned
+
+A gauge on each server shows what it is holding, split between what you pinned
+and what can go. If pinned files alone exceed a limit, the app says so instead
+of letting the limit quietly fail.
+
+## Know the server is the server
+
+The first time Hamasen connects over SSH it records the server's host key, and
+every connection after that is checked against it. A key that does not match
+stops the connection — a server may genuinely have been rebuilt, or something
+may be answering in its place, and nothing on this side can tell those apart.
+
+The recorded fingerprint is shown in the server's settings in the same form
+`ssh-keygen -lf` prints, so it can be compared against the server itself, and
+cleared there when a rebuild is the real explanation.
+
+## Bring what you already have
+
+- **Import from Cyberduck and Mountain Duck** — `.duck` bookmarks and
+  `.cyberduckprofile` files, individually or a whole folder. Bookmarks on a
+  protocol Hamasen does not speak are named back to you rather than dropped
+  silently.
+- **Back your configuration up** — the server list, the recorded host keys and
+  the connection preferences, in a file you can read and diff. Passwords stay
+  in the Keychain.
+- **Or back everything up** — the same, plus every secret, sealed with a
+  passphrase you choose. Restoring merges rather than replaces, so importing
+  the wrong file costs a few servers to delete instead of everything.
+
+## In your language
+
+繁體中文, 日本語 and English, following the system or set by hand in Settings.
+Error messages are translated too, not just the buttons.
+
+<p align="center">
+  <img src="Docs/jp_finder.png" width="70%" alt="A mounted server open in Finder">
+</p>
+
+## Getting started
+
+1. Build and run the app (see [Development](#development) — it is not on the
+   App Store yet)
+2. Press **+** and enter the host, the username, and a password or SSH key
+3. Press **Test connection** to check it before committing to it
+4. Press **Mount**
+5. Open Finder — **Hamasen** is in the sidebar, with your server inside it
+
+The mount survives quitting the app: the system keeps it up. The app needs to
+be running only for the per-server space limits, which it enforces as it runs.
+
+## Compatibility
+
+- macOS 15.6 or later, Apple silicon
+- **SFTP** with a password or an SSH key (Ed25519 / RSA, OpenSSH format,
+  encrypted keys included)
+- **FTP** and **FTPS** (explicit `AUTH TLS`), passive mode
+- **WebDAV** over HTTP or HTTPS, Basic authentication
+
+Plain FTP and plain WebDAV send credentials and contents in the clear. The
+protocol picker says so where the choice is made; neither is a good idea over a
+network you do not control.
+
+## Why "Hamasen" 哈瑪星?
+
+**哈瑪星 (Hamasen)** is the historic harbor district of Kaohsiung, Taiwan. The
+name is a Taiwanese rendering of the Japanese **浜線 (hamasen)** — the
+shoreline railway that once carried cargo between the docks and the city.
+
+This app plays the same role: a short line that brings remote servers ashore,
+docking each one in Finder like a ship at the pier.
+
+---
+
+# Technical reference
 
 ## Architecture
 
 ```
 Hamasen.xcodeproj
 ├── Hamasen                  Main app (SwiftUI)
-│   └── Server list, add/edit connections, mount/unmount
+│   └── Server list, connection editing, mounting, settings, backup
 ├── HamasenFileProvider      File Provider extension
-│   └── NSFileProviderReplicatedExtension: enumerate / fetch / create / modify / delete,
-│       plus the Finder context-menu actions (NSFileProviderCustomAction)
-├── HamasenCore              Local Swift package
-│   ├── RemoteFileService        Protocol abstraction (FTP can plug in later)
-│   ├── SFTPFileService          Citadel (SwiftNIO SSH) implementation
-│   ├── WebDAVFileService        URLSession implementation, no dependencies
-│   ├── ServerConfigStore        JSON config in the App Group container
-│   ├── MountedServersStore      Which servers are currently mounted
-│   └── KeychainCredentialStore  Passwords and keys live in the Keychain only
-└── Config/                  Entitlements and extension Info.plist
+│   └── NSFileProviderReplicatedExtension: enumerate / fetch / create /
+│       modify / delete, plus the Finder context-menu actions
+└── HamasenCore              Local Swift package
+    ├── RemoteFileService        The protocol every transport implements
+    ├── SFTPFileService          Citadel (SwiftNIO SSH)
+    ├── FTPFileService           Written here: control and data connections,
+    │                            passive mode, MLSD/LIST, REST, AUTH TLS
+    ├── WebDAVFileService        URLSession, no dependencies
+    ├── KnownHosts               Host keys, recorded on first use
+    ├── ConfigurationArchive     Backup, plain and passphrase-sealed
+    ├── CacheEvictionPlan        What to drop, given each server's allowance
+    └── Storage/                 App Group JSON stores and the Keychain
 ```
 
-Key design points:
+**One File Provider domain.** The root enumerator lists each mounted server as
+a top-level folder. Item identifiers encode the server and the path
+(`srv:<uuid>:<path>`), so one extension serves any number of servers, each over
+its own connection.
 
-- **Single File Provider domain** (`dev.hamasen.main`): the root enumerator
-  lists each mounted server as a top-level folder. Item identifiers encode
-  the server and path (`srv:<uuid>:<path>`), so one extension serves any
-  number of servers, each over its own SSH connection.
-- The app and the extension share configuration through an **App Group**
-  (`33832Z66QU.group.dev.hamasen.shared`). Credentials stay in the macOS
-  file-based Keychain, with an item ACL that trusts the signed app and File
-  Provider extension; no secret is written into the App Group container.
-- Mount, unmount, and rename changes reach Finder through the **working
-  set**, the only container a replicated extension receives change signals
-  for. The previous server list is encoded into the sync anchor, so the
-  change enumerator can report an exact diff without keeping state between
-  calls.
-- Server folders cannot be renamed, moved, or deleted from Finder — they are
-  managed in the app. Cross-server moves fall back to copy + delete.
-- Context menu entries are **File Provider custom actions**: the extension
-  declares them in its Info.plist (`NSExtensionFileProviderActions`, with
-  activation rules over `fileproviderItems`) and runs them through
-  `NSFileProviderCustomAction`. This is how Google Drive and Synology Drive
-  add their entries; Finder never asks a FinderSync extension for menus on
-  `~/Library/CloudStorage` paths. `fileproviderctl evaluate <path>` shows the
-  rules and their verdicts without opening Finder, and
-  `FinderActivationRuleTests` pins the shipped plist.
+**Credentials live in the Data Protection Keychain**, in an access group the
+app and the extension share. That entitlement comes from a provisioning
+profile, which is why this build distributes through the App Store. Nothing
+secret is written into the App Group container, which holds only the server
+list, the mounted set, the pins and the host keys.
+
+**Changes reach Finder through the working set**, the only container a
+replicated extension is signalled for. The previous server list is encoded into
+the sync anchor, so the change enumerator reports an exact diff without keeping
+state between calls. A read that fails returns no anchor rather than an empty
+one — an anchor claiming the mount was empty would make the next diff read as
+every server having been deleted.
+
+**Context menu entries are File Provider custom actions**, declared in the
+extension's Info.plist with activation rules over `fileproviderItems`. This is
+the mechanism Google Drive and Synology Drive use; Finder never asks a
+FinderSync extension for menus on `~/Library/CloudStorage` paths.
+`fileproviderctl evaluate <path>` shows the rules and their verdicts without
+opening Finder, and a test pins the shipped plist against the Swift side.
+
+**Backups with passwords** are PBKDF2-HMAC-SHA256 at 600,000 iterations into
+AES-256-GCM. The whole file is encrypted, not only the secrets in it: which
+servers someone has, and where, is worth as much to a reader as the passwords.
+What may hold a secret is a different type from what a plain export writes, so
+that export has nowhere to put one.
 
 ## Development
 
-Requirements: Xcode 26+ (verified with the Xcode 27 beta) and an Apple
-Development signing certificate. Shipping the app outside the Mac App Store
-also needs a Developer ID Application certificate and notarization credentials.
+Requirements: Xcode 26+ (verified on the Xcode 27 beta) and an Apple
+Development signing certificate.
 
 ```bash
-# Source verification: package tests + app/extension build
-./scripts/verify.sh
+./scripts/verify.sh          # package tests, then the app and extension build
+./scripts/sync-strings.sh    # bring the String Catalogs in line with the source
 ```
 
-Tests need no external infrastructure: `HamasenCoreTests` spins up an
-in-process SFTP server (Citadel's server API over a local temp directory)
-that accepts both password and public key authentication, plus an
-in-process WebDAV server. 99 tests cover
-connecting with either credential type, authentication failures, key
-parsing, directory listing, upload/download content integrity, range
-requests across chunk boundaries, create/delete/rename, the `remotePath`
+Tests need no network and no external service. `HamasenCoreTests` stands up an
+in-process SFTP server (Citadel's server API over a temp directory), an
+in-process WebDAV server, and an in-process FTP server, and runs the real
+clients against them. 209 tests cover connecting with either credential type,
+authentication failures, key parsing, listing, upload and download integrity,
+ranged reads across chunk boundaries, create/delete/rename, the `remotePath`
 base directory, item identifier encoding, misbehaving-server quirks
-(redirects, 207, 416, ignored `Range` headers), and the mounted-server
-diffing that drives Finder updates.
+(redirects, 207, 416, ignored `Range` headers), FTP reply and listing parsing,
+host key checking, the eviction plan, backup encryption, and the diffing that
+drives Finder updates.
 
-### Developer ID installation and notarization
+To see the app without pointing it at a real server:
 
-For distribution outside the Mac App Store, the app and its File Provider
-extension are Developer ID-signed and notarized before being installed in
-`/Applications`. The installer also retracts the PluginKit and Launch Services
-records of the FinderSync extension and helper app that releases up to 1.0
-shipped, since those registrations outlive the bundles they name.
+```bash
+cd HamasenCore && swift run DemoServers
+```
 
-Distribution goes through the App Store. Credentials live in the Data
-Protection Keychain, in an access group the app and the File Provider
-extension share, and that entitlement is granted by a provisioning profile —
-which is why a Developer ID build signed without one can no longer read them.
+It runs the same SFTP and FTP servers the tests use, over invented files, and
+prints the ports, the account and an `/etc/hosts` line that gives them names.
+
+## Releasing
 
 Archive from Xcode (Product → Archive), notarize and export through the
 Organizer, then package what comes out:
@@ -136,80 +253,38 @@ Organizer, then package what comes out:
 ```
 
 The script refuses to package a build a downloader could not use: unsigned or
-signed by another team, no stapled notarization ticket, rejected by
-Gatekeeper, an extension missing its document group, or an app and an
-extension that disagree about the macOS they need.
+signed by another team, no stapled notarization ticket, rejected by Gatekeeper,
+an extension missing its document group, or an app and an extension that
+disagree about the macOS they need.
 
-## Showing the app without a real server
-
-Two servers run on this Mac, serving invented files, so the app can be
-demonstrated or photographed without a real hostname and account in the
-picture. They are the ones the test suite already runs the client against.
-
-```bash
-cd HamasenCore && swift run DemoServers
-```
-
-It prints the ports, the account, and a one-line `/etc/hosts` entry that
-gives them names — `files.hamasen.test` and `ftp.hamasen.test`, under the TLD
-RFC 2606 reserves so they can never resolve to anybody else's machine. Names
-have to come from `/etc/hosts` rather than DNS: a public record pointing at
-127.0.0.1 is exactly what DNS rebinding protection discards, and home routers
-and VPN resolvers do discard it.
-
-Ctrl-C stops them; nothing survives.
-
-## Manual end-to-end check
-
-1. Open the project in Xcode and run the **Hamasen** scheme (⌘R).
-2. Add an SFTP server (host, username, and either a password or an SSH key)
-   and press **掛載** (Mount).
-3. The **Hamasen** location appears in the Finder sidebar; the server shows
-   up inside as a folder.
-4. On-disk storage lives under `~/Library/CloudStorage/`.
-
-## Status
-
-- [x] SFTP with password or SSH key authentication (Ed25519 / RSA, OpenSSH
-      format, encrypted keys supported)
-- [x] WebDAV and WebDAV over HTTPS, with Basic authentication
-- [x] FTP and FTPS (explicit `AUTH TLS`), with passive-mode transfers,
-      MLSD listings where the server offers them and `ls -l` parsing where
-      it does not, and ranged reads through `REST`
-- [x] Finder integration: browse, download on open, upload, new folders,
-      rename, move, delete
-- [x] Per-server folders under a single Finder location
-- [x] Range requests: opening a large file fetches only the bytes the system
-      asks for, rather than downloading the whole thing
-- [x] Finder context menu: copy an item's remote address, refresh, free up
-      local space (evict downloaded copies), unmount a server — provided by
-      the File Provider extension itself, so nothing needs enabling in System
-      Settings
-- [x] Import from Cyberduck and Mountain Duck: `.duck` bookmarks and
-      `.cyberduckprofile` files, keeping the ones on a protocol this app
-      speaks and naming the ones it does not. Passwords stay behind, in
-      Cyberduck's own Keychain items
-- [x] SSH host keys recorded on first use and checked on every connection
-      after, with the recorded key shown and clearable per server
-- [x] Configuration backup: export the server list, the recorded host keys
-      and the connection preferences, and merge one back in. Credentials stay
-      in the Keychain and are never written to that file
-- [x] Backup with passwords: the same, plus every secret from the Keychain,
-      sealed with a passphrase — PBKDF2-HMAC-SHA256 at 600,000 iterations
-      into AES-256-GCM, so a damaged or edited file fails to open rather than
-      decrypting into something else
-- [ ] Planned: streaming uploads, remote change tracking
-
-Known limitations:
+## Known limitations
 
 - SSH keys must be in OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`);
-  ECDSA keys and older PKCS#1 PEM keys are not supported. Convert with
+  ECDSA and older PKCS#1 PEM keys are not supported. Convert with
   `ssh-keygen -p -f <key>`.
 - Uploads are read into memory before being sent; downloads stream.
+- Remote changes are picked up on re-enumeration (a Finder refresh), not
+  pushed as they happen.
+- A per-server space limit is enforced while the app is running.
 - FTPS reuses no TLS session between the control and data connections, so a
   server configured to require that will refuse the transfers.
-- Plain FTP and plain WebDAV send credentials and contents in the clear. The
-  protocol picker says so; neither is a good choice over a network you do not
-  control.
-- Remote changes are picked up on re-enumeration (Finder refresh), not
-  pushed live.
+- The Finder context menu follows the system language, not the app's: Finder
+  draws that menu and reads the names in its own language.
+
+Planned: streaming uploads, remote change tracking.
+
+<p>
+  <img alt="SwiftUI" src="https://img.shields.io/badge/SWIFTUI-0071E3?style=for-the-badge&logo=swift&logoColor=white">
+  <a href="https://github.com/apple/swift-nio"><img alt="SwiftNIO" src="https://img.shields.io/badge/SWIFTNIO-F05138?style=for-the-badge&logo=swift&logoColor=white"></a>
+  <a href="https://github.com/orlandos-nl/Citadel"><img alt="Citadel" src="https://img.shields.io/badge/CITADEL-SSH-7F52FF?style=for-the-badge"></a>
+  <img alt="209 tests" src="https://img.shields.io/badge/TESTS-209-4CAF50?style=for-the-badge&logo=swift&logoColor=white">
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/LICENSE-APACHE_2.0-2196F3?style=for-the-badge&logo=github"></a>
+</p>
+
+## License
+
+[Apache 2.0](LICENSE) © KoukeNeko
+
+Third-party components keep their own terms: [Citadel](https://github.com/orlandos-nl/Citadel)
+is MIT, and Apple's [SwiftNIO](https://github.com/apple/swift-nio) packages are
+Apache 2.0.
