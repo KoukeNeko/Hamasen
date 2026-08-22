@@ -45,6 +45,28 @@
         }
       }
     },
+    "%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        }
+      }
+    },
     "%lld 個書籤已經在清單中，已略過。": {
       "localizations": {
         "en": {
@@ -199,6 +221,28 @@
         }
       }
     },
+    "Apache License 2.0": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apache License 2.0"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apache License 2.0"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apache License 2.0"
+          }
+        }
+      }
+    },
     "Cyberduck 的密碼與金鑰存放在它自己的鑰匙圈項目中，無法一併匯入，請為每台伺服器重新設定登入資訊。": {
       "localizations": {
         "en": {
@@ -266,6 +310,28 @@
         }
       }
     },
+    "GitHub Issues": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Issues"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Issues"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub Issues"
+          }
+        }
+      }
+    },
     "Hamasen": {
       "localizations": {
         "en": {
@@ -328,6 +394,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "example.com"
+          }
+        }
+      }
+    },
+    "github.com/%@/%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "github.com/%1$@/%2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "github.com/%1$@/%2$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "github.com/%@/%@"
           }
         }
       }
@@ -1155,6 +1243,28 @@
         }
       }
     },
+    "原始碼": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソースコード"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原始碼"
+          }
+        }
+      }
+    },
     "取消": {
       "localizations": {
         "en": {
@@ -1265,6 +1375,28 @@
         }
       }
     },
+    "回報問題": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report an issue"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "問題を報告"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回報問題"
+          }
+        }
+      }
+    },
     "在 Console.app 以子系統 dev.hamasen 檢視記錄。App 與 File Provider 擴充功能都會套用。": {
       "localizations": {
         "en": {
@@ -1309,6 +1441,28 @@
         }
       }
     },
+    "在 GitHub 上查看": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View on GitHub"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHubで見る"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 GitHub 上查看"
+          }
+        }
+      }
+    },
     "在系統設定中管理…": {
       "localizations": {
         "en": {
@@ -1349,6 +1503,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "密碼"
+          }
+        }
+      }
+    },
+    "專案": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "專案"
           }
         }
       }
@@ -1661,6 +1837,28 @@
         }
       }
     },
+    "把遠端伺服器掛進 Finder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote servers, mounted in Finder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモートサーバをFinderにマウント"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把遠端伺服器掛進 Finder"
+          }
+        }
+      }
+    },
     "指紋": {
       "localizations": {
         "en": {
@@ -1679,6 +1877,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "指紋"
+          }
+        }
+      }
+    },
+    "授權": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "License"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライセンス"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授權"
           }
         }
       }
@@ -2630,6 +2850,28 @@
         }
       }
     },
+    "讀取中…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込み中…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀取中…"
+          }
+        }
+      }
+    },
     "讀取伺服器設定失敗：%@": {
       "localizations": {
         "en": {
@@ -2648,6 +2890,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "讀取伺服器設定失敗：%@"
+          }
+        }
+      }
+    },
+    "貢獻者": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contributors"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コントリビューター"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貢獻者"
           }
         }
       }
@@ -2758,6 +3022,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "這份備份會包含所有伺服器的密碼與金鑰，並以這組密碼加密。忘記這組密碼就無法還原，沒有其他方法可以取回。"
+          }
+        }
+      }
+    },
+    "這份名單在開啟這個頁面時向 GitHub 取得，是這個 App 唯一一處連往自家伺服器以外的地方。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This list is fetched from GitHub when the page opens — the one place this app reaches anywhere other than the servers you configured."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この一覧はページを開いたときにGitHubから取得します。設定したサーバ以外に接続するのは、このAppではここだけです。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這份名單在開啟這個頁面時向 GitHub 取得，是這個 App 唯一一處連往自家伺服器以外的地方。"
           }
         }
       }
@@ -3132,6 +3418,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "開啟 Hamasen…"
+          }
+        }
+      }
+    },
+    "關於": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "情報"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關於"
           }
         }
       }

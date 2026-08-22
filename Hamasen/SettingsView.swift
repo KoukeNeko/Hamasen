@@ -35,6 +35,8 @@ struct SettingsView: View {
                 .tabItem { Label("連線", systemImage: "network") }
             AdvancedSettingsView(model: model)
                 .tabItem { Label("進階", systemImage: "wrench.and.screwdriver") }
+            AboutSettingsView()
+                .tabItem { Label("關於", systemImage: "info.circle") }
         }
         .frame(width: 440)
     }
