@@ -27,8 +27,18 @@ struct HamasenApp: App {
 
     @AppStorage(AppOnlyDefaults.showMenuBarIcon) private var showMenuBarIcon = true
 
+    /// The window's title comes from the app's own name, which is localized
+    /// in the Info.plist catalog, rather than being written out again here.
+    private static var windowTitle: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Hamasen"
+    }
+
     var body: some Scene {
-        WindowGroup(id: "main") {
+        // One window, not a group of them. A group makes another every time
+        // openWindow asks for this identifier, so opening Hamasen from the
+        // menu bar built up a pile of identical windows — each showing the
+        // same alert, since they all watch the same model.
+        Window(Self.windowTitle, id: "main") {
             HamasenMainView(model: model)
         }
 
