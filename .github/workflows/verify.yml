@@ -17,6 +17,11 @@ concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
+# Neither workflow writes anything back to GitHub, so the token gets nothing
+# beyond reading the tree it checks out.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: macos-26

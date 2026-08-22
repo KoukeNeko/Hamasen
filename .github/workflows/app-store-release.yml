@@ -35,6 +35,11 @@ concurrency:
   group: app-store-release
   cancel-in-progress: false
 
+# Neither workflow writes anything back to GitHub, so the token gets nothing
+# beyond reading the tree it checks out.
+permissions:
+  contents: read
+
 env:
   ARCHIVE_PATH: ${{ github.workspace }}/build/Hamasen.xcarchive
   EXPORT_DIR: ${{ github.workspace }}/build/export
