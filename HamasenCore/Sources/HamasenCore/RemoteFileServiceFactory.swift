@@ -14,7 +14,8 @@ public enum RemoteFileServiceFactory {
             return SFTPFileService(
                 config: config,
                 credentials: credentials,
-                connectTimeoutSeconds: connectTimeoutSeconds
+                connectTimeoutSeconds: connectTimeoutSeconds,
+                hostKeyPolicy: hostKeyPolicy()
             )
         case .webdav, .webdavs:
             return WebDAVFileService(
@@ -22,6 +23,20 @@ public enum RemoteFileServiceFactory {
                 credentials: credentials,
                 connectTimeoutSeconds: connectTimeoutSeconds
             )
+        }
+    }
+
+    /// Where SSH host keys are remembered.
+    ///
+    /// A record that cannot be opened refuses connections instead of letting
+    /// them through unchecked: the app and the extension both hold the App
+    /// Group entitlement, so failing to open it means something is wrong
+    /// enough that trusting whatever answers would be the worse choice.
+    private static func hostKeyPolicy() -> HostKeyPolicy {
+        do {
+            return .trustOnFirstUse(try KnownHostsStore())
+        } catch {
+            return .unverifiable(reason: error.localizedDescription)
         }
     }
 }

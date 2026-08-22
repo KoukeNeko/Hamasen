@@ -23,17 +23,20 @@ public actor SFTPFileService: RemoteFileService {
     private let config: ServerConfig
     private let credentials: ServerCredentials
     private let connectTimeoutSeconds: Int
+    private let hostKeyPolicy: HostKeyPolicy
     private var sshClient: SSHClient?
     private var sftpClient: SFTPClient?
 
     public init(
         config: ServerConfig,
         credentials: ServerCredentials,
-        connectTimeoutSeconds: Int = AppSettings.defaultConnectTimeoutSeconds
+        connectTimeoutSeconds: Int = AppSettings.defaultConnectTimeoutSeconds,
+        hostKeyPolicy: HostKeyPolicy
     ) {
         self.config = config
         self.credentials = credentials
         self.connectTimeoutSeconds = connectTimeoutSeconds
+        self.hostKeyPolicy = hostKeyPolicy
     }
 
     // MARK: - Connection lifecycle
@@ -48,17 +51,22 @@ public actor SFTPFileService: RemoteFileService {
 
         let client: SSHClient
         do {
-            // Host keys are accepted blindly for the MVP (TOFU pinning is a
-            // Phase 2 item) because there is no known-hosts store or user
-            // confirmation UI yet.
             client = try await SSHClient.connect(
                 host: config.host,
                 port: config.port,
                 authenticationMethod: authenticationMethod,
-                hostKeyValidator: .acceptAnything(),
+                hostKeyValidator: hostKeyPolicy.makeValidator(
+                    endpoint: config.hostKeyEndpoint,
+                    log: Self.log
+                ),
                 reconnect: .never,
                 connectTimeout: .seconds(Int64(connectTimeoutSeconds))
             )
+        } catch let error as RemoteFileServiceError {
+            // A refused host key already says exactly what happened; wrapping
+            // it as a connection failure would throw that away.
+            Self.log.error("SSH connection to \(config.host):\(config.port) refused: \(String(describing: error))")
+            throw error
         } catch {
             Self.log.error("SSH connection to \(config.host):\(config.port) failed: \(String(describing: error))")
             throw RemoteFileServiceError.connectionFailed(underlying: String(describing: error))

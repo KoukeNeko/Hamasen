@@ -47,6 +47,29 @@
         }
       }
     },
+    "%@ 的主機金鑰和上次不同，連線已中止。可能是伺服器重建過，也可能有人冒充它。核對伺服器端的指紋後，到該伺服器的設定中清除已記錄的金鑰。已記錄：%@，這次收到：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The host key for %1$@ is not the one recorded, so the connection was refused. The server may have been rebuilt, or something may be answering in its place. Check the fingerprint on the server itself, then clear the recorded key in that server's settings. Recorded: %2$@, received: %3$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@のホスト鍵が記録と異なるため接続を中止しました。サーバが再構築された可能性も、別のものが応答している可能性もあります。サーバ側でフィンガープリントを確認してから、そのサーバの設定で記録済みの鍵を消去してください。記録：%2$@、今回：%3$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的主機金鑰和上次不同，連線已中止。可能是伺服器重建過，也可能有人冒充它。核對伺服器端的指紋後，到該伺服器的設定中清除已記錄的金鑰。已記錄：%@，這次收到：%@"
+          }
+        }
+      }
+    },
     "Hamasen 目前沒有掛載中的位置": {
       "extractionState": "manual",
       "localizations": {
@@ -480,6 +503,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "無法建立受信任程式 %@（%d: %@）"
+          }
+        }
+      }
+    },
+    "無法確認伺服器身分，連線已中止：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server's identity could not be checked, so the connection was refused: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバの身元を確認できないため接続を中止しました：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法確認伺服器身分，連線已中止：%@"
           }
         }
       }

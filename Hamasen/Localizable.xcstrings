@@ -337,6 +337,28 @@
         }
       }
     },
+    "下次連線會把伺服器出示的任何金鑰當作正確的記下來。只有在你確定伺服器重建過、並且核對過它端的指紋時才這麼做。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The next connection will record whatever key the server presents as the correct one. Only do this when you know the server was rebuilt and have checked its fingerprint at the server itself."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次回の接続では、サーバが提示した鍵をそのまま正しいものとして記録します。サーバが再構築されたと確信でき、サーバ側でフィンガープリントを確認した場合のみ実行してください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下次連線會把伺服器出示的任何金鑰當作正確的記下來。只有在你確定伺服器重建過、並且核對過它端的指紋時才這麼做。"
+          }
+        }
+      }
+    },
     "主機": {
       "localizations": {
         "en": {
@@ -355,6 +377,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "主機"
+          }
+        }
+      }
+    },
+    "主機金鑰": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host Key"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホスト鍵"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主機金鑰"
           }
         }
       }
@@ -975,6 +1019,28 @@
         }
       }
     },
+    "尚未記錄。第一次連線時會記下伺服器的金鑰，之後每次都會比對。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not recorded yet. The first connection records the server's key, and every connection after that is compared against it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ記録されていません。最初の接続でサーバの鍵を記録し、以降はそれと照合します。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未記錄。第一次連線時會記下伺服器的金鑰，之後每次都會比對。"
+          }
+        }
+      }
+    },
     "尚未選擇": {
       "localizations": {
         "en": {
@@ -1217,6 +1283,28 @@
         }
       }
     },
+    "指紋": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fingerprint"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィンガープリント"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指紋"
+          }
+        }
+      }
+    },
     "掛載": {
       "localizations": {
         "en": {
@@ -1235,6 +1323,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "掛載"
+          }
+        }
+      }
+    },
+    "掛載由系統維持，App 不需常駐；登入時啟動只是讓選單列圖示隨時可用。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mounts are maintained by the system, so the app doesn’t need to keep running. Opening at login just keeps the menu bar icon available."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マウントはシステムが維持するため、Appを常駐させる必要はありません。ログイン時に起動するのは、メニューバーアイコンをいつでも使えるようにするためです。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "掛載由系統維持，App 不需常駐；登入時啟動只是讓選單列圖示隨時可用。"
           }
         }
       }
@@ -1547,6 +1658,72 @@
         }
       }
     },
+    "清除": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消去"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
+          }
+        }
+      }
+    },
+    "清除 %@ 已記錄的主機金鑰？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear the recorded host key for %@?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の記録済みホスト鍵を消去しますか？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除 %@ 已記錄的主機金鑰？"
+          }
+        }
+      }
+    },
+    "清除已記錄的金鑰…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Recorded Key…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録済みの鍵を消去…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除已記錄的金鑰…"
+          }
+        }
+      }
+    },
     "測試連線": {
       "localizations": {
         "en": {
@@ -1587,6 +1764,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "無法存取 App Group 容器，請確認簽章設定（App Groups）"
+          }
+        }
+      }
+    },
+    "無法清除已記錄的主機金鑰：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not clear the recorded host key: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録済みのホスト鍵を消去できませんでした：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法清除已記錄的主機金鑰：%@"
+          }
+        }
+      }
+    },
+    "無法讀取已記錄的主機金鑰：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read the recorded host key: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録済みのホスト鍵を読み込めませんでした：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法讀取已記錄的主機金鑰：%@"
           }
         }
       }
@@ -2335,6 +2556,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "開啟 Hamasen…"
+          }
+        }
+      }
+    },
+    "隱藏 Dock 圖示後，從選單列圖示即可開啟主視窗。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With the Dock icon hidden, open the main window from the menu bar icon."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockアイコンを隠したあとは、メニューバーアイコンからメインウインドウを開けます。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏 Dock 圖示後，從選單列圖示即可開啟主視窗。"
+          }
+        }
+      }
+    },
+    "隱藏 Dock 圖示（純選單列模式）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Dock Icon (Menu Bar Only)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dockアイコンを隠す（メニューバーのみ）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏 Dock 圖示（純選單列模式）"
           }
         }
       }

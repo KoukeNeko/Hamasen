@@ -233,6 +233,11 @@ struct ServerDetailView: View {
                 )
                 .padding(.vertical, 4)
             }
+            if draftProtocol.supportsPrivateKeyAuthentication {
+                // SSH is the only protocol here with a host key of its own;
+                // WebDAV rides on TLS, which the system validates.
+                HostKeySection(server: server)
+            }
             AuthenticationFields(
                 method: $draftAuthenticationMethod,
                 password: $draftPassword,

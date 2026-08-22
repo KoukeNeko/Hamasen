@@ -17,7 +17,8 @@ struct SFTPFileServiceTests {
         )
         let service = SFTPFileService(
             config: config,
-            credentials: .password(TestSFTPServer.password)
+            credentials: .password(TestSFTPServer.password),
+            hostKeyPolicy: .acceptAnything
         )
         try await service.connect()
         return (service, server)
@@ -55,7 +56,8 @@ struct SFTPFileServiceTests {
         )
         let service = SFTPFileService(
             config: config,
-            credentials: .password(TestSFTPServer.password)
+            credentials: .password(TestSFTPServer.password),
+            hostKeyPolicy: .acceptAnything
         )
 
         #expect(await service.isConnected == false)
@@ -80,7 +82,11 @@ struct SFTPFileServiceTests {
             port: server.port,
             username: TestSFTPServer.username
         )
-        let service = SFTPFileService(config: config, credentials: .password("wrong-password"))
+        let service = SFTPFileService(
+            config: config,
+            credentials: .password("wrong-password"),
+            hostKeyPolicy: .acceptAnything
+        )
 
         await #expect(throws: RemoteFileServiceError.self) {
             try await service.connect()
@@ -101,7 +107,8 @@ struct SFTPFileServiceTests {
         )
         let service = SFTPFileService(
             config: config,
-            credentials: .privateKey(openSSHKey: server.authorizedClientKey, passphrase: nil)
+            credentials: .privateKey(openSSHKey: server.authorizedClientKey, passphrase: nil),
+            hostKeyPolicy: .acceptAnything
         )
         try await service.connect()
 
@@ -125,7 +132,8 @@ struct SFTPFileServiceTests {
         // A well-formed key the server has never authorized.
         let service = SFTPFileService(
             config: config,
-            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Plain, passphrase: nil)
+            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Plain, passphrase: nil),
+            hostKeyPolicy: .acceptAnything
         )
 
         await #expect(throws: RemoteFileServiceError.self) {
@@ -147,7 +155,8 @@ struct SFTPFileServiceTests {
         )
         let service = SFTPFileService(
             config: config,
-            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Encrypted, passphrase: nil)
+            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Encrypted, passphrase: nil),
+            hostKeyPolicy: .acceptAnything
         )
 
         await #expect(throws: RemoteFileServiceError.privateKeyPassphraseRequired) {
@@ -169,7 +178,8 @@ struct SFTPFileServiceTests {
         )
         let service = SFTPFileService(
             config: config,
-            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Encrypted, passphrase: "wrong")
+            credentials: .privateKey(openSSHKey: SSHKeyFixtures.ed25519Encrypted, passphrase: "wrong"),
+            hostKeyPolicy: .acceptAnything
         )
 
         await #expect(throws: RemoteFileServiceError.self) {
@@ -412,7 +422,11 @@ struct SFTPFileServiceTests {
             username: TestSFTPServer.username,
             remotePath: "/srv/data"
         )
-        let service = SFTPFileService(config: config, credentials: .password(TestSFTPServer.password))
+        let service = SFTPFileService(
+            config: config,
+            credentials: .password(TestSFTPServer.password),
+            hostKeyPolicy: .acceptAnything
+        )
         try await service.connect()
 
         let items = try await service.listDirectory(at: RemotePath.root)

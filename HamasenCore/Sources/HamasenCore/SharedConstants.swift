@@ -34,6 +34,9 @@ public enum SharedConstants {
 
     /// File name of the set of items the user pinned to this Mac.
     public static let pinnedItemsFileName = "pinned-items.json"
+    /// The host keys each endpoint has presented, so a changed one can be
+    /// told from a first sighting.
+    public static let knownHostsFileName = "known-hosts.json"
 
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar
