@@ -17,16 +17,6 @@ import Foundation
 import HamasenCore
 import UniformTypeIdentifiers
 
-private extension NSFileProviderItemCapabilities {
-    /// `allowsEvicting` was deprecated once content policies were introduced,
-    /// but existing materializations still need its capability bit before
-    /// `NSFileProviderManager.evictItem` will accept them. Keep that public
-    /// bit without referring to the deprecated spelling; `contentPolicy`
-    /// remains the source of truth for when content should be downloaded or
-    /// retained.
-    static let legacyEvictionPermission = Self(rawValue: 1 << 6)
-}
-
 /// The domain root ("Hamasen" itself).
 final class RootItem: NSObject, NSFileProviderItem {
     var itemIdentifier: NSFileProviderItemIdentifier { .rootContainer }

@@ -13,17 +13,13 @@
 // limitations under the License.
 
 import FileProvider
-import HamasenCore
-import Testing
 
-@Suite("File Provider item capabilities")
-struct ItemCapabilityTests {
-    /// Production spells the eviction capability as its public raw bit so the
-    /// app builds without a deprecation warning. Pin the exact shared
-    /// definition used by the extension rather than recreating a second local
-    /// capability value that could drift away unnoticed.
-    @Test("驅逐權限固定使用公開位元值")
-    func pinsTheEvictionCapabilityBit() {
-        #expect(NSFileProviderItemCapabilities.legacyEvictionPermission.rawValue == 1 << 6)
-    }
+extension NSFileProviderItemCapabilities {
+    /// `allowsEvicting` was deprecated once content policies were introduced,
+    /// but existing materializations still need its capability bit before
+    /// `NSFileProviderManager.evictItem` will accept them. Keep that public
+    /// bit without referring to the deprecated spelling; `contentPolicy`
+    /// remains the source of truth for when content should be downloaded or
+    /// retained.
+    public static let legacyEvictionPermission = Self(rawValue: 1 << 6)
 }
