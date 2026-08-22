@@ -1,5 +1,4 @@
 import AppKit
-import Darwin
 import HamasenCore
 import SwiftUI
 
@@ -11,46 +10,12 @@ struct HamasenApp: App {
     @State private var model: ServerListModel
 
     init() {
-        // Must precede any store access: the model and both extensions read
-        // from the new App Group, and this fills it from the legacy one.
-        let arguments = CommandLine.arguments
-        let migrationArgumentIndex = arguments.firstIndex(of: "--migrate-legacy-group-only")
-        let targetAppURL = migrationArgumentIndex.flatMap { index -> URL? in
-            let pathIndex = arguments.index(after: index)
-            guard pathIndex < arguments.endIndex else { return nil }
-            return URL(fileURLWithPath: arguments[pathIndex], isDirectory: true)
-        }
-        let migrationComplete = migrationArgumentIndex.map { _ in
-            LegacyGroupMigration.runIfNeeded(
-                credentialConsumerAppURL: targetAppURL,
-                force: true
-            )
-        }
+        // Before any credential is read: builds before App Store
+        // distribution kept them in the file-based Keychain.
+        FileKeychainImport.runIfNeeded()
+
         let model = ServerListModel()
         _model = State(initialValue: model)
-        if migrationArgumentIndex != nil {
-            Darwin.exit(migrationComplete == true ? EXIT_SUCCESS : EXIT_FAILURE)
-        }
-        if arguments.contains("--verify-credentials-only") {
-            do {
-                for config in try ServerConfigStore().loadServers() {
-                    _ = try KeychainCredentialStore().loadCredentials(for: config)
-                }
-                if arguments.contains("--finalize-migration") {
-                    LegacyGroupMigration.finalizeMigration()
-                }
-                Darwin.exit(EXIT_SUCCESS)
-            } catch {
-                Darwin.exit(EXIT_FAILURE)
-            }
-        }
-        if arguments.contains("--rollback-uncommitted-credentials") {
-            Darwin.exit(
-                LegacyGroupMigration.rollbackUncommittedCredentials()
-                    ? EXIT_SUCCESS
-                    : EXIT_FAILURE
-            )
-        }
 
         // Registering the domain must not depend on a window or the menu-bar
         // popover being opened, so the mounted set is loaded as soon as the

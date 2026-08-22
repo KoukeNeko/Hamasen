@@ -6,6 +6,12 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- The extension is what actually connects, so it reads the same
+	     credentials the app writes. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>33832Z66QU.dev.hamasen.credentials</string>
+	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>33832Z66QU.group.dev.hamasen.shared</string>

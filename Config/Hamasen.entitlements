@@ -10,20 +10,15 @@
 	     the open panel only grants access to them with this. -->
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
-	<!-- The legacy "group.*" entry exists only so development builds can
-	     migrate old data; scripts/install-devid.sh strips it, because under
-	     Developer ID it would demand a provisioning profile. -->
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>33832Z66QU.group.dev.hamasen.shared</string>
-		<string>group.dev.hamasen.shared</string>
 	</array>
-	<!-- Development builds use these only to migrate Data Protection
-	     Keychain items. scripts/install-devid.sh strips the restricted
-	     entitlement before Developer ID signing. -->
+	<!-- Where server credentials live, shared with the File Provider
+	     extension that connects with them. Granted by the provisioning
+	     profile App Store distribution provides. -->
 	<key>keychain-access-groups</key>
 	<array>
-		<string>33832Z66QU.group.dev.hamasen.shared</string>
 		<string>33832Z66QU.dev.hamasen.credentials</string>
 	</array>
 </dict>

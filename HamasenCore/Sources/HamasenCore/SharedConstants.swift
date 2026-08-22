@@ -11,12 +11,13 @@ public enum SharedConstants {
     /// builds used for distribution need no provisioning profile.
     public static let appGroupIdentifier = "33832Z66QU.group.dev.hamasen.shared"
 
-    /// The original "group.*" App Group. Only the migration reads it; new
-    /// data always lives in ``appGroupIdentifier``.
-    public static let legacyAppGroupIdentifier = "group.dev.hamasen.shared"
 
     /// Service name for Keychain items.
     public static let keychainService = "dev.hamasen.credentials"
+
+    /// The Keychain access group the app and the File Provider extension
+    /// share, so the extension can read the credentials it connects with.
+    public static let keychainAccessGroup = "33832Z66QU.dev.hamasen.credentials"
 
     /// Data Protection Keychain groups used only as migration sources. New
     /// credentials use the file-based Keychain with an explicit item ACL.

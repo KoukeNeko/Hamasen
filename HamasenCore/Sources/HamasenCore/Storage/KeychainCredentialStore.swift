@@ -3,11 +3,15 @@ import Security
 
 /// Keychain access for server secrets.
 ///
-/// Uses the macOS file-based Keychain with an item ACL that trusts both the
-/// main app and the File Provider extension. This avoids a distribution-only
-/// provisioning profile: Data Protection Keychain sharing requires the
-/// restricted `keychain-access-groups` entitlement, while a local Developer
-/// ID build can express the same trust with `SecAccess`.
+/// Items live in the Data Protection Keychain under an access group both the
+/// app and the File Provider extension are entitled to, which is how the
+/// extension reads the credentials it connects with. That entitlement comes
+/// from a provisioning profile, which App Store distribution provides.
+///
+/// Secrets are readable after the first unlock rather than only while the
+/// screen is unlocked: the extension connects on the system's schedule, and
+/// a mount that stops working until someone types their login password would
+/// look broken rather than locked.
 public struct KeychainCredentialStore: Sendable {
     /// The kinds of secret a server can have. A server uses either a
     /// password or a private key (plus its passphrase when encrypted).
@@ -21,8 +25,6 @@ public struct KeychainCredentialStore: Sendable {
         case itemNotFound
         case unexpectedData
         case operationFailed(status: OSStatus)
-        case trustedApplicationUnavailable(path: String, status: OSStatus)
-        case accessCreationFailed(status: OSStatus)
 
         public var errorDescription: String? {
             switch self {
@@ -32,10 +34,6 @@ public struct KeychainCredentialStore: Sendable {
                 return String(localized: "Keychain 憑證格式無法辨識", bundle: .module)
             case .operationFailed(let status):
                 return String(localized: "Keychain 操作失敗（\(status): \(Self.message(for: status))）", bundle: .module)
-            case .trustedApplicationUnavailable(let path, let status):
-                return String(localized: "無法建立受信任程式 \(path)（\(status): \(Self.message(for: status))）", bundle: .module)
-            case .accessCreationFailed(let status):
-                return String(localized: "無法建立 Keychain ACL（\(status): \(Self.message(for: status))）", bundle: .module)
             }
         }
 
@@ -45,14 +43,14 @@ public struct KeychainCredentialStore: Sendable {
     }
 
     private let service: String
-    private let trustedApplicationURLs: [URL]?
+    private let accessGroup: String
 
     public init(
         service: String = SharedConstants.keychainService,
-        trustedApplicationURLs: [URL]? = nil
+        accessGroup: String = SharedConstants.keychainAccessGroup
     ) {
         self.service = service
-        self.trustedApplicationURLs = trustedApplicationURLs
+        self.accessGroup = accessGroup
     }
 
     // MARK: - Generic access
@@ -61,20 +59,18 @@ public struct KeychainCredentialStore: Sendable {
         try save(Data(secret.utf8), account: account(for: serverID, kind: kind))
     }
 
-    /// Imports an existing item while preserving its account naming scheme.
-    /// Internal so the one-time migration can move credentials without ever
-    /// decoding or logging their contents.
+    /// Writes a secret, replacing whatever was there. Internal so the
+    /// one-time import can move credentials without decoding them.
     func save(_ secretData: Data, account: String) throws {
         var addQuery = itemAttributes(account: account)
-        addQuery[kSecUseKeychain as String] = try defaultKeychain()
         addQuery[kSecValueData as String] = secretData
-        addQuery[kSecAttrLabel as String] = "Hamasen server credential"
-        addQuery[kSecAttrAccess as String] = try makeSharedAccess()
+        addQuery[kSecAttrLabel as String] = Self.itemLabel
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
 
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus == errSecDuplicateItem {
             let updateStatus = SecItemUpdate(
-                try searchQuery(account: account) as CFDictionary,
+                itemAttributes(account: account) as CFDictionary,
                 [kSecValueData as String: secretData] as CFDictionary
             )
             guard updateStatus == errSecSuccess else {
@@ -85,37 +81,8 @@ public struct KeychainCredentialStore: Sendable {
         }
     }
 
-    /// Imports a migration item only when the destination is absent. Existing
-    /// file-based items are never edited by the development-signed helper.
-    @discardableResult
-    func insertForMigration(_ secretData: Data, account: String) throws -> Bool {
-        var addQuery = itemAttributes(account: account)
-        addQuery[kSecUseKeychain as String] = try defaultKeychain()
-        addQuery[kSecValueData as String] = secretData
-        addQuery[kSecAttrLabel as String] = "Hamasen server credential"
-        addQuery[kSecAttrAccess as String] = try makeSharedAccess()
-
-        switch SecItemAdd(addQuery as CFDictionary, nil) {
-        case errSecSuccess:
-            return true
-        case errSecDuplicateItem:
-            return false
-        case let status:
-            throw KeychainError.operationFailed(status: status)
-        }
-    }
-
-    /// Removes one migration-created file-based item. This is called only by
-    /// the already-installed, ACL-trusted final app during installer rollback.
-    func delete(account: String) throws {
-        let status = SecItemDelete(try searchQuery(account: account) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError.operationFailed(status: status)
-        }
-    }
-
     public func load(kind: CredentialKind, for serverID: UUID) throws -> String {
-        var query = try searchQuery(for: serverID, kind: kind)
+        var query = itemAttributes(account: account(for: serverID, kind: kind))
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -130,7 +97,8 @@ public struct KeychainCredentialStore: Sendable {
     }
 
     public func delete(kind: CredentialKind, for serverID: UUID) throws {
-        let status = SecItemDelete(try searchQuery(for: serverID, kind: kind) as CFDictionary)
+        let query = itemAttributes(account: account(for: serverID, kind: kind))
+        let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.operationFailed(status: status)
         }
@@ -160,6 +128,8 @@ public struct KeychainCredentialStore: Sendable {
 
     // MARK: - Query building
 
+    static let itemLabel = "Hamasen server credential"
+
     /// Passwords keep the bare server identifier as their account so
     /// credentials saved before key authentication existed stay readable;
     /// the newer kinds are suffixed.
@@ -172,88 +142,15 @@ public struct KeychainCredentialStore: Sendable {
         }
     }
 
-    private func searchQuery(for serverID: UUID, kind: CredentialKind) throws -> [String: Any] {
-        try searchQuery(account: account(for: serverID, kind: kind))
-    }
-
-    private func searchQuery(account: String) throws -> [String: Any] {
-        var query = itemAttributes(account: account)
-        // Never search every keychain in the user's search list. This pins
-        // reads, updates, and deletes to the same Keychain used by save.
-        query[kSecMatchSearchList as String] = [try defaultKeychain()]
-        return query
-    }
-
     private func itemAttributes(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecAttrAccessGroup as String: accessGroup,
+            // Without this every query goes to the file-based keychain, which
+            // is a different store holding different items.
+            kSecUseDataProtectionKeychain as String: true,
         ]
-    }
-
-    private func defaultKeychain() throws -> SecKeychain {
-        var keychain: SecKeychain?
-        let status = SecKeychainCopyDefault(&keychain)
-        guard status == errSecSuccess, let keychain else {
-            throw KeychainError.operationFailed(status: status)
-        }
-        return keychain
-    }
-
-    /// Builds the ACL at creation time; changing it later would require a
-    /// user authorization prompt. Explicit URLs are used by the installer to
-    /// trust the final Developer ID app even though migration runs from a
-    /// development-signed build.
-    private func makeSharedAccess() throws -> SecAccess {
-        var trustedApplications: [SecTrustedApplication] = []
-        let applicationURLs = trustedApplicationURLs ?? Self.defaultTrustedApplicationURLs()
-        guard !applicationURLs.isEmpty else {
-            throw KeychainError.trustedApplicationUnavailable(path: "<application bundle>", status: errSecParam)
-        }
-        for url in applicationURLs {
-            var application: SecTrustedApplication?
-            let status = url.path.withCString {
-                SecTrustedApplicationCreateFromPath($0, &application)
-            }
-            guard status == errSecSuccess, let application else {
-                throw KeychainError.trustedApplicationUnavailable(path: url.path, status: status)
-            }
-            trustedApplications.append(application)
-        }
-
-        var access: SecAccess?
-        let status = SecAccessCreate(
-            "Hamasen server credential" as CFString,
-            trustedApplications as CFArray,
-            &access
-        )
-        guard status == errSecSuccess, let access else {
-            throw KeychainError.accessCreationFailed(status: status)
-        }
-        return access
-    }
-
-    /// Returns the app and embedded File Provider bundle URLs regardless of
-    /// whether the code is currently running in the app or the extension.
-    private static func defaultTrustedApplicationURLs() -> [URL] {
-        let currentBundleURL = Bundle.main.bundleURL.standardizedFileURL
-        let appURL: URL
-        if currentBundleURL.pathExtension == "app" {
-            appURL = currentBundleURL
-        } else if currentBundleURL.pathExtension == "appex" {
-            appURL = currentBundleURL
-                .deletingLastPathComponent() // PlugIns
-                .deletingLastPathComponent() // Contents
-                .deletingLastPathComponent() // Hamasen.app
-        } else {
-            return []
-        }
-
-        let providerURL = appURL
-            .appendingPathComponent("Contents/PlugIns/HamasenFileProvider.appex", isDirectory: true)
-        return [appURL, providerURL].filter {
-            FileManager.default.fileExists(atPath: $0.path)
-        }
     }
 }

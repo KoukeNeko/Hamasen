@@ -123,40 +123,22 @@ extension are Developer ID-signed and notarized before being installed in
 records of the FinderSync extension and helper app that releases up to 1.0
 shipped, since those registrations outlive the bundles they name.
 
-Create a `notarytool` Keychain profile once. The command prompts securely for
-the app-specific password; do not put that password in the repository or in a
-shell script:
+Distribution goes through the App Store. Credentials live in the Data
+Protection Keychain, in an access group the app and the File Provider
+extension share, and that entitlement is granted by a provisioning profile —
+which is why a Developer ID build signed without one can no longer read them.
+
+Archive from Xcode (Product → Archive), notarize and export through the
+Organizer, then package what comes out:
 
 ```bash
-xcrun notarytool store-credentials "hamasen-notary" \
-  --apple-id "your-apple-id@example.com" \
-  --team-id "33832Z66QU"
+./scripts/release.sh /path/to/exported/Hamasen.app v1.0.0-beta.1
 ```
 
-Then build, notarize, staple, validate, install, and register the extensions:
-
-```bash
-NOTARYTOOL_PROFILE="hamasen-notary" ./scripts/install-devid.sh
-```
-
-The installer validates the profile before building and waits up to 30 minutes
-for notarization by default. A non-default Keychain, a longer timeout, or an
-upload without S3 Transfer Acceleration can be selected explicitly:
-
-```bash
-NOTARYTOOL_PROFILE="hamasen-notary" \
-NOTARYTOOL_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db" \
-NOTARY_TIMEOUT="45m" \
-NOTARY_NO_S3_ACCELERATION=1 \
-./scripts/install-devid.sh
-```
-
-If notarization, distribution validation, credential migration, or
-registration fails, the installer preserves its diagnostic artifacts. Once
-installation has started, it also restores and re-registers the previous
-`/Applications/Hamasen.app`. These distribution and
-rollback checks run during an actual installer invocation; `scripts/verify.sh`
-only validates package tests and the development build.
+The script refuses to package a build a downloader could not use: unsigned or
+signed by another team, no stapled notarization ticket, rejected by
+Gatekeeper, an extension missing its document group, or an app and an
+extension that disagree about the macOS they need.
 
 ## Manual end-to-end check
 

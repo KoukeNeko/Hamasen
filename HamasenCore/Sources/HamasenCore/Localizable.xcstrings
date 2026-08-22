@@ -461,52 +461,6 @@
         }
       }
     },
-    "無法建立 Keychain ACL（%d: %@）": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not create the Keychain ACL (%1$d: %2$@)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーチェーンのACLを作成できませんでした（%1$d: %2$@）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法建立 Keychain ACL（%d: %@）"
-          }
-        }
-      }
-    },
-    "無法建立受信任程式 %@（%d: %@）": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not create the trusted application %1$@ (%2$d: %3$@)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "信頼済みアプリケーション%1$@を作成できませんでした（%2$d: %3$@）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法建立受信任程式 %@（%d: %@）"
-          }
-        }
-      }
-    },
     "無法確認伺服器身分，連線已中止：%@": {
       "extractionState": "manual",
       "localizations": {
