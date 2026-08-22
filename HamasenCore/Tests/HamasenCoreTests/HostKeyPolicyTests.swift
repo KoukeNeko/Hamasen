@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import HamasenCore
+import HamasenTestServers
 
 /// Exercises host key checking against a real SSH handshake, which is the
 /// only place the fingerprint, the record and the refusal meet.

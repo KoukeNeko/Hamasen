@@ -3,7 +3,7 @@ import Crypto
 import Foundation
 import NIOCore
 import NIOSSH
-@testable import HamasenCore
+import HamasenCore
 
 /// In-process SFTP server for tests: a local temp directory as its root and
 /// fixed username/password authentication.
@@ -17,17 +17,17 @@ import NIOSSH
 /// which report failures via status codes, and the delegate returns empty
 /// attributes instead of throwing for nonexistent stat paths. Real OpenSSH
 /// servers do not have this problem.
-final class TestSFTPServer {
-    static let username = "testuser"
-    static let password = "testpass"
+public final class TestSFTPServer {
+    public static let username = "testuser"
+    public static let password = "testpass"
 
     private static let portRange = 20000..<60000
     private static let maxBindAttempts = 5
 
-    let port: Int
-    let rootDirectory: URL
+    public let port: Int
+    public let rootDirectory: URL
     /// The client key the server accepts, in OpenSSH private key format.
-    let authorizedClientKey: String
+    public let authorizedClientKey: String
     private let server: SSHServer
 
     private init(port: Int, rootDirectory: URL, authorizedClientKey: String, server: SSHServer) {
@@ -42,7 +42,10 @@ final class TestSFTPServer {
     /// A fresh client key pair is generated per server: the public half is
     /// the only one accepted for key authentication, and the private half is
     /// handed to tests through `authorizedClientKey`.
-    static func start() async throws -> TestSFTPServer {
+    /// - Parameter preferredPort: a fixed port, for a server someone is
+    ///   going to connect to by hand. Zero picks a free one, which is what
+    ///   tests want so they can run side by side.
+    public static func start(preferredPort: Int = 0) async throws -> TestSFTPServer {
         let rootDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("sftp-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
@@ -55,7 +58,7 @@ final class TestSFTPServer {
 
         var lastError: Error?
         for _ in 0..<maxBindAttempts {
-            let candidatePort = Int.random(in: portRange)
+            let candidatePort = preferredPort > 0 ? preferredPort : Int.random(in: portRange)
             do {
                 let server = try await SSHServer.host(
                     host: "127.0.0.1",
@@ -77,7 +80,7 @@ final class TestSFTPServer {
         throw lastError ?? RemoteFileServiceError.connectionFailed(underlying: "無法綁定測試埠")
     }
 
-    func stop() async throws {
+    public func stop() async throws {
         try await server.close()
         try? FileManager.default.removeItem(at: rootDirectory)
     }

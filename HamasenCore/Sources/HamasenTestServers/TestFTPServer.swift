@@ -1,7 +1,7 @@
 import Foundation
 import NIOCore
 import NIOPosix
-@testable import HamasenCore
+import HamasenCore
 
 /// An FTP server that runs in the test process, backed by a real directory.
 ///
@@ -11,15 +11,15 @@ import NIOPosix
 /// REST — only happens between two connections.
 ///
 /// It speaks the subset this client uses, and no more.
-final class TestFTPServer {
-    static let username = "testuser"
-    static let password = "testpass"
+public final class TestFTPServer {
+    public static let username = "testuser"
+    public static let password = "testpass"
 
     private static let portRange = 20000..<60000
     private static let maxBindAttempts = 5
 
-    let port: Int
-    let rootDirectory: URL
+    public let port: Int
+    public let rootDirectory: URL
     private let channel: Channel
 
     private init(port: Int, rootDirectory: URL, channel: Channel) {
@@ -28,14 +28,20 @@ final class TestFTPServer {
         self.channel = channel
     }
 
-    static func start(advertisingMLSD: Bool = true) async throws -> TestFTPServer {
+    /// - Parameter preferredPort: a fixed port, for a server someone is
+    ///   going to connect to by hand. Zero picks a free one, which is what
+    ///   tests want so they can run side by side.
+    public static func start(
+        advertisingMLSD: Bool = true,
+        preferredPort: Int = 0
+    ) async throws -> TestFTPServer {
         let rootDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ftp-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
 
         var lastError: Error?
         for _ in 0..<maxBindAttempts {
-            let candidatePort = Int.random(in: portRange)
+            let candidatePort = preferredPort > 0 ? preferredPort : Int.random(in: portRange)
             do {
                 let channel = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
                     .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -57,7 +63,7 @@ final class TestFTPServer {
         throw lastError ?? RemoteFileServiceError.connectionFailed(underlying: "無法綁定測試埠")
     }
 
-    func stop() async throws {
+    public func stop() async throws {
         try? await channel.close()
         try? FileManager.default.removeItem(at: rootDirectory)
     }

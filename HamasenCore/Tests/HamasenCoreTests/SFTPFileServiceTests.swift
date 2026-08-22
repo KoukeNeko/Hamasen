@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import HamasenCore
+import HamasenTestServers
 
 /// End-to-end tests for SFTPFileService against the in-process SFTP server.
 @Suite("SFTPFileService")

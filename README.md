@@ -140,6 +140,18 @@ signed by another team, no stapled notarization ticket, rejected by
 Gatekeeper, an extension missing its document group, or an app and an
 extension that disagree about the macOS they need.
 
+## Showing the app without a real server
+
+Two servers run on this Mac, serving invented files, so the app can be
+demonstrated or photographed without a real hostname and account in the
+picture. They are the ones the test suite already runs the client against.
+
+```bash
+cd HamasenCore && swift run DemoServers
+```
+
+It prints the ports and the account. Ctrl-C stops them; nothing survives.
+
 ## Manual end-to-end check
 
 1. Open the project in Xcode and run the **Hamasen** scheme (⌘R).

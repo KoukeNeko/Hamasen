@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import HamasenCore
+import HamasenTestServers
 
 /// End-to-end tests for FTPFileService against the in-process FTP server.
 ///

@@ -12,6 +12,9 @@ let package = Package(
     ],
     products: [
         .library(name: "HamasenCore", targets: ["HamasenCore"]),
+        // Runs the same servers the tests use, for showing the app without
+        // pointing it at a real one.
+        .executable(name: "DemoServers", targets: ["DemoServers"]),
     ],
     dependencies: [
         .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.7.0"),
@@ -34,10 +37,27 @@ let package = Package(
             resources: [.process("Localizable.xcstrings")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The in-process SFTP and FTP servers the client is exercised
+        // against. Outside the test target so the demo executable can run
+        // the same ones rather than a second copy of them.
+        .target(
+            name: "HamasenTestServers",
+            dependencies: [
+                "HamasenCore",
+                .product(name: "Citadel", package: "Citadel"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+            ]
+        ),
+        .executableTarget(
+            name: "DemoServers",
+            dependencies: ["HamasenTestServers"]
+        ),
         .testTarget(
             name: "HamasenCoreTests",
             dependencies: [
                 "HamasenCore",
+                "HamasenTestServers",
                 .product(name: "NIOHTTP1", package: "swift-nio"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]

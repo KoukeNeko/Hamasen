@@ -1,13 +1,19 @@
 import NIOCore
 
-/// Splits the control stream into lines.
+/// Splits an FTP control stream into lines.
+///
+/// Public because the in-process server the client is exercised against
+/// needs the same framing, and one decoder that both sides agree on is
+/// better than two that might not.
 ///
 /// Hand-written rather than taken from NIOExtras: it is a dozen lines, and
 /// this package would otherwise carry a whole extra dependency for them.
-final class FTPLineDecoder: ByteToMessageDecoder {
-    typealias InboundOut = String
+public final class FTPLineDecoder: ByteToMessageDecoder {
+    public typealias InboundOut = String
 
-    func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
+    public init() {}
+
+    public func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         let view = buffer.readableBytesView
         guard let newline = view.firstIndex(of: UInt8(ascii: "\n")) else { return .needMoreData }
 
@@ -22,7 +28,7 @@ final class FTPLineDecoder: ByteToMessageDecoder {
         return .continue
     }
 
-    func decodeLast(
+    public func decodeLast(
         context: ChannelHandlerContext,
         buffer: inout ByteBuffer,
         seenEOF: Bool
