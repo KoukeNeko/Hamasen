@@ -1,0 +1,35 @@
+name: Verify
+
+# The gate in front of main. Work is promoted dev -> beta -> main, and this
+# runs on every push to the two upstream branches and on every pull request
+# aimed at any of the three.
+#
+# Deliberately not filtered by path: a required check that is skipped never
+# reports, and a pull request waiting on a check that will never arrive can
+# never be merged.
+on:
+  push:
+    branches: [dev, beta]
+  pull_request:
+    branches: [dev, beta, main]
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/pin-xcode
+
+      # A runner has no signing identity and must not mint one: automatic
+      # signing would issue a fresh certificate on every run.
+      - name: Run the verification harness
+        env:
+          HAMASEN_UNSIGNED_BUILD: "1"
+        run: scripts/verify.sh

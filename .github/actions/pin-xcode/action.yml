@@ -1,0 +1,27 @@
+name: Pin Xcode
+description: >
+  Selects the Xcode the project is built with, rather than whichever one the
+  runner image happens to default to, so an image refresh cannot change the
+  toolchain underneath a build.
+
+inputs:
+  version:
+    description: Xcode version to select
+    required: false
+    default: '26.6'
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        # The glob absorbs the image's choice between Xcode_26.6.app and
+        # Xcode_26.6.0.app.
+        xcode_app="$(ls -d /Applications/Xcode_${{ inputs.version }}*.app 2>/dev/null | sort -V | tail -1)"
+        if [[ -z "${xcode_app}" ]]; then
+            echo "error: Xcode ${{ inputs.version }} is not installed on this runner image" >&2
+            ls -d /Applications/Xcode*.app >&2
+            exit 1
+        fi
+        sudo xcode-select --switch "${xcode_app}/Contents/Developer"
+        xcodebuild -version

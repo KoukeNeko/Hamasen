@@ -63,19 +63,7 @@ jobs:
           echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
           echo "Build number: ${build_number}"
 
-      # Pinned rather than left to the image default, so a runner-image
-      # refresh cannot change the toolchain under a shipping build. The glob
-      # absorbs the image's choice between Xcode_26.6.app and Xcode_26.6.0.app.
-      - name: Pin the Xcode version
-        run: |
-          xcode_app="$(ls -d /Applications/Xcode_26.6*.app 2>/dev/null | sort -V | tail -1)"
-          if [[ -z "${xcode_app}" ]]; then
-              echo "error: Xcode 26.6 is not installed on this runner image" >&2
-              ls -d /Applications/Xcode*.app >&2
-              exit 1
-          fi
-          sudo xcode-select --switch "${xcode_app}/Contents/Developer"
-          xcodebuild -version
+      - uses: ./.github/actions/pin-xcode
 
       # Runs before the signing key is installed so a test failure costs
       # nothing and never touches a secret.
