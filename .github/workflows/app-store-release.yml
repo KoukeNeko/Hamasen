@@ -5,18 +5,35 @@ name: App Store release
 # of the OS"). The maintainer's Mac runs a beta, so the shipping build is made
 # here: the macos-26 runner carries the same Xcode 26.6 (17F113) on a released
 # macOS, which changes that one field and nothing else about the toolchain.
+#
+# Work is promoted dev -> beta -> main, so anything reaching main is meant to
+# ship: every update to it releases. Documentation-only changes are excluded,
+# since they cannot alter the binary.
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - LICENSE
+      - Docs/**
   workflow_dispatch:
     inputs:
       build_number:
-        description: Build number, higher than the last one App Store Connect accepted
-        required: true
+        description: Build number (leave empty to derive it from the commit count)
+        required: false
         type: string
       upload:
         description: Upload to App Store Connect (off keeps the package as an artifact only)
         required: true
         type: boolean
         default: false
+
+# Two merges in quick succession would otherwise race two uploads at the same
+# build number. Queued rather than cancelled: a release already under way has
+# a build number that must not be silently abandoned.
+concurrency:
+  group: app-store-release
+  cancel-in-progress: false
 
 env:
   ARCHIVE_PATH: ${{ github.workspace }}/build/Hamasen.xcarchive
@@ -29,6 +46,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The build number is the commit count, which a shallow clone
+          # reports as 1.
+          fetch-depth: 0
+
+      # App Store Connect refuses a build number it has already seen. The
+      # commit count only grows as branches merge into main, so it needs no
+      # state kept anywhere and no one has to remember the last one used.
+      - name: Resolve the build number
+        run: |
+          build_number='${{ inputs.build_number }}'
+          if [[ -z "${build_number}" ]]; then
+              build_number="$(git rev-list --count HEAD)"
+          fi
+          echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
+          echo "Build number: ${build_number}"
 
       # Pinned rather than left to the image default, so a runner-image
       # refresh cannot change the toolchain under a shipping build. The glob
@@ -80,7 +113,7 @@ jobs:
               -authenticationKeyPath "${HOME}/private_keys/AuthKey_${KEY_ID}.p8" \
               -authenticationKeyID "${KEY_ID}" \
               -authenticationKeyIssuerID "${ISSUER_ID}" \
-              CURRENT_PROJECT_VERSION='${{ inputs.build_number }}'
+              CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 
       # The whole point of building here, asserted rather than assumed. Beta
       # macOS builds carry a trailing lowercase seed letter (26A5416b); a
@@ -127,12 +160,12 @@ jobs:
       - name: Keep the package
         uses: actions/upload-artifact@v7
         with:
-          name: Hamasen-${{ inputs.build_number }}-pkg
+          name: Hamasen-${{ env.BUILD_NUMBER }}-pkg
           path: ${{ env.EXPORT_DIR }}/*.pkg
           if-no-files-found: error
 
       - name: Upload to App Store Connect
-        if: ${{ inputs.upload }}
+        if: ${{ github.event_name == 'push' || inputs.upload }}
         env:
           KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
