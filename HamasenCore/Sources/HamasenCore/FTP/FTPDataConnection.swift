@@ -20,9 +20,10 @@ enum FTPDataConnection {
         group: EventLoopGroup,
         timeoutSeconds: Int,
         protection: FTPDataProtection,
+        stoppingAfter limit: Int? = nil,
         into receive: @escaping @Sendable (ByteBuffer) throws -> Void
     ) async throws {
-        let handler = FTPDataReceiver(receive: receive)
+        let handler = FTPDataReceiver(receive: receive, limit: limit)
         let channel = try await open(address, fallbackHost, group, timeoutSeconds, protection) { channel in
             try channel.pipeline.syncOperations.addHandler(handler)
         }
@@ -36,7 +37,8 @@ enum FTPDataConnection {
         fallbackHost: String,
         group: EventLoopGroup,
         timeoutSeconds: Int,
-        protection: FTPDataProtection
+        protection: FTPDataProtection,
+        stoppingAfter limit: Int? = nil
     ) async throws -> Data {
         let collected = CollectedBytes()
         try await receive(
@@ -44,7 +46,8 @@ enum FTPDataConnection {
             fallbackHost: fallbackHost,
             group: group,
             timeoutSeconds: timeoutSeconds,
-            protection: protection
+            protection: protection,
+            stoppingAfter: limit
         ) { buffer in
             collected.append(buffer)
         }
@@ -136,20 +139,45 @@ private final class FTPDataReceiver: ChannelInboundHandler, @unchecked Sendable 
     typealias InboundIn = ByteBuffer
 
     private let receive: @Sendable (ByteBuffer) throws -> Void
+    /// How many bytes are wanted, when the caller wants only some of what the
+    /// server is about to send. FTP has no way to ask it to stop, so the
+    /// connection is closed once enough has arrived.
+    private let limit: Int?
+    private var received = 0
     private var completion: EventLoopPromise<Void>?
     private var outcome: Result<Void, Error>?
 
-    init(receive: @escaping @Sendable (ByteBuffer) throws -> Void) {
+    init(receive: @escaping @Sendable (ByteBuffer) throws -> Void, limit: Int?) {
         self.receive = receive
+        self.limit = limit
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        var buffer = unwrapInboundIn(data)
+        if let limit {
+            let remaining = limit - received
+            guard remaining > 0 else { return finishAndClose(context) }
+            if buffer.readableBytes > remaining {
+                buffer = buffer.readSlice(length: remaining) ?? buffer
+            }
+        }
+        received += buffer.readableBytes
+
         do {
-            try receive(unwrapInboundIn(data))
+            try receive(buffer)
         } catch {
             finish(.failure(error))
             context.close(promise: nil)
+            return
         }
+        // Enough is enough: reading on to the end of the file is what the
+        // caller asked for a range instead of.
+        if let limit, received >= limit { finishAndClose(context) }
+    }
+
+    private func finishAndClose(_ context: ChannelHandlerContext) {
+        finish(.success(()))
+        context.close(promise: nil)
     }
 
     func channelInactive(context: ChannelHandlerContext) {

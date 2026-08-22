@@ -57,11 +57,22 @@ struct ProtectedConfigurationArchiveTests {
         #expect(!text.contains("工作站"))
     }
 
-    @Test("密碼錯誤時打不開")
-    func refusesTheWrongPassphrase() throws {
+    /// The specific error, not merely some error: reporting a mistyped
+    /// passphrase as an unreadable file sends the user looking for a damaged
+    /// backup instead of retyping. An `any Error` expectation here passed
+    /// while it did exactly that.
+    @Test("密碼錯誤時說的是密碼錯誤")
+    func refusesTheWrongPassphraseAndSaysWhy() throws {
         let sealed = try Self.protected().sealed(passphrase: "correct horse")
-        #expect(throws: (any Error).self) {
+        #expect(throws: EncryptedArchive.ArchiveError.wrongPassphraseOrDamaged) {
             try ProtectedConfigurationArchive.opened(sealed, passphrase: "wrong")
+        }
+    }
+
+    @Test("不是備份檔時說的是不認得這個檔案")
+    func refusesSomethingElseEntirely() throws {
+        #expect(throws: ConfigurationArchive.ArchiveError.unreadable) {
+            try ProtectedConfigurationArchive.opened(Data("not a backup".utf8), passphrase: "p")
         }
     }
 

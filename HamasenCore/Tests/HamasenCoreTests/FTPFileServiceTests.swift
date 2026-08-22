@@ -123,6 +123,26 @@ struct FTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    /// The range API exists so opening a large file does not fetch all of
+    /// it. This checks the bytes are the right ones; that the transfer stops
+    /// once it has them is structural — the connection is closed — and not
+    /// observable from here.
+    @Test("大檔案深處的小區間取得正確")
+    func downloadsARangeFromDeepInsideALargeFile() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+        var contents = Data()
+        while contents.count < 4_000_000 {
+            contents.append(contentsOf: Array("0123456789".utf8))
+        }
+        contents.replaceSubrange(1_000_000..<1_000_005, with: Array("MARK!".utf8))
+        try contents.write(to: server.rootDirectory.appendingPathComponent("large.bin"))
+
+        let range = try await service.downloadRange(at: "/large.bin", offset: 1_000_000, length: 5)
+        #expect(String(decoding: range, as: UTF8.self) == "MARK!")
+
+        try await Self.tearDown(service, server)
+    }
+
     @Test("上傳檔案")
     func uploadsAFile() async throws {
         let (service, server) = try await Self.makeConnectedService()

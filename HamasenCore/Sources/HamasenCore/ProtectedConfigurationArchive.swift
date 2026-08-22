@@ -46,12 +46,14 @@ public struct ProtectedConfigurationArchive: Codable, Equatable, Sendable {
         guard let envelope = try? JSONDecoder().decode(EncryptedArchive.self, from: data) else {
             throw ConfigurationArchive.ArchiveError.unreadable
         }
+        // Unsealed on its own line: folding it into the decode would let a
+        // wrong passphrase be reported as an unreadable file, which sends
+        // whoever mistyped it looking for a damaged backup.
+        let contents = try envelope.opened(passphrase: passphrase)
+
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let archive = try? decoder.decode(
-            ProtectedConfigurationArchive.self,
-            from: try envelope.opened(passphrase: passphrase)
-        ) else {
+        guard let archive = try? decoder.decode(ProtectedConfigurationArchive.self, from: contents) else {
             throw ConfigurationArchive.ArchiveError.unreadable
         }
         guard archive.configuration.version <= ConfigurationArchive.currentVersion else {

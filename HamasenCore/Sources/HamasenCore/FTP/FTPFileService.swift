@@ -172,6 +172,13 @@ public actor FTPFileService: RemoteFileService {
         }
     }
 
+    /// Whether a path is a directory.
+    ///
+    /// CWD is the question every server answers, and answering it moves the
+    /// session's working directory as a side effect. That is harmless here
+    /// only because every command this client sends carries an absolute
+    /// path — a relative one would start resolving against wherever the last
+    /// call to this left things.
     private func isDirectory(_ remotePath: String, on connection: FTPControlConnection) async throws -> Bool {
         let response = try await connection.send("CWD \(remotePath)")
         return response.isPositiveCompletion
@@ -233,17 +240,21 @@ public actor FTPFileService: RemoteFileService {
             guard started.isPositivePreliminary || started.isPositiveCompletion else {
                 throw FTPError.commandFailed(command: "RETR", response: started)
             }
+            // REST says where to start and there is no way to say where to
+            // stop, so the connection is closed once enough has arrived.
+            // Reading to the end instead would pull the whole remainder of
+            // the file into memory — which is the thing a ranged read exists
+            // to avoid.
             let body = try await FTPDataConnection.receiveAll(
                 at: address,
                 fallbackHost: await connection.remoteHost ?? config.host,
                 group: MultiThreadedEventLoopGroup.singleton,
                 timeoutSeconds: connectTimeoutSeconds,
-                protection: dataProtection
+                protection: dataProtection,
+                stoppingAfter: length
             )
-            try await requireTransferCompleted(on: connection)
-            // FTP has no way to ask for an end offset, so the rest of the
-            // file arrives and the tail is dropped here.
-            return body.count > length ? body.prefix(length) : body
+            try await requireTransferCompleted(on: connection, allowingAbort: true)
+            return body
         } catch {
             throw Self.serviceError(error, operation: Self.downloadOperation, path: path)
         }
@@ -364,12 +375,22 @@ public actor FTPFileService: RemoteFileService {
     /// A transfer is finished when the data connection has closed *and* the
     /// server has said so. Taking the closed connection alone as the answer
     /// reports success on a transfer the server aborted halfway.
-    private func requireTransferCompleted(on connection: FTPControlConnection) async throws {
+    /// - Parameter allowingAbort: accepts the reply a server sends when the
+    ///   data connection closed before it had finished writing, which is what
+    ///   a deliberately truncated read looks like from its side.
+    private func requireTransferCompleted(
+        on connection: FTPControlConnection,
+        allowingAbort: Bool = false
+    ) async throws {
         let completion = try await connection.awaitCompletion()
-        guard completion.isPositiveCompletion else {
-            throw FTPError.commandFailed(command: "transfer", response: completion)
-        }
+        if completion.isPositiveCompletion { return }
+        if allowingAbort, Self.abortedTransferCodes.contains(completion.code) { return }
+        throw FTPError.commandFailed(command: "transfer", response: completion)
     }
+
+    /// 426 is "connection closed, transfer aborted"; 226 arrives instead on
+    /// servers that treat the close as an ordinary end.
+    private static let abortedTransferCodes: Set<Int> = [426, 225]
 
     // MARK: - Helpers
 
