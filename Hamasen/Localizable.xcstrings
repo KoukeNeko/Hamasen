@@ -382,6 +382,28 @@
         }
       }
     },
+    "一般備份包含伺服器清單、已記錄的主機金鑰與連線偏好設定，不含密碼與金鑰。含密碼的備份另外包含鑰匙圈裡的所有密碼與金鑰，整份以你設定的密碼加密。匯入時會自動判斷是哪一種。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A plain backup holds the server list, the recorded host keys and the connection preferences, and no passwords or keys. One with passwords also holds every secret from the Keychain, and the whole file is encrypted with the passphrase you set. Importing works out which kind a file is."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通常のバックアップにはサーバ一覧、記録済みのホスト鍵、接続の環境設定が含まれ、パスワードと鍵は含まれません。パスワードを含むバックアップはキーチェーンのすべての秘密も含み、設定したパスワードでファイル全体を暗号化します。読み込み時にどちらかは自動で判別されます。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一般備份包含伺服器清單、已記錄的主機金鑰與連線偏好設定，不含密碼與金鑰。含密碼的備份另外包含鑰匙圈裡的所有密碼與金鑰，整份以你設定的密碼加密。匯入時會自動判斷是哪一種。"
+          }
+        }
+      }
+    },
     "下次連線會把伺服器出示的任何金鑰當作正確的記下來。只有在你確定伺服器重建過、並且核對過它端的指紋時才這麼做。": {
       "localizations": {
         "en": {
@@ -581,6 +603,7 @@
       }
     },
     "備份包含伺服器清單、已記錄的主機金鑰與連線偏好設定。密碼與金鑰存放在鑰匙圈，不會寫進備份檔。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -668,6 +691,28 @@
         }
       }
     },
+    "儲存含密碼的 Hamasen 備份": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save a Hamasen backup with passwords"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを含むHamasenバックアップを保存"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存含密碼的 Hamasen 備份"
+          }
+        }
+      }
+    },
     "儲存掛載狀態失敗：%@": {
       "localizations": {
         "en": {
@@ -734,6 +779,28 @@
         }
       }
     },
+    "兩次輸入的密碼不同。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The two entries do not match."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2つの入力が一致しません。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兩次輸入的密碼不同。"
+          }
+        }
+      }
+    },
     "其中 %lld 台的遠端路徑是相對於登入目錄的，已改為從根目錄掛載。": {
       "localizations": {
         "en": {
@@ -752,6 +819,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "其中 %lld 台的遠端路徑是相對於登入目錄的，已改為從根目錄掛載。"
+          }
+        }
+      }
+    },
+    "再輸入一次": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter it again"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度入力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再輸入一次"
           }
         }
       }
@@ -955,6 +1044,7 @@
       }
     },
     "匯入設定失敗：%@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -999,6 +1089,7 @@
       }
     },
     "匯出設定失敗：%@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1126,6 +1217,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "名稱"
+          }
+        }
+      }
+    },
+    "含密碼的備份": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With passwords"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを含む"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含密碼的備份"
           }
         }
       }
@@ -2341,6 +2454,28 @@
         }
       }
     },
+    "繼續": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "続ける"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "繼續"
+          }
+        }
+      }
+    },
     "至少要保留一個，否則沒有地方可以開啟 Hamasen。": {
       "localizations": {
         "en": {
@@ -2425,6 +2560,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "設定…"
+          }
+        }
+      }
+    },
+    "設定備份密碼": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set a backup passphrase"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップのパスワードを設定"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定備份密碼"
           }
         }
       }
@@ -2535,6 +2692,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟隨系統"
+          }
+        }
+      }
+    },
+    "輸入備份密碼": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the backup passphrase"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップのパスワードを入力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輸入備份密碼"
+          }
+        }
+      }
+    },
+    "這份備份是加密的，需要匯出時設定的密碼。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This backup is encrypted and needs the passphrase set when it was exported."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバックアップは暗号化されており、書き出し時に設定したパスワードが必要です。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這份備份是加密的，需要匯出時設定的密碼。"
+          }
+        }
+      }
+    },
+    "這份備份會包含所有伺服器的密碼與金鑰，並以這組密碼加密。忘記這組密碼就無法還原，沒有其他方法可以取回。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This backup will hold every server's password and key, encrypted with the passphrase you set here. Forget it and the backup cannot be opened; there is no other way back into it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバックアップにはすべてのサーバのパスワードと鍵が含まれ、ここで設定するパスワードで暗号化されます。忘れると復元できず、他に取り出す方法はありません。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這份備份會包含所有伺服器的密碼與金鑰，並以這組密碼加密。忘記這組密碼就無法還原，沒有其他方法可以取回。"
           }
         }
       }

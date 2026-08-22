@@ -207,16 +207,68 @@ final class ServerListModel {
         )
     }
 
+    /// The same configuration plus every secret behind it, for a backup the
+    /// user has chosen to protect with a passphrase.
+    func makeProtectedArchive() -> ProtectedConfigurationArchive {
+        var credentials: [ProtectedConfigurationArchive.Credential] = []
+        for server in servers {
+            for kind in KeychainCredentialStore.CredentialKind.allCases {
+                guard let secret = try? credentialStore.load(kind: kind, for: server.id) else {
+                    continue
+                }
+                credentials.append(
+                    .init(serverID: server.id, kind: kind.rawValue, secret: secret)
+                )
+            }
+        }
+        return ProtectedConfigurationArchive(
+            configuration: makeArchive(),
+            credentials: credentials
+        )
+    }
+
+    /// Restores a protected backup, secrets included.
+    func restore(_ archive: ProtectedConfigurationArchive) {
+        let plan = makePlan(for: archive.configuration)
+        guard apply(plan, settings: archive.configuration.settings) else { return }
+
+        for credential in archive.credentials(remappedBy: plan.identifierRemapping) {
+            guard let kind = KeychainCredentialStore.CredentialKind(rawValue: credential.kind) else {
+                continue
+            }
+            try? credentialStore.save(credential.secret, kind: kind, for: credential.serverID)
+        }
+        notice = Notice(title: String(localized: "匯入設定"), message: Self.report(for: plan, includedSecrets: true))
+    }
+
     /// Restores a backup on top of what is already here.
     ///
     /// Merged rather than substituted: importing the wrong file should cost
     /// a few servers to delete, not everything that was configured.
     func restore(_ archive: ConfigurationArchive) {
-        guard let stores = stores() else { return }
-        let plan = archive.mergePlan(
+        let plan = makePlan(for: archive)
+        guard apply(plan, settings: archive.settings) else { return }
+        notice = Notice(title: String(localized: "匯入設定"), message: Self.report(for: plan, includedSecrets: false))
+    }
+
+    private func makePlan(for archive: ConfigurationArchive) -> ConfigurationArchive.MergePlan {
+        archive.mergePlan(
             against: servers,
             existingHosts: (try? KnownHostsStore().load()) ?? KnownHosts()
         )
+    }
+
+    /// Writes one plan, once.
+    ///
+    /// The plan is made by the caller and passed in because it names the
+    /// identifiers the restored servers will have: making it twice would
+    /// produce two sets of them, and anything keyed by the first — the
+    /// credentials — would be filed against servers that do not exist.
+    private func apply(
+        _ plan: ConfigurationArchive.MergePlan,
+        settings: ConfigurationArchive.Settings
+    ) -> Bool {
+        guard let stores = stores() else { return false }
 
         if !plan.servers.isEmpty {
             let updatedServers = servers + plan.servers
@@ -224,27 +276,31 @@ final class ServerListModel {
                 try stores.servers.saveServers(updatedServers)
             } catch {
                 errorMessage = String(localized: "儲存伺服器失敗：\(error.localizedDescription)")
-                return
+                return false
             }
             servers = updatedServers
         }
         try? KnownHostsStore().save(plan.knownHosts)
 
         let store = AppSettings.sharedStore
-        store.set(archive.settings.connectTimeoutSeconds, forKey: AppSettings.Keys.connectTimeoutSeconds)
-        store.set(archive.settings.defaultServerPort, forKey: AppSettings.Keys.defaultServerPort)
-
-        notice = Notice(title: String(localized: "匯入設定"), message: Self.report(for: plan))
+        store.set(settings.connectTimeoutSeconds, forKey: AppSettings.Keys.connectTimeoutSeconds)
+        store.set(settings.defaultServerPort, forKey: AppSettings.Keys.defaultServerPort)
+        return true
     }
 
-    private static func report(for plan: ConfigurationArchive.MergePlan) -> String {
+    private static func report(
+        for plan: ConfigurationArchive.MergePlan,
+        includedSecrets: Bool
+    ) -> String {
         var lines: [String] = []
         if plan.servers.isEmpty {
             lines.append(String(localized: "沒有需要加入的伺服器。"))
         } else {
             let count = plan.servers.count
             lines.append(String(localized: "已加入 \(count) 台伺服器。"))
-            lines.append(String(localized: "備份不含密碼與金鑰，請為每台伺服器重新設定登入資訊。"))
+            if !includedSecrets {
+                lines.append(String(localized: "備份不含密碼與金鑰，請為每台伺服器重新設定登入資訊。"))
+            }
         }
         if plan.duplicateCount > 0 {
             lines.append(String(localized: "\(plan.duplicateCount) 台已經在清單中，已略過。"))

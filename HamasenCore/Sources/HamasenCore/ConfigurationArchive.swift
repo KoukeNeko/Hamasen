@@ -99,6 +99,10 @@ extension ConfigurationArchive {
         public let servers: [ServerConfig]
         /// Servers the archive holds that are already configured here.
         public let duplicateCount: Int
+        /// Which archived server became which restored one. Restored servers
+        /// take fresh identifiers, so anything the archive keyed by the old
+        /// one — its credentials — has to be renamed through this.
+        public let identifierRemapping: [UUID: UUID]
         /// Host keys to record for endpoints nothing is known about. An
         /// endpoint already recorded is left alone: a backup must not be a
         /// way to quietly replace a key that stopped matching.
@@ -115,6 +119,7 @@ extension ConfigurationArchive {
     ) -> MergePlan {
         var seen = Set(existingServers.map(\.connectionIdentity))
         var toAdd: [ServerConfig] = []
+        var remapping: [UUID: UUID] = [:]
         var duplicates = 0
 
         for server in servers {
@@ -125,7 +130,9 @@ extension ConfigurationArchive {
                 seen.insert(identity)
                 // A fresh identifier, so restoring the same archive twice
                 // cannot collide with what the first restore created.
-                toAdd.append(server.withNewIdentifier())
+                let restored = server.withNewIdentifier()
+                remapping[server.id] = restored.id
+                toAdd.append(restored)
             }
         }
 
@@ -135,7 +142,12 @@ extension ConfigurationArchive {
             hosts.recordIfUnknown(fingerprint, forEndpoint: endpoint)
         }
 
-        return MergePlan(servers: toAdd, duplicateCount: duplicates, knownHosts: hosts)
+        return MergePlan(
+            servers: toAdd,
+            duplicateCount: duplicates,
+            identifierRemapping: remapping,
+            knownHosts: hosts
+        )
     }
 }
 

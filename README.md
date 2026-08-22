@@ -193,7 +193,11 @@ Ctrl-C stops them; nothing survives.
       after, with the recorded key shown and clearable per server
 - [x] Configuration backup: export the server list, the recorded host keys
       and the connection preferences, and merge one back in. Credentials stay
-      in the Keychain and are never written to the file
+      in the Keychain and are never written to that file
+- [x] Backup with passwords: the same, plus every secret from the Keychain,
+      sealed with a passphrase — PBKDF2-HMAC-SHA256 at 600,000 iterations
+      into AES-256-GCM, so a damaged or edited file fails to open rather than
+      decrypting into something else
 - [ ] Planned: streaming uploads, remote change tracking
 
 Known limitations:

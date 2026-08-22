@@ -241,14 +241,32 @@ private struct BackupSection: View {
     let model: ServerListModel
 
     @State private var errorMessage: String?
+    @State private var prompt: Prompt?
+
+    /// What the passphrase sheet is being shown for. One piece of state, so
+    /// two sheets can never both be up.
+    private enum Prompt: Identifiable {
+        case protectNewBackup
+        case openBackup(Data)
+
+        var id: Int {
+            switch self {
+            case .protectNewBackup: return 0
+            case .openBackup: return 1
+            }
+        }
+    }
 
     var body: some View {
         Section {
             LabeledContent("設定") {
                 HStack {
-                    Button("匯出…", action: export)
-                    Button("匯入…", action: importArchive)
+                    Button("匯出…", action: exportPlain)
+                    Button("匯入…", action: importBackup)
                 }
+            }
+            LabeledContent("含密碼的備份") {
+                Button("匯出…") { prompt = .protectNewBackup }
             }
             if let errorMessage {
                 Text(errorMessage)
@@ -259,29 +277,64 @@ private struct BackupSection: View {
         } header: {
             Text("備份")
         } footer: {
-            Text("備份包含伺服器清單、已記錄的主機金鑰與連線偏好設定。密碼與金鑰存放在鑰匙圈，不會寫進備份檔。")
+            Text("一般備份包含伺服器清單、已記錄的主機金鑰與連線偏好設定，不含密碼與金鑰。含密碼的備份另外包含鑰匙圈裡的所有密碼與金鑰，整份以你設定的密碼加密。匯入時會自動判斷是哪一種。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func export() {
-        do {
-            _ = try ConfigurationArchiveFile.promptToExport(model.makeArchive())
-            errorMessage = nil
-        } catch {
-            errorMessage = String(localized: "匯出設定失敗：\(error.localizedDescription)")
+        .sheet(item: $prompt) { prompt in
+            switch prompt {
+            case .protectNewBackup:
+                PassphrasePrompt(purpose: .protectNewBackup, onConfirm: exportProtected)
+            case .openBackup(let data):
+                PassphrasePrompt(purpose: .openBackup) { passphrase in
+                    openProtected(data, passphrase: passphrase)
+                }
+            }
         }
     }
 
-    private func importArchive() {
+    private func exportPlain() {
+        run { _ = try ConfigurationArchiveFile.promptToExport(model.makeArchive()) }
+    }
+
+    private func exportProtected(passphrase: String) {
+        run {
+            _ = try ConfigurationArchiveFile.promptToExport(
+                model.makeProtectedArchive(), passphrase: passphrase
+            )
+        }
+    }
+
+    private func importBackup() {
+        run {
+            switch try ConfigurationArchiveFile.promptToChooseImport() {
+            case .plain(let archive):
+                model.restore(archive)
+            case .protected(let data):
+                // Asked for only once it is known there is something locked,
+                // rather than of everyone who picks a file.
+                prompt = .openBackup(data)
+            case nil:
+                break
+            }
+        }
+    }
+
+    private func openProtected(_ data: Data, passphrase: String) {
+        run {
+            model.restore(
+                try ProtectedConfigurationArchive.opened(data, passphrase: passphrase)
+            )
+        }
+    }
+
+    private func run(_ work: () throws -> Void) {
         do {
-            guard let archive = try ConfigurationArchiveFile.promptToImport() else { return }
-            model.restore(archive)
+            try work()
             errorMessage = nil
         } catch {
-            errorMessage = String(localized: "匯入設定失敗：\(error.localizedDescription)")
+            errorMessage = error.localizedDescription
         }
     }
 }

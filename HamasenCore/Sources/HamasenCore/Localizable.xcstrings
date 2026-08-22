@@ -369,6 +369,29 @@
         }
       }
     },
+    "密碼不正確，或這個檔案已損毀": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The passphrase is wrong, or this file has been damaged"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードが違うか、このファイルは壊れています"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密碼不正確，或這個檔案已損毀"
+          }
+        }
+      }
+    },
     "尚未連線到伺服器": {
       "extractionState": "manual",
       "localizations": {
@@ -457,6 +480,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "找不到遠端項目：%@"
+          }
+        }
+      }
+    },
+    "無法從密碼推導金鑰": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not derive a key from the passphrase"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードから鍵を導出できませんでした"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法從密碼推導金鑰"
           }
         }
       }
@@ -691,6 +737,29 @@
         }
       }
     },
+    "請設定一組密碼，加密備份不能沒有密碼": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set a passphrase: an encrypted backup cannot go without one"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを設定してください。暗号化バックアップにパスワードは必須です"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請設定一組密碼，加密備份不能沒有密碼"
+          }
+        }
+      }
+    },
     "讀取屬性": {
       "extractionState": "manual",
       "localizations": {
@@ -756,6 +825,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "這份備份是較新版本（第 %@ 版，這個版本只讀到第 %@ 版）建立的，請先更新 Hamasen"
+          }
+        }
+      }
+    },
+    "這份加密備份使用這個版本不認得的加密方式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This encrypted backup uses an algorithm this version does not know"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この暗号化バックアップは、このバージョンが知らない方式を使っています"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這份加密備份使用這個版本不認得的加密方式"
           }
         }
       }
