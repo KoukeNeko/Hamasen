@@ -55,6 +55,20 @@ echo "==> [3/4] Running HamasenCore tests"
 (cd "${PROJECT_ROOT}/HamasenCore" && swift test)
 
 echo "==> [4/4] Building app + File Provider extension"
+# A CI runner has no signing identity, and must not be allowed to mint one:
+# automatic signing would issue a fresh certificate on every run and exhaust
+# the team's allowance. This step only has to prove the sources compile, so
+# there the build is left unsigned.
+if [[ "${HAMASEN_UNSIGNED_BUILD:-0}" == "1" ]]; then
+    signing_arguments=(
+        CODE_SIGNING_ALLOWED=NO
+        CODE_SIGNING_REQUIRED=NO
+        CODE_SIGN_IDENTITY=
+    )
+else
+    signing_arguments=(-allowProvisioningUpdates)
+fi
+
 # pipefail (set above) carries xcodebuild's exit status through the grep, so a
 # failed build fails the script instead of being swallowed.
 xcodebuild \
@@ -62,7 +76,7 @@ xcodebuild \
     -scheme "${SCHEME}" \
     -configuration Debug \
     -destination 'platform=macOS' \
-    -allowProvisioningUpdates \
+    "${signing_arguments[@]}" \
     build | grep -E "error:|warning:|BUILD"
 
 echo "==> All checks passed"
