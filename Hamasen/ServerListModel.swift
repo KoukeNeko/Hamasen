@@ -140,7 +140,7 @@ final class ServerListModel {
         if isMounted(config) {
             // The domain may still be initializing; the next enumeration
             // picks the rename up anyway.
-            try? await FinderDomain.signalServerListChanged()
+            _ = try? await FinderDomain.signalServerListChanged()
         }
         cache.sweepSoon()
         return true
@@ -178,7 +178,9 @@ final class ServerListModel {
         servers = reordered
         // The Finder folders are listed in this order too, so the change has
         // to reach the extension rather than stopping at the window.
-        Task { try? await FinderDomain.signalServerListChanged() }
+        Task {
+            _ = try? await FinderDomain.signalServerListChanged()
+        }
     }
 
     // MARK: - Bookmark import

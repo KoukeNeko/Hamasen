@@ -17,6 +17,16 @@ import Foundation
 import HamasenCore
 import UniformTypeIdentifiers
 
+private extension NSFileProviderItemCapabilities {
+    /// `allowsEvicting` was deprecated once content policies were introduced,
+    /// but existing materializations still need its capability bit before
+    /// `NSFileProviderManager.evictItem` will accept them. Keep that public
+    /// bit without referring to the deprecated spelling; `contentPolicy`
+    /// remains the source of truth for when content should be downloaded or
+    /// retained.
+    static let legacyEvictionPermission = Self(rawValue: 1 << 6)
+}
+
 /// The domain root ("Hamasen" itself).
 final class RootItem: NSObject, NSFileProviderItem {
     var itemIdentifier: NSFileProviderItemIdentifier { .rootContainer }
@@ -178,14 +188,7 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
                 .allowsRenaming,
                 .allowsReparenting,
                 .allowsDeleting,
-                // Deprecated in favour of NSFileProviderContentPolicy, and
-                // still enforced: without it the system refuses every
-                // eviction with NSFileProviderErrorNonEvictable, whatever the
-                // content policy says. The warning stays because Swift has no
-                // way to silence one use without deprecating whatever reads
-                // it, and so on up — which trades a truthful warning for a
-                // layer of indirection that hides why the line is here.
-                .allowsEvicting,
+                .legacyEvictionPermission,
             ]
         }
     }
