@@ -258,7 +258,7 @@ that declares it.
 Ask the system what it thinks the actions are:
 
 ```bash
-fileproviderctl evaluate ~/Library/CloudStorage/Hamasen-Hamasen/<a server>
+fileproviderctl evaluate "$(ls -d ~/Library/CloudStorage/Hamasen-* | head -1)"
 ```
 
 An empty `Actions:` list means none are registered, which is different from
@@ -269,15 +269,23 @@ a rule not matching — a rule that did not match would still be listed, with
 pluginkit -m -i dev.hamasen.mac.FileProvider -v
 ```
 
-If that path does not exist, point it at a build that does and restart the
-extension:
+If that path does not exist, point the registration at a build that does and
+restart the extension. Both paths are read rather than typed: the build
+directory carries a hash particular to the checkout, and the stale one is
+whatever PluginKit happens to hold.
 
 ```bash
-appex=".../Build/Products/Debug/Hamasen.app/Contents/PlugIns/HamasenFileProvider.appex"
-pluginkit -r "<the stale path>"
-pluginkit -a "$appex"
+stale="$(pluginkit -m -i dev.hamasen.mac.FileProvider -v | awk '{print $NF}' | head -1)"
+built="$(xcodebuild -project Hamasen.xcodeproj -scheme Hamasen -configuration Debug \
+    -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR/ {print $2; exit}')"
+
+[ -n "$stale" ] && pluginkit -r "$stale"
+pluginkit -a "$built/Hamasen.app/Contents/PlugIns/HamasenFileProvider.appex"
 pkill -f HamasenFileProvider
 ```
+
+Removing and adding the same path is fine — that is what it looks like when
+the registration is already correct and something else is wrong.
 
 Running the app from Xcode after archiving does the same thing.
 
@@ -287,8 +295,11 @@ Archive from Xcode (Product → Archive), notarize and export through the
 Organizer, then package what comes out:
 
 ```bash
-./scripts/release.sh /path/to/exported/Hamasen.app v1.0.0-beta.1
+./scripts/release.sh <the exported Hamasen.app> <tag>   # e.g. v1.0.0-beta.1
 ```
+
+Both are arguments that differ every time — where the Organizer put the export
+is a choice made in the panel, and the tag is whatever is being released.
 
 The script refuses to package a build a downloader could not use: unsigned or
 signed by another team, no stapled notarization ticket, rejected by Gatekeeper,
