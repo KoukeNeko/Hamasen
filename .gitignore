@@ -8,5 +8,5 @@ xcuserdata/
 .build/
 .omx/
 
-# Release archives, rebuilt from a notarized app rather than tracked.
+# Local scratch: notes and packaged builds that belong to one machine.
 dist/

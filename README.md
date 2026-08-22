@@ -289,23 +289,6 @@ the registration is already correct and something else is wrong.
 
 Running the app from Xcode after archiving does the same thing.
 
-## Releasing
-
-Archive from Xcode (Product → Archive), notarize and export through the
-Organizer, then package what comes out:
-
-```bash
-./scripts/release.sh <the exported Hamasen.app> <tag>   # e.g. v1.0.0-beta.1
-```
-
-Both are arguments that differ every time — where the Organizer put the export
-is a choice made in the panel, and the tag is whatever is being released.
-
-The script refuses to package a build a downloader could not use: unsigned or
-signed by another team, no stapled notarization ticket, rejected by Gatekeeper,
-an extension missing its document group, or an app and an extension that
-disagree about the macOS they need.
-
 ## Known limitations
 
 - SSH keys must be in OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`);
