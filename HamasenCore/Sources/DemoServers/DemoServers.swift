@@ -16,6 +16,17 @@ struct DemoServers {
     private static let sftpPort = 2222
     private static let ftpPort = 2121
 
+    /// Names for the demo servers, under the TLD RFC 2606 reserves for
+    /// exactly this. `.test` can never be registered, so these can never
+    /// start resolving to somebody else's machine.
+    ///
+    /// They have to be reached through /etc/hosts rather than through DNS: a
+    /// public name pointing at 127.0.0.1 is what DNS rebinding protection
+    /// exists to discard, and both home routers and VPN resolvers do discard
+    /// it. /etc/hosts is not consulted over the network and is not filtered.
+    private static let sftpHostname = "files.hamasen.test"
+    private static let ftpHostname = "ftp.hamasen.test"
+
     static func main() async throws {
         let sftp = try await TestSFTPServer.start(preferredPort: sftpPort)
         let ftp = try await TestFTPServer.start(preferredPort: ftpPort)
@@ -32,6 +43,15 @@ struct DemoServers {
               FTP    127.0.0.1:\(ftp.port)
               user   \(TestSFTPServer.username)
               pass   \(TestSFTPServer.password)
+
+            For a picture without an address in it, name them once:
+
+              printf '\\n# Hamasen demo servers\\n127.0.0.1\\t\(sftpHostname)\\n127.0.0.1\\t\(ftpHostname)\\n' | sudo tee -a /etc/hosts
+
+            then connect to \(sftpHostname):\(sftp.port) and \(ftpHostname):\(ftp.port).
+            To undo it:
+
+              sudo sed -i '' '/hamasen.test/d;/# Hamasen demo servers/d' /etc/hosts
 
             Add either in Hamasen, give it whatever display name suits the
             picture, and mount it. Nothing here outlives this process.

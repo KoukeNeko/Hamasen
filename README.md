@@ -150,7 +150,14 @@ picture. They are the ones the test suite already runs the client against.
 cd HamasenCore && swift run DemoServers
 ```
 
-It prints the ports and the account. Ctrl-C stops them; nothing survives.
+It prints the ports, the account, and a one-line `/etc/hosts` entry that
+gives them names — `files.hamasen.test` and `ftp.hamasen.test`, under the TLD
+RFC 2606 reserves so they can never resolve to anybody else's machine. Names
+have to come from `/etc/hosts` rather than DNS: a public record pointing at
+127.0.0.1 is exactly what DNS rebinding protection discards, and home routers
+and VPN resolvers do discard it.
+
+Ctrl-C stops them; nothing survives.
 
 ## Manual end-to-end check
 
