@@ -243,6 +243,44 @@ cd HamasenCore && swift run DemoServers
 It runs the same SFTP and FTP servers the tests use, over invented files, and
 prints the ports, the account and an `/etc/hosts` line that gives them names.
 
+## Troubleshooting
+
+### The Finder context menu has lost its entries
+
+The entries come from the extension's Info.plist, which the system reads
+through whatever bundle PluginKit has on record. Archiving registers the
+extension from the archive's intermediate build directory, and Xcode later
+cleans that directory up — leaving a registration pointing at a bundle that
+is no longer there. The mount keeps working, because the extension process
+was already running; only the menu goes, because nothing can read the plist
+that declares it.
+
+Ask the system what it thinks the actions are:
+
+```bash
+fileproviderctl evaluate ~/Library/CloudStorage/Hamasen-Hamasen/<a server>
+```
+
+An empty `Actions:` list means none are registered, which is different from
+a rule not matching — a rule that did not match would still be listed, with
+`NO` after it. Then check where the registration points:
+
+```bash
+pluginkit -m -i dev.hamasen.mac.FileProvider -v
+```
+
+If that path does not exist, point it at a build that does and restart the
+extension:
+
+```bash
+appex=".../Build/Products/Debug/Hamasen.app/Contents/PlugIns/HamasenFileProvider.appex"
+pluginkit -r "<the stale path>"
+pluginkit -a "$appex"
+pkill -f HamasenFileProvider
+```
+
+Running the app from Xcode after archiving does the same thing.
+
 ## Releasing
 
 Archive from Xcode (Product → Archive), notarize and export through the
