@@ -1,3 +1,4 @@
+import AppKit
 import HamasenCore
 import SwiftUI
 
@@ -8,6 +9,8 @@ struct HamasenMainView: View {
     @State private var selectedServerID: UUID?
     @State private var isShowingAddSheet = false
 
+    @Environment(\.openSettings) private var openSettings
+
     private var selectedServer: ServerConfig? {
         model.servers.first { $0.id == selectedServerID }
     }
@@ -17,9 +20,20 @@ struct HamasenMainView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
                 .safeAreaInset(edge: .bottom) {
-                    TransferStatusView(monitor: model.transfers)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                    VStack(alignment: .leading, spacing: 8) {
+                        TransferStatusView(monitor: model.transfers)
+                        HStack {
+                            Button { openSettings.raisingTheApp() } label: {
+                                Image(systemName: "gearshape")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("設定")
+                            .accessibilityLabel("設定")
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
         } detail: {
             detail

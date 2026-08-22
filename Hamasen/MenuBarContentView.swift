@@ -13,6 +13,7 @@ struct MenuBarContentView: View {
     let model: ServerListModel
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     private static let width: CGFloat = 320
 
@@ -101,10 +102,12 @@ struct MenuBarContentView: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
 
-            SettingsLink {
-                ActionRow.Label(title: "設定…", systemImage: "gearshape")
+            // A plain button rather than SettingsLink: the link opens the
+            // window without making the app active, and this popover is
+            // exactly where it is not.
+            ActionRow(title: "設定…", systemImage: "gearshape") {
+                openSettings.raisingTheApp()
             }
-            .buttonStyle(.plain)
             .keyboardShortcut(",")
 
             ActionRow(title: "結束 Hamasen", systemImage: "power") {

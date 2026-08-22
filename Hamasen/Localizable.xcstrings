@@ -221,7 +221,30 @@
         }
       }
     },
+    "Finder 右鍵選單是由 Finder 繪製的，跟著系統語言走，不受這裡影響。要改的話請在「系統設定 › 一般 › 語言與地區」調整語言順序。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder draws that menu, and reads its wording in the system language rather than this one. Change the order in System Settings › General › Language & Region."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのメニューを描画するのはFinderで、文言はここではなくシステムの言語で読み込まれます。変更するには「システム設定 › 一般 › 言語と地域」で言語の順序を調整してください。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder 右鍵選單是由 Finder 繪製的，跟著系統語言走，不受這裡影響。要改的話請在「系統設定 › 一般 › 語言與地區」調整語言順序。"
+          }
+        }
+      }
+    },
     "Finder 右鍵選單的語言由系統決定，不受這個設定影響。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {

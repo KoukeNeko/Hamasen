@@ -137,7 +137,10 @@ private struct LanguageSection: View {
 
             Button("在系統設定中管理…") { AppLanguageSettings.openSystemLanguageSettings() }
         } footer: {
-            Text("Finder 右鍵選單的語言由系統決定，不受這個設定影響。")
+            // Established by trying it: giving the extension its own language
+            // preference changes nothing, because Finder builds that menu and
+            // reads the names in its own language, not the extension's.
+            Text("Finder 右鍵選單是由 Finder 繪製的，跟著系統語言走，不受這裡影響。要改的話請在「系統設定 › 一般 › 語言與地區」調整語言順序。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 // A wrapped footer is measured as one line unless it is told
