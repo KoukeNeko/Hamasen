@@ -1239,24 +1239,24 @@
         }
       }
     },
-    "掛載由系統維持，App 不需常駐；登入時啟動只是讓選單列圖示隨時可用。": {
+    "掛載由系統維持，不需要 App 常駐。但本機空間上限是 App 執行時才清理的，有設上限就建議開啟。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mounts are maintained by the system, so the app doesn’t need to keep running. Opening at login just keeps the menu bar icon available."
+            "value": "The system keeps the mount up without the app running. The local space limit, though, is enforced while the app runs — turn this on if you have set one."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "マウントはシステムが維持するため、Appを常駐させる必要はありません。ログイン時に起動するのは、メニューバーアイコンをいつでも使えるようにするためです。"
+            "value": "マウントはAppが常駐しなくてもシステムが維持します。ただしローカル容量の上限はApp実行中にのみ適用されるため、上限を設定しているならオンにしてください。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "掛載由系統維持，App 不需常駐；登入時啟動只是讓選單列圖示隨時可用。"
+            "value": "掛載由系統維持，不需要 App 常駐。但本機空間上限是 App 執行時才清理的，有設上限就建議開啟。"
           }
         }
       }
@@ -1833,6 +1833,28 @@
         }
       }
     },
+    "至少要保留一個，否則沒有地方可以開啟 Hamasen。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep at least one, or there is nothing left to open Hamasen from."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どちらか一方は残してください。両方消すとHamasenを開く手段がなくなります。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少要保留一個，否則沒有地方可以開啟 Hamasen。"
+          }
+        }
+      }
+    },
     "若金鑰有密碼保護": {
       "localizations": {
         "en": {
@@ -2317,46 +2339,24 @@
         }
       }
     },
-    "隱藏 Dock 圖示後，從選單列圖示即可開啟主視窗。": {
+    "顯示 Dock 圖示": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "With the Dock icon hidden, open the main window from the menu bar icon."
+            "value": "Show Dock icon"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dockアイコンを隠したあとは、メニューバーアイコンからメインウインドウを開けます。"
+            "value": "Dockアイコンを表示"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "隱藏 Dock 圖示後，從選單列圖示即可開啟主視窗。"
-          }
-        }
-      }
-    },
-    "隱藏 Dock 圖示（純選單列模式）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hide Dock Icon (Menu Bar Only)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dockアイコンを隠す（メニューバーのみ）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隱藏 Dock 圖示（純選單列模式）"
+            "value": "顯示 Dock 圖示"
           }
         }
       }

@@ -46,27 +46,19 @@ private struct GeneralSettingsView: View {
                         .foregroundStyle(.red)
                 }
             } footer: {
-                Text("掛載由系統維持，App 不需常駐；登入時啟動只是讓選單列圖示隨時可用。")
+                Text("掛載由系統維持，不需要 App 常駐。但本機空間上限是 App 執行時才清理的，有設上限就建議開啟。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
                 Toggle("顯示選單列圖示", isOn: $showMenuBarIcon)
-                    .onChange(of: showMenuBarIcon) { _, isShown in
-                        if !isShown && hideDockIcon {
-                            // Never allow both to be hidden at once.
-                            hideDockIcon = false
-                            DockIconController.setHidden(false)
-                        }
-                    }
-                Toggle("隱藏 Dock 圖示（純選單列模式）", isOn: $hideDockIcon)
-                    .disabled(!showMenuBarIcon)
-                    .onChange(of: hideDockIcon) { _, isHidden in
-                        DockIconController.setHidden(isHidden)
-                    }
+                    .disabled(isOnlyMenuBarIcon)
+                Toggle("顯示 Dock 圖示", isOn: showsDockIcon)
+                    .disabled(isOnlyDockIcon)
             } footer: {
-                Text("隱藏 Dock 圖示後，從選單列圖示即可開啟主視窗。")
+                Text("至少要保留一個，否則沒有地方可以開啟 Hamasen。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -75,6 +67,25 @@ private struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
     }
+
+    /// The Dock icon is stored as the hidden state, which is what earlier
+    /// versions wrote, but reads as "shown" here so both switches mean the
+    /// same thing when they are on.
+    private var showsDockIcon: Binding<Bool> {
+        Binding(
+            get: { !hideDockIcon },
+            set: { isShown in
+                hideDockIcon = !isShown
+                DockIconController.setHidden(!isShown)
+            }
+        )
+    }
+
+    /// Whichever icon is the last one showing cannot be turned off: with both
+    /// gone there is nothing left to open Hamasen from. Disabling it says so
+    /// in place, where silently switching the other one back on did not.
+    private var isOnlyMenuBarIcon: Bool { showMenuBarIcon && hideDockIcon }
+    private var isOnlyDockIcon: Bool { !hideDockIcon && !showMenuBarIcon }
 
     private func applyLaunchAtLogin(_ isEnabled: Bool) {
         do {
