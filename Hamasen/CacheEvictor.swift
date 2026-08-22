@@ -214,7 +214,7 @@ actor CacheEvictor {
 
 /// Collects one enumeration of the materialized set and resumes its
 /// continuation exactly once, whichever way the enumeration ends.
-private final class MaterializedItemCollector: NSObject, NSFileProviderEnumerationObserver, @unchecked Sendable {
+private nonisolated final class MaterializedItemCollector: NSObject, NSFileProviderEnumerationObserver, @unchecked Sendable {
     private let continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>
     private var items: [any NSFileProviderItemProtocol] = []
     private var hasResumed = false
@@ -222,6 +222,9 @@ private final class MaterializedItemCollector: NSObject, NSFileProviderEnumerati
     /// that started it, and it has to outlive that call.
     private var enumerator: (any NSFileProviderEnumerator)?
 
+    /// Nonisolated because the enumerator drives this from whatever queue it
+    /// runs on; the protocol it conforms to is declared on the main actor,
+    /// which would otherwise put every callback there.
     init(continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>) {
         self.continuation = continuation
     }

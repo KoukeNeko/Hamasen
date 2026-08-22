@@ -41,8 +41,12 @@ final class TransferMonitor {
         stop()
         guard let manager = try? FinderDomain.manager() else { return }
 
-        observe(manager.globalProgress(for: .downloading), into: \.downloads)
-        observe(manager.globalProgress(for: .uploading), into: \.uploads)
+        observe(manager.globalProgress(for: .downloading)) { [weak self] activity in
+            self?.downloads = activity
+        }
+        observe(manager.globalProgress(for: .uploading)) { [weak self] activity in
+            self?.uploads = activity
+        }
     }
 
     func stop() {
@@ -52,20 +56,32 @@ final class TransferMonitor {
         uploads = Activity()
     }
 
-    private func observe(_ progress: Progress, into keyPath: ReferenceWritableKeyPath<TransferMonitor, Activity>) {
+    /// Reports one progress object's activity for as long as the monitor
+    /// runs.
+    ///
+    /// What crosses out of the observation is an `Activity`, read on the
+    /// notifying thread and sent onwards as a value. Handing over the
+    /// `Progress` itself, or a key path into this class, would be sending a
+    /// reference into another isolation domain.
+    private func observe(
+        _ progress: Progress,
+        reporting report: @escaping @MainActor @Sendable (Activity) -> Void
+    ) {
         progresses.append(progress)
-        apply(progress, to: keyPath)
+        report(Self.activity(of: progress))
         // fractionCompleted moves on every chunk; the counts move with it, so
         // one observation covers the whole row.
         observations.append(
-            progress.observe(\.fractionCompleted, options: [.new]) { [weak self] observed, _ in
-                Task { @MainActor in self?.apply(observed, to: keyPath) }
+            progress.observe(\.fractionCompleted, options: [.new]) { observed, _ in
+                let activity = Self.activity(of: observed)
+                Task { @MainActor in report(activity) }
             }
         )
     }
 
-    private func apply(_ progress: Progress, to keyPath: ReferenceWritableKeyPath<TransferMonitor, Activity>) {
-        self[keyPath: keyPath] = Activity(
+    /// Read wherever the notification lands, which is not the main actor.
+    nonisolated private static func activity(of progress: Progress) -> Activity {
+        Activity(
             fractionCompleted: progress.fractionCompleted,
             completedBytes: progress.completedUnitCount,
             totalBytes: progress.totalUnitCount,

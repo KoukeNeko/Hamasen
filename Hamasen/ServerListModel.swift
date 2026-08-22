@@ -136,7 +136,7 @@ final class ServerListModel {
             let remainingServers = servers.filter { $0.id != config.id }
             try stores.servers.saveServers(remainingServers)
             try credentialStore.deleteAllCredentials(for: config.id)
-            try? PinnedItemsStore().removePins(forServer: config.id)
+            _ = try? PinnedItemsStore().removePins(forServer: config.id)
             servers = remainingServers
         } catch {
             errorMessage = String(localized: "刪除伺服器失敗：\(error.localizedDescription)")
