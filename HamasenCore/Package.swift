@@ -17,7 +17,11 @@ let package = Package(
         .executable(name: "DemoServers", targets: ["DemoServers"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.7.0"),
+        // Pinned to the one commit of orlandos-nl/Citadel#137 on top of 0.12.1:
+        // upstream's listDirectory never closes the directory handle, so one
+        // SFTP session fails every listing after the server's 1,021st handle.
+        // Back to the release line once that PR is in one.
+        .package(url: "https://github.com/Par-B/Citadel.git", revision: "41a661d240c5a0de7c2a44a5ee6dd12d9be7ee7f"),
         // Already in the graph through Citadel; declared so the test target
         // can stand up an in-process WebDAV server.
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
