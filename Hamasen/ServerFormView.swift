@@ -30,6 +30,8 @@ struct ServerFormView: View {
     @State private var remotePath: String
     @State private var storageMode: ServerConfig.StorageMode
     @State private var cacheAllowance: CacheAllowance
+    @State private var s3Region: String
+    @State private var s3AddressingStyle: S3AddressingStyle
 
     @State private var authenticationMethod: ServerConfig.AuthenticationMethod
     @State private var password: String = ""
@@ -47,10 +49,29 @@ struct ServerFormView: View {
         _remotePath = State(initialValue: existingServer?.remotePath ?? ServerConfig.defaultRemotePath)
         _storageMode = State(initialValue: existingServer?.storageMode ?? .automatic)
         _cacheAllowance = State(initialValue: CacheAllowance(bytes: existingServer?.cacheLimitBytes))
+        _s3Region = State(initialValue: existingServer?.s3Region ?? "")
+        _s3AddressingStyle = State(initialValue: existingServer?.s3AddressingStyle ?? .automatic)
         _authenticationMethod = State(initialValue: existingServer?.authenticationMethod ?? .password)
     }
 
     private var isEditing: Bool { existingServer != nil }
+
+    private var isS3: Bool { transferProtocol == .s3 }
+
+    private var accountLabel: LocalizedStringKey { isS3 ? "Access Key ID" : "使用者名稱" }
+    private var secretLabel: LocalizedStringKey { isS3 ? "Secret Access Key" : "密碼" }
+
+    /// The first path component is the bucket, and S3 has nothing to connect
+    /// to without one. Caught here rather than at the first mount, when the
+    /// form is gone and the message has to stand on its own.
+    ///
+    /// Asked of the parser rather than restated, so the form cannot come to
+    /// disagree with what the service will accept.
+    private var namesABucket: Bool {
+        guard isS3 else { return true }
+        let path = ServerConfig.normalizedRemotePath(remotePath)
+        return (try? S3ObjectKey(absolutePath: path)) != nil
+    }
 
     private var parsedPort: Int? {
         guard let port = Int(portText), (1...65535).contains(port) else { return nil }
@@ -72,6 +93,7 @@ struct ServerFormView: View {
             && !username.trimmingCharacters(in: .whitespaces).isEmpty
             && parsedPort != nil
             && hasCredential
+            && namesABucket
     }
 
     var body: some View {
@@ -82,7 +104,7 @@ struct ServerFormView: View {
                     ProtocolPicker(transferProtocol: $transferProtocol, portText: $portText)
                     TextField("主機", text: $host, prompt: Text("example.com"))
                     TextField("連接埠", text: $portText)
-                    TextField("使用者名稱", text: $username)
+                    TextField(accountLabel, text: $username)
                 }
                 AuthenticationFields(
                     method: $authenticationMethod,
@@ -91,10 +113,24 @@ struct ServerFormView: View {
                     keyPassphrase: $keyPassphrase,
                     hasStoredKey: false,
                     allowsBlankPassword: isEditing,
-                    allowsPrivateKey: transferProtocol.supportsPrivateKeyAuthentication
+                    allowsPrivateKey: transferProtocol.supportsPrivateKeyAuthentication,
+                    secretLabel: secretLabel
                 )
-                Section("掛載") {
-                    TextField("遠端路徑", text: $remotePath, prompt: Text("/"))
+                if isS3 {
+                    Section("S3") {
+                        TextField("區域", text: $s3Region, prompt: Text("自動判斷"))
+                        Picker("定址方式", selection: $s3AddressingStyle) {
+                            ForEach(S3AddressingStyle.allCases, id: \.self) { style in
+                                Text(style.displayName).tag(style)
+                            }
+                        }
+                    }
+                }
+                Section {
+                    TextField(
+                        "遠端路徑", text: $remotePath,
+                        prompt: Text(isS3 ? "/bucket" : "/")
+                    )
                     Picker("儲存方式", selection: $storageMode) {
                         ForEach(ServerConfig.StorageMode.allCases, id: \.self) { mode in
                             Text(mode.displayName).tag(mode)
@@ -106,6 +142,15 @@ struct ServerFormView: View {
                         }
                     }
                     .disabled(storageMode == .onlineOnly)
+                } header: {
+                    Text("掛載")
+                } footer: {
+                    if isS3 {
+                        Text("遠端路徑的第一段是 bucket 名稱，必填。後面可以再接一層前綴，例如 /my-bucket/backups。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -142,7 +187,9 @@ struct ServerFormView: View {
             authenticationMethod: authenticationMethod,
             remotePath: remotePath,
             storageMode: storageMode,
-            cacheLimitBytes: cacheAllowance.bytes
+            cacheLimitBytes: cacheAllowance.bytes,
+            s3Region: s3Region.trimmingCharacters(in: .whitespaces),
+            s3AddressingStyle: s3AddressingStyle
         )
         let usesKey = authenticationMethod == .privateKey
         let credentials = CredentialUpdate(

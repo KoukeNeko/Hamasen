@@ -248,6 +248,8 @@ private struct AdvancedSettingsView: View {
         Form {
             BackupSection(model: model)
 
+            S3UploadSection()
+
             Section {
                 Toggle("啟用除錯記錄", isOn: $debugLoggingEnabled)
             } footer: {
@@ -257,6 +259,66 @@ private struct AdvancedSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// How large an upload has to be before it is sent in parts, and how big a
+/// part is.
+private struct S3UploadSection: View {
+    @AppStorage(AppSettings.Keys.s3PartSizeBytes, store: AppSettings.sharedStore)
+    private var partSizeBytes = AppSettings.defaultS3PartSizeBytes
+
+    @AppStorage(AppSettings.Keys.s3MultipartThresholdBytes, store: AppSettings.sharedStore)
+    private var thresholdBytes = AppSettings.defaultS3MultipartThresholdBytes
+
+    private var partSize: S3PartSize { S3PartSize(bytes: partSizeBytes) }
+
+    var body: some View {
+        Section {
+            Picker("分段上傳門檻", selection: thresholdSelection) {
+                ForEach(S3MultipartThreshold.allCases) { threshold in
+                    Text(threshold.displayName).tag(threshold)
+                }
+            }
+            Picker("每段大小", selection: partSizeSelection) {
+                ForEach(S3PartSize.allCases) { size in
+                    Text(size.displayName).tag(size)
+                }
+            }
+        } header: {
+            Text("S3 上傳")
+        } footer: {
+            // The ceiling is stated because shrinking the part size lowers it
+            // silently, and the failure that eventually causes says nothing
+            // about which setting caused it.
+            Text("超過門檻的檔案會分段上傳。單次上傳最多一萬段，所以目前每段 \(partSize.displayName) 能上傳的最大檔案是 \(partSize.largestUploadDisplayName)。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var partSizeSelection: Binding<S3PartSize> {
+        Binding(
+            get: { S3PartSize(bytes: partSizeBytes) },
+            set: { newValue in
+                partSizeBytes = newValue.rawValue
+                // A threshold below one part would send a single-part
+                // multipart upload. Raising it here keeps what the picker
+                // shows equal to what the upload will do, rather than
+                // leaving the clamp to happen invisibly on read.
+                if thresholdBytes < newValue.rawValue {
+                    thresholdBytes = S3MultipartThreshold.allCases
+                        .first { $0.rawValue >= newValue.rawValue }?.rawValue
+                        ?? newValue.rawValue
+                }
+            })
+    }
+
+    private var thresholdSelection: Binding<S3MultipartThreshold> {
+        Binding(
+            get: { S3MultipartThreshold(bytes: thresholdBytes) },
+            set: { thresholdBytes = $0.rawValue })
     }
 }
 

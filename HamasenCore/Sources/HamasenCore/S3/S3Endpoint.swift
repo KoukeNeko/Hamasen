@@ -26,6 +26,14 @@ public enum S3AddressingStyle: String, Sendable, Codable, CaseIterable {
     case virtualHosted
     /// `https://host/bucket/key`
     case path
+
+    public var displayName: String {
+        switch self {
+        case .automatic: return String(localized: "自動", bundle: .module)
+        case .virtualHosted: return String(localized: "主機名稱", bundle: .module)
+        case .path: return String(localized: "路徑", bundle: .module)
+        }
+    }
 }
 
 /// Turns a bucket and key into the request to send, and into the exact

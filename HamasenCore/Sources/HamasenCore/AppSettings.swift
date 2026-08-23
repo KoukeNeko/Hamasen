@@ -102,6 +102,62 @@ public enum AppSettings {
     }
 }
 
+/// The part sizes Settings offers.
+///
+/// A free number field would need its own validation for bounds nobody can
+/// be expected to know — S3 refuses a part under 5 MiB except the last, and
+/// one upload is capped at ten thousand parts.
+public enum S3PartSize: Int, CaseIterable, Sendable, Identifiable {
+    case fiveMebibytes = 5_242_880
+    case eightMebibytes = 8_388_608
+    case sixteenMebibytes = 16_777_216
+    case thirtyTwoMebibytes = 33_554_432
+    case sixtyFourMebibytes = 67_108_864
+    case oneHundredTwentyEightMebibytes = 134_217_728
+
+    public var id: Int { rawValue }
+
+    public init(bytes: Int) {
+        self = Self.allCases.first { $0.rawValue == bytes }
+            ?? Self(rawValue: AppSettings.defaultS3PartSizeBytes)
+            ?? .sixteenMebibytes
+    }
+
+    public var displayName: String {
+        ByteCountFormatter.string(fromByteCount: Int64(rawValue), countStyle: .binary)
+    }
+
+    /// The largest file this part size can upload, since one upload is
+    /// capped at ten thousand parts. Shrinking the part size lowers it, and
+    /// the failure that eventually causes explains nothing.
+    public var largestUploadDisplayName: String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(AppSettings.s3LargestUploadableBytes(partSizeBytes: rawValue)),
+            countStyle: .binary)
+    }
+}
+
+/// The sizes above which Settings offers to switch to a multipart upload.
+public enum S3MultipartThreshold: Int, CaseIterable, Sendable, Identifiable {
+    case sixteenMebibytes = 16_777_216
+    case fiftyMebibytes = 52_428_800
+    case oneHundredMebibytes = 104_857_600
+    case fiveHundredMebibytes = 524_288_000
+    case oneGibibyte = 1_073_741_824
+
+    public var id: Int { rawValue }
+
+    public init(bytes: Int) {
+        self = Self.allCases.first { $0.rawValue == bytes }
+            ?? Self(rawValue: AppSettings.defaultS3MultipartThresholdBytes)
+            ?? .oneHundredMebibytes
+    }
+
+    public var displayName: String {
+        ByteCountFormatter.string(fromByteCount: Int64(rawValue), countStyle: .binary)
+    }
+}
+
 /// Unified logging that honours the debug-logging preference. Visible in
 /// Console.app under the dev.hamasen subsystem.
 public struct HamasenLog: Sendable {

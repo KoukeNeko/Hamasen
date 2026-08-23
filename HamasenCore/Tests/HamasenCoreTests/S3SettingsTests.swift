@@ -141,6 +141,37 @@ struct S3SettingsTests {
         #expect(AppSettings.s3MultipartThresholdBytes(from: defaults) == 64 * 1024 * 1024)
     }
 
+    // MARK: - What Settings offers
+
+    /// Every preset has to be inside the range the getter accepts, or the
+    /// picker would offer a value that is silently replaced on read.
+    @Test
+    func everyPresetIsAValueTheSettingWillKeep() {
+        for size in S3PartSize.allCases {
+            #expect(AppSettings.s3PartSizeRange.contains(size.rawValue),
+                    "\(size.displayName) is outside the accepted range")
+        }
+        for threshold in S3MultipartThreshold.allCases {
+            #expect(AppSettings.s3MultipartThresholdRange.contains(threshold.rawValue),
+                    "\(threshold.displayName) is outside the accepted range")
+        }
+    }
+
+    /// A stored value from an older build, or one hand-edited in defaults,
+    /// is not one of the presets. The picker still has to show something.
+    @Test
+    func anUnrecognisedStoredSizeFallsBackToTheDefault() {
+        #expect(S3PartSize(bytes: 12_345).rawValue == AppSettings.defaultS3PartSizeBytes)
+        #expect(S3MultipartThreshold(bytes: 12_345).rawValue
+            == AppSettings.defaultS3MultipartThresholdBytes)
+    }
+
+    @Test
+    func aRecognisedStoredSizeIsShownAsItself() {
+        #expect(S3PartSize(bytes: 67_108_864) == .sixtyFourMebibytes)
+        #expect(S3MultipartThreshold(bytes: 1_073_741_824) == .oneGibibyte)
+    }
+
     /// Shrinking the part size lowers the largest file that can be uploaded
     /// at all, which is why the setting has to show the product.
     @Test
