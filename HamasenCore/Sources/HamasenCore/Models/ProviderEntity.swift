@@ -98,10 +98,13 @@ public enum ItemIdentifierMapper {
         case .root, .serverRoot:
             return .root
         case .item(let serverID, let path):
-            let parentPath = RemotePath.parent(of: path)
-            return parentPath == RemotePath.root
-                ? .serverRoot(serverID)
-                : .item(serverID: serverID, path: parentPath)
+            return directoryEntity(serverID: serverID, path: RemotePath.parent(of: path))
         }
+    }
+
+    /// The entity whose enumerator lists `path` on a server: the server's own
+    /// folder for "/", an item for anything below it.
+    public static func directoryEntity(serverID: UUID, path: String) -> ProviderEntity {
+        path == RemotePath.root ? .serverRoot(serverID) : .item(serverID: serverID, path: path)
     }
 }

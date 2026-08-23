@@ -101,10 +101,10 @@ enum CustomActionRunner {
             try await freeLocalSpace(of: entities)
             return nil
         case .keepOnMac:
-            try setPinned(true, on: entities)
+            try await setPinned(true, on: entities)
             return nil
         case .stopKeepingOnMac:
-            try setPinned(false, on: entities)
+            try await setPinned(false, on: entities)
             return nil
         }
     }
@@ -170,16 +170,25 @@ enum CustomActionRunner {
     ///
     /// The pin only has to be written: the item reports it, and the cache
     /// sweep reads the same file, so nothing here has to touch content. The
-    /// system is told through the item's metadata version the next time it
-    /// asks, which is why the pin is part of that version.
-    private static func setPinned(_ isPinned: Bool, on entities: [ProviderEntity]) throws {
+    /// system learns of it through the item's metadata version, which is why
+    /// the pin is part of that version — and why each parent is signalled:
+    /// the badge and the menu entry change the moment the system looks, not
+    /// the next time it happens to.
+    private static func setPinned(_ isPinned: Bool, on entities: [ProviderEntity]) async throws {
         let store = try PinnedItemsStore()
+        var parents: Set<NSFileProviderItemIdentifier> = []
         for entity in entities {
             guard case .item = entity else { continue }
             try store.setPinned(isPinned, for: ItemIdentifierMapper.identifier(for: entity).rawValue)
+            parents.insert(ItemIdentifierMapper.identifier(for: ItemIdentifierMapper.parentEntity(of: entity)))
         }
         PinnedItems.invalidate()
         log.debug("\(isPinned ? "Pinned" : "Unpinned") \(entities.count) items")
+
+        let manager = try FinderDomain.manager()
+        for parent in parents {
+            try await manager.signalEnumerator(for: parent)
+        }
     }
 
     /// Makes the selection dataless again. The system does the actual work

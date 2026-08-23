@@ -32,11 +32,29 @@ enum RemoteDirectoryRecord {
 
     static func record(_ items: [RemoteItem], serverID: UUID, directoryPath: String) {
         queue.async {
-            // No store means no app group, which the rest of the extension
-            // reports on its own; a missed observation is not worth a second
-            // error for the same cause.
-            guard let store = try? RemoteDirectorySnapshotStore() else { return }
-            store.record(items, serverID: serverID, directoryPath: directoryPath)
+            _ = recordNow(items, serverID: serverID, directoryPath: directoryPath)
         }
+    }
+
+    /// Records the listing and says what changed since the last one, for the
+    /// caller that has to tell the system about deletions.
+    static func changes(
+        afterRecording items: [RemoteItem], serverID: UUID, directoryPath: String
+    ) async -> RemoteDirectorySnapshot.Change? {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(returning: recordNow(items, serverID: serverID, directoryPath: directoryPath))
+            }
+        }
+    }
+
+    private static func recordNow(
+        _ items: [RemoteItem], serverID: UUID, directoryPath: String
+    ) -> RemoteDirectorySnapshot.Change? {
+        // No store means no app group, which the rest of the extension
+        // reports on its own; a missed observation is not worth a second
+        // error for the same cause.
+        guard let store = try? RemoteDirectorySnapshotStore() else { return nil }
+        return store.record(items, serverID: serverID, directoryPath: directoryPath)
     }
 }

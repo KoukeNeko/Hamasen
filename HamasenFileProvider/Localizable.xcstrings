@@ -191,6 +191,30 @@
         }
       }
     },
+    "DECORATION_PINNED": {
+      "comment": "Badge label (mouse over, VoiceOver): NSFileProviderDecorations in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kept on This Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このMacに保持中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留在這台 Mac"
+          }
+        }
+      }
+    },
     "不支援的動作：%@": {
       "localizations": {
         "en": {

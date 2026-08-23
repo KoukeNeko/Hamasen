@@ -36,9 +36,6 @@ import UserNotifications
 final class RemoteChangeWatcher {
     private static let log = HamasenLog(category: "changes")
 
-    /// The system's own re-enumeration is what actually updates Finder; the
-    /// notification only tells the person. Signalling it means a change found
-    /// here shows up without waiting for somebody to refresh.
     private var poll: Task<Void, Never>?
     private var mountedServers: @MainActor () -> [ServerConfig] = { [] }
 
@@ -95,22 +92,24 @@ final class RemoteChangeWatcher {
         snapshot.keepOnly(serverIDs: Set(servers.map(\.id)))
         try? store.save(snapshot)
 
-        var changed = false
         for server in servers {
             guard let paths = byServer[server.id] else { continue }
             let changes = await Self.changes(
                 on: server, directoryPaths: paths, store: store)
             guard let summary = RemoteChangeSummary(serverName: server.name, changes: changes)
             else { continue }
-            changed = true
             Self.log.notice("\(server.name): \(summary.message)")
             await Self.notify(summary)
-        }
 
-        if changed {
-            // Finder is showing what it last enumerated; without this the
-            // notification would name a file the window does not have.
-            try? await manager.signalEnumerator(for: .workingSet)
+            // The system's own re-enumeration is what updates Finder; the
+            // notification only tells the person. Each changed directory is
+            // signalled so the window does not keep showing the old listing
+            // next to a notification naming a file it does not have.
+            for change in changes where !change.isEmpty {
+                let directory = ItemIdentifierMapper.identifier(
+                    for: ItemIdentifierMapper.directoryEntity(serverID: server.id, path: change.directoryPath))
+                try? await manager.signalEnumerator(for: directory)
+            }
         }
     }
 
@@ -145,10 +144,21 @@ final class RemoteChangeWatcher {
         }
         defer { Task { try? await service.disconnect() } }
 
+        // Compared against the record but not written to it. The extension
+        // writes the record when it brings the system up to date, which the
+        // signal that follows makes it do; writing here first would leave the
+        // extension nothing to report, and a deleted file would stay in
+        // Finder. The one exception is a directory with no record yet, which
+        // gets its baseline so the next round has something to compare.
+        var snapshot = store.load()
         var changes: [RemoteDirectorySnapshot.Change] = []
         for path in directoryPaths.sorted() {
             guard let items = try? await service.listDirectory(at: path) else { continue }
-            changes.append(store.record(items, serverID: server.id, directoryPath: path))
+            let isFirstRecord = snapshot.entries(serverID: server.id, directoryPath: path) == nil
+            changes.append(snapshot.record(items, serverID: server.id, directoryPath: path))
+            if isFirstRecord {
+                store.record(items, serverID: server.id, directoryPath: path)
+            }
         }
         return changes
     }

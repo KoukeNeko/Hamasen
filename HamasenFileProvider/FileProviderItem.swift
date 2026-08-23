@@ -72,7 +72,7 @@ final class ServerFolderItem: NSObject, NSFileProviderItem {
 }
 
 /// A file or directory inside a server, adapted from a RemoteItem.
-final class RemoteFileItem: NSObject, NSFileProviderItem {
+final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDecorating {
     /// The key the Info.plist activation rules read to decide whether to
     /// offer "keep on this Mac" or "stop keeping".
     static let pinnedUserInfoKey = "isPinned"
@@ -85,7 +85,7 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
     /// reaches items already in the replica, because nothing about the file
     /// itself moved. Only the metadata version carries it: putting it in the
     /// content version would re-download every file.
-    private static let metadataRevision = "2"
+    private static let metadataRevision = "3"
 
     private let serverID: UUID
     private let remoteItem: RemoteItem
@@ -131,6 +131,10 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
 
     var userInfo: [AnyHashable: Any]? {
         [Self.pinnedUserInfoKey: isPinned]
+    }
+
+    var decorations: [NSFileProviderItemDecorationIdentifier]? {
+        isPinned ? [.pinned] : nil
     }
 
     /// A pinned item is downloaded and kept; everything else inherits its
@@ -182,4 +186,9 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
             ]
         }
     }
+}
+
+/// The badges declared in the extension's Info.plist, by identifier.
+extension NSFileProviderItemDecorationIdentifier {
+    static let pinned = NSFileProviderItemDecorationIdentifier("dev.hamasen.decoration.pinned")
 }
