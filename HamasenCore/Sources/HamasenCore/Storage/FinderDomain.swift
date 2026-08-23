@@ -52,7 +52,7 @@ public enum FinderDomain {
             return try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData)
         }
         try await register()
-        try await signalServerListChanged()
+        try await signalWorkingSet()
         return nil
     }
 
@@ -107,7 +107,7 @@ public enum FinderDomain {
     /// A replicated extension only honours working-set signals; the system
     /// ignores signals for any other container and propagates working-set
     /// changes to the UI itself.
-    public static func signalServerListChanged() async throws {
+    public static func signalWorkingSet() async throws {
         try await manager().signalEnumerator(for: .workingSet)
     }
 

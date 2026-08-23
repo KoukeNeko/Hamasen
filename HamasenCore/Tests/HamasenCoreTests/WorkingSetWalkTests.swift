@@ -32,24 +32,24 @@ struct WorkingSetWalkTests {
     @Test
     func visitsBreadthFirst() {
         var walk = WorkingSetWalk(serverIDs: [a])
-        walk.advance(subdirectories: ["photos", "docs"])
+        walk.advance(itemCount: 0, subdirectories: ["photos", "docs"])
         #expect(walk.current?.path == "/docs")
-        walk.advance(subdirectories: ["2026"])
+        walk.advance(itemCount: 0, subdirectories: ["2026"])
         #expect(walk.current?.path == "/photos")
-        walk.advance(subdirectories: [])
+        walk.advance(itemCount: 0, subdirectories: [])
         // docs/2026 comes after photos, not before: breadth first.
         #expect(walk.current?.path == "/docs/2026")
-        walk.advance(subdirectories: [])
+        walk.advance(itemCount: 0, subdirectories: [])
         #expect(walk.isFinished)
     }
 
     @Test
     func oneServerFinishesBeforeTheNextStarts() {
         var walk = WorkingSetWalk(serverIDs: [a, b])
-        walk.advance(subdirectories: ["x"])
+        walk.advance(itemCount: 0, subdirectories: ["x"])
         // b's root was queued before a/x: the roots come first, then depth 1.
         #expect(walk.current == .init(serverID: b, path: "/", depth: 0))
-        walk.advance(subdirectories: [])
+        walk.advance(itemCount: 0, subdirectories: [])
         #expect(walk.current == .init(serverID: a, path: "/x", depth: 1))
     }
 
@@ -57,10 +57,10 @@ struct WorkingSetWalkTests {
     /// by Finder when someone opens it, as before.
     @Test
     func doesNotDescendPastTheDepthLimit() {
-        var walk = WorkingSetWalk(serverIDs: [a], limits: .init(maximumDepth: 1, maximumDirectories: 100))
-        walk.advance(subdirectories: ["one"])
+        var walk = WorkingSetWalk(serverIDs: [a], limits: .init(maximumDepth: 1, maximumDirectories: 100, maximumItems: 99))
+        walk.advance(itemCount: 0, subdirectories: ["one"])
         #expect(walk.current?.depth == 1)
-        walk.advance(subdirectories: ["two"])
+        walk.advance(itemCount: 0, subdirectories: ["two"])
         #expect(walk.isFinished, "depth 2 must not be queued")
     }
 
@@ -68,13 +68,52 @@ struct WorkingSetWalkTests {
     /// when the tree would go on.
     @Test
     func stopsAtTheDirectoryLimit() {
-        var walk = WorkingSetWalk(serverIDs: [a], limits: .init(maximumDepth: 99, maximumDirectories: 3))
+        var walk = WorkingSetWalk(serverIDs: [a], limits: .init(maximumDepth: 99, maximumDirectories: 3, maximumItems: 99))
         for _ in 0..<3 {
             #expect(walk.current != nil)
-            walk.advance(subdirectories: ["more"])
+            walk.advance(itemCount: 0, subdirectories: ["more"])
         }
         #expect(walk.isFinished)
-        #expect(walk.queue.isEmpty == false, "the queue is not drained, the walk simply stops")
+        #expect(walk.directoriesListed == 3)
+    }
+
+    /// Spotlight indexes nothing under a dot directory, so listing one is a
+    /// request that buys nothing.
+    @Test
+    func hiddenDirectoriesAreNotWalked() {
+        var walk = WorkingSetWalk(serverIDs: [a])
+        walk.advance(itemCount: 3, subdirectories: [".cache", "docs", ".vscode-server"])
+        #expect(walk.queue.map(\.path) == ["/docs"])
+    }
+
+    /// A thousand files per folder reaches the Mac's limit long before the
+    /// server's: the item budget ends that server's walk on its own.
+    @Test
+    func stopsAtTheItemLimit() {
+        var walk = WorkingSetWalk(serverIDs: [a, b], limits: .init(maximumDepth: 99, maximumDirectories: 99, maximumItems: 10))
+        walk.advance(itemCount: 4, subdirectories: ["x", "y"])     // a: 4 of 10
+        walk.advance(itemCount: 1, subdirectories: [])             // b: done
+        walk.advance(itemCount: 6, subdirectories: ["deeper"])     // a/x: 10 of 10, a/y dropped
+        #expect(walk.isFinished)
+        #expect(walk.directoriesListed == 3)
+    }
+
+    /// One server with a node_modules in it must not spend the budget that
+    /// was meant to get the others listed.
+    @Test
+    func eachServerHasItsOwnDirectoryBudget() {
+        var walk = WorkingSetWalk(serverIDs: [a, b], limits: .init(maximumDepth: 99, maximumDirectories: 2, maximumItems: 99))
+        walk.advance(itemCount: 0, subdirectories: ["x", "y", "z"])      // a: 1 of 2
+        walk.advance(itemCount: 0, subdirectories: [])                   // b: 1 of 2
+        walk.advance(itemCount: 0, subdirectories: ["deeper"])           // a/x: 2 of 2, a/y and a/z are dropped
+        #expect(walk.queue.contains { $0.serverID == a } == false)
+        #expect(walk.isFinished, "b has budget left but nothing queued")
+
+        var other = WorkingSetWalk(serverIDs: [a, b], limits: .init(maximumDepth: 99, maximumDirectories: 1, maximumItems: 99))
+        other.advance(itemCount: 0, subdirectories: ["x"])               // a is spent; a/x never queued
+        #expect(other.current == .init(serverID: b, path: "/", depth: 0))
+        other.skipCurrent()                                // b is spent too
+        #expect(other.isFinished)
     }
 
     @Test
@@ -92,7 +131,7 @@ struct WorkingSetWalkTests {
         var walk = WorkingSetWalk(serverIDs: [a])
         let atStart = walk.token
         #expect(walk.matches(atStart))
-        walk.advance(subdirectories: [])
+        walk.advance(itemCount: 0, subdirectories: [])
         #expect(walk.matches(atStart) == false, "a step behind is not a match")
         #expect(walk.matches(walk.token))
     }
@@ -109,7 +148,7 @@ struct WorkingSetWalkTests {
     @Test
     func theTokenFitsThePageLimit() {
         var walk = WorkingSetWalk(serverIDs: [a])
-        for _ in 0..<500 { walk.advance(subdirectories: ["x"]) }
+        for _ in 0..<500 { walk.advance(itemCount: 0, subdirectories: ["x"]) }
         let encoded = WorkingSetWalk.encode(walk.token)
         #expect(encoded.count < 500)
         #expect(WorkingSetWalk.decode(encoded) == walk.token)
@@ -126,9 +165,59 @@ struct WorkingSetWalkTests {
     @Test
     func theWalkItselfRoundTrips() throws {
         var walk = WorkingSetWalk(serverIDs: [a, b])
-        walk.advance(subdirectories: ["p", "q"])
+        walk.advance(itemCount: 0, subdirectories: ["p", "q"])
         let decoded = try JSONDecoder().decode(WorkingSetWalk.self, from: JSONEncoder().encode(walk))
         #expect(decoded == walk)
         #expect(decoded.current == walk.current)
+    }
+
+    // MARK: - When the next walk is due
+
+    private let start = Date(timeIntervalSince1970: 1_700_000_000)
+    private let oneHour: TimeInterval = 60 * 60
+
+    /// Between pages the walk is in progress, and a signal arriving then
+    /// must not start a second one over the top of it.
+    @Test
+    func aWalkInProgressIsNotStale() {
+        let walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        #expect(walk.isStale(at: start + oneHour) == false)
+    }
+
+    /// The extension can be stopped between pages and never asked for the
+    /// next one. That walk would otherwise block every later one.
+    @Test
+    func anAbandonedWalkGoesStaleFromItsStart() {
+        let walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        #expect(walk.isStale(at: start + WorkingSetWalk.repeatInterval))
+    }
+
+    @Test
+    func aFinishedWalkGoesStaleFromItsCompletion() {
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        walk.advance(itemCount: 0, subdirectories: [])
+        walk.markCompleted(at: start + oneHour)
+        #expect(walk.isFinished)
+        #expect(walk.isStale(at: start + WorkingSetWalk.repeatInterval) == false)
+        #expect(walk.isStale(at: start + oneHour + WorkingSetWalk.repeatInterval))
+    }
+
+    /// The store answers for a walk that was never run at all, which is the
+    /// state of every domain created before walks existed.
+    @Test
+    func theStoreFindsAWalkDueWhenThereIsNone() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("walk-\(UUID().uuidString).json")
+        let store = WorkingSetWalkStore(fileURL: fileURL)
+        #expect(store.isWalkDue(at: start))
+
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        walk.markCompleted(at: start)
+        try store.save(walk)
+        #expect(store.isWalkDue(at: start + oneHour) == false)
+        #expect(store.isWalkDue(at: start + WorkingSetWalk.repeatInterval))
+
+        store.clear()
+        #expect(store.isWalkDue(at: start + oneHour))
     }
 }

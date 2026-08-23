@@ -40,65 +40,117 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
         }
     }
 
-    /// Limits that keep the walk from becoming the server's whole day.
+    /// Limits that keep the walk from becoming the server's whole day, or
+    /// this Mac's.
     ///
-    /// Every directory is one listing request. On S3 that is a billed
-    /// operation; on SFTP it is load on somebody's machine.
+    /// Every directory is one listing request: on S3 a billed operation, on
+    /// SFTP load on somebody's machine. Every item listed is a placeholder
+    /// the system has to create and Spotlight has to index, at a few thousand
+    /// a minute; a data archive with a thousand files per folder reaches a
+    /// hundred thousand long before it reaches two thousand directories.
+    /// Both budgets are per server, or one server with a node_modules in it
+    /// would spend them and leave the others unlisted.
     public struct Limits: Equatable, Sendable, Codable {
         public let maximumDepth: Int
         public let maximumDirectories: Int
+        public let maximumItems: Int
 
-        public init(maximumDepth: Int, maximumDirectories: Int) {
+        public init(maximumDepth: Int, maximumDirectories: Int, maximumItems: Int) {
             self.maximumDepth = maximumDepth
             self.maximumDirectories = maximumDirectories
+            self.maximumItems = maximumItems
         }
 
-        public static let `default` = Limits(maximumDepth: 6, maximumDirectories: 2_000)
+        public static let `default` = Limits(maximumDepth: 6, maximumDirectories: 2_000, maximumItems: 20_000)
     }
 
     /// Distinguishes this walk from the one before it, so a page token that
     /// outlived its walk is recognised rather than applied to the wrong queue.
     public let identifier: UUID
     public let limits: Limits
+    public let startedAt: Date
+    public private(set) var completedAt: Date?
     public private(set) var queue: [Pending]
     public private(set) var directoriesListed: Int
+    private var directoriesListedPerServer: [UUID: Int]
+    private var itemsListedPerServer: [UUID: Int]
 
-    public init(serverIDs: [UUID], limits: Limits = .default) {
+    /// How long a finished walk stays current. Finder browsing and the change
+    /// watcher keep the opened folders fresh in between; the rest of the tree
+    /// is re-listed this often, at one billed request per directory on S3.
+    public static let repeatInterval: TimeInterval = 24 * 60 * 60
+
+    public init(serverIDs: [UUID], limits: Limits = .default, startedAt: Date = Date()) {
         identifier = UUID()
         self.limits = limits
+        self.startedAt = startedAt
         queue = serverIDs.map { Pending(serverID: $0, path: RemotePath.root, depth: 0) }
         directoriesListed = 0
+        directoriesListedPerServer = [:]
+        itemsListedPerServer = [:]
+    }
+
+    public mutating func markCompleted(at date: Date = Date()) {
+        completedAt = date
+    }
+
+    /// Whether a new walk should replace this one: it finished, or was
+    /// started and then abandoned, longer ago than the interval.
+    public func isStale(at now: Date) -> Bool {
+        now.timeIntervalSince(completedAt ?? startedAt) >= Self.repeatInterval
     }
 
     /// The directory to list next, or nil when the walk is over.
-    public var current: Pending? {
-        guard directoriesListed < limits.maximumDirectories else { return nil }
-        return queue.first
-    }
+    public var current: Pending? { queue.first }
 
     public var isFinished: Bool { current == nil }
 
-    /// Records that `current` was listed and found these subdirectories.
+    /// Records that `current` was listed, held `itemCount` entries, and
+    /// found these subdirectories among them.
     ///
     /// Subdirectories beyond the depth limit are not queued: they are listed
     /// by Finder when someone opens them, as everything was before this.
-    public mutating func advance(subdirectories: [String]) {
+    /// Neither are hidden ones: Spotlight indexes nothing under a dot
+    /// directory, and a home directory's `.cache` and `.vscode-server` can
+    /// take the whole budget on their own — 2,862 of one server's 2,000
+    /// listings went there before this check existed.
+    public mutating func advance(itemCount: Int, subdirectories: [String]) {
         guard let listed = queue.first else { return }
-        queue.removeFirst()
-        directoriesListed += 1
-        guard listed.depth < limits.maximumDepth else { return }
-        queue += subdirectories.sorted().map {
+        guard countListing(of: listed, itemCount: itemCount), listed.depth < limits.maximumDepth else { return }
+        queue += subdirectories.filter { !Self.isHidden($0) }.sorted().map {
             Pending(serverID: listed.serverID, path: RemotePath.join(listed.path, $0), depth: listed.depth + 1)
         }
+    }
+
+    private static let hiddenNamePrefix = "."
+
+    private static func isHidden(_ name: String) -> Bool {
+        name.hasPrefix(hiddenNamePrefix)
     }
 
     /// Records that `current` could not be listed. The branch is dropped and
     /// the walk goes on; one unreadable directory is not a reason to index
     /// nothing else.
     public mutating func skipCurrent() {
-        guard !queue.isEmpty else { return }
+        guard let skipped = queue.first else { return }
+        _ = countListing(of: skipped, itemCount: 0)
+    }
+
+    /// Takes `pending` off the queue and charges it to its server. Returns
+    /// whether that server has budget left; when it has not, whatever else
+    /// was queued for it goes too, so the other servers' entries come up.
+    private mutating func countListing(of pending: Pending, itemCount: Int) -> Bool {
         queue.removeFirst()
         directoriesListed += 1
+        let directoriesOnServer = directoriesListedPerServer[pending.serverID, default: 0] + 1
+        let itemsOnServer = itemsListedPerServer[pending.serverID, default: 0] + itemCount
+        directoriesListedPerServer[pending.serverID] = directoriesOnServer
+        itemsListedPerServer[pending.serverID] = itemsOnServer
+        guard directoriesOnServer < limits.maximumDirectories, itemsOnServer < limits.maximumItems else {
+            queue.removeAll { $0.serverID == pending.serverID }
+            return false
+        }
+        return true
     }
 
     // MARK: - Page tokens

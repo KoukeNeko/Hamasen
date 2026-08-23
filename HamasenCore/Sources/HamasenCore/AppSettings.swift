@@ -36,6 +36,7 @@ public enum AppSettings {
         public static let domainCapabilityGeneration = "domainCapabilityGeneration"
         public static let indexingDepth = "indexingDepth"
         public static let indexingDirectoryLimit = "indexingDirectoryLimit"
+        public static let indexingItemLimit = "indexingItemLimit"
         public static let remoteChangePollSeconds = "remoteChangePollSeconds"
     }
 
@@ -90,13 +91,16 @@ public enum AppSettings {
         store.bool(forKey: Keys.debugLoggingEnabled)
     }
 
-    /// How far down the background walk goes, and how many directories it
-    /// lists in one walk. Each directory is a request — billed on S3, load on
-    /// anything else — so both are bounded and both can be set.
+    /// How far down the background walk goes, and how many directories and
+    /// items it lists per server in one walk. Each directory is a request —
+    /// billed on S3, load on anything else — and each item is a placeholder
+    /// this Mac has to create, so all three are bounded and all can be set.
     public static let defaultIndexingDepth = WorkingSetWalk.Limits.default.maximumDepth
     public static let indexingDepthRange = 1...20
     public static let defaultIndexingDirectoryLimit = WorkingSetWalk.Limits.default.maximumDirectories
     public static let indexingDirectoryLimitRange = 50...50_000
+    public static let defaultIndexingItemLimit = WorkingSetWalk.Limits.default.maximumItems
+    public static let indexingItemLimitRange = 1_000...500_000
 
     /// How often the app re-lists the directories somebody has open, to
     /// notice what changed on the server.
@@ -120,10 +124,12 @@ public enum AppSettings {
     public static func indexingLimits(from store: UserDefaults = sharedStore) -> WorkingSetWalk.Limits {
         let depth = store.integer(forKey: Keys.indexingDepth)
         let directories = store.integer(forKey: Keys.indexingDirectoryLimit)
+        let items = store.integer(forKey: Keys.indexingItemLimit)
         return WorkingSetWalk.Limits(
             maximumDepth: indexingDepthRange.contains(depth) ? depth : defaultIndexingDepth,
             maximumDirectories: indexingDirectoryLimitRange.contains(directories)
-                ? directories : defaultIndexingDirectoryLimit)
+                ? directories : defaultIndexingDirectoryLimit,
+            maximumItems: indexingItemLimitRange.contains(items) ? items : defaultIndexingItemLimit)
     }
 
     public static func s3PartSizeBytes(from store: UserDefaults = sharedStore) -> Int {
@@ -181,6 +187,26 @@ public enum IndexingDirectoryLimit: Int, CaseIterable, Sendable, Identifiable {
         self = Self.allCases.first { $0.rawValue == directories }
             ?? Self(rawValue: AppSettings.defaultIndexingDirectoryLimit)
             ?? .twoThousand
+    }
+
+    public var displayName: String {
+        rawValue.formatted(.number)
+    }
+}
+
+/// The per-server item budgets Settings offers for the background walk.
+public enum IndexingItemLimit: Int, CaseIterable, Sendable, Identifiable {
+    case fiveThousand = 5_000
+    case twentyThousand = 20_000
+    case fiftyThousand = 50_000
+    case twoHundredThousand = 200_000
+
+    public var id: Int { rawValue }
+
+    public init(items: Int) {
+        self = Self.allCases.first { $0.rawValue == items }
+            ?? Self(rawValue: AppSettings.defaultIndexingItemLimit)
+            ?? .twentyThousand
     }
 
     public var displayName: String {

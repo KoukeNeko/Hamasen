@@ -40,6 +40,7 @@ final class ServerListModel {
     /// bounds.
     let cache = CacheSupervisor()
     let remoteChanges = RemoteChangeWatcher()
+    let index = WorkingSetRefresher()
 
     private let credentialStore = KeychainCredentialStore()
 
@@ -96,6 +97,7 @@ final class ServerListModel {
             reporting: { [weak self] notice in self?.notice = notice }
         )
         remoteChanges.start(servers: { [weak self] in self?.mountedServers ?? [] })
+        index.start()
     }
 
     /// Earlier versions registered one domain per server (identifier = server
@@ -122,6 +124,7 @@ final class ServerListModel {
     @discardableResult
     func saveServer(_ config: ServerConfig, credentials: CredentialUpdate) async -> Bool {
         guard let stores = stores() else { return false }
+        let previous = servers.first { $0.id == config.id }
         do {
             var updatedServers = servers
             if let existingIndex = updatedServers.firstIndex(where: { $0.id == config.id }) {
@@ -142,7 +145,10 @@ final class ServerListModel {
         if isMounted(config) {
             // The domain may still be initializing; the next enumeration
             // picks the rename up anyway.
-            _ = try? await FinderDomain.signalServerListChanged()
+            _ = try? await FinderDomain.signalWorkingSet()
+        }
+        if previous?.indexesInBackground != config.indexesInBackground {
+            index.settingsChanged()
         }
         cache.sweepSoon()
         return true
@@ -181,7 +187,7 @@ final class ServerListModel {
         // The Finder folders are listed in this order too, so the change has
         // to reach the extension rather than stopping at the window.
         Task {
-            _ = try? await FinderDomain.signalServerListChanged()
+            _ = try? await FinderDomain.signalWorkingSet()
         }
     }
 

@@ -15,8 +15,14 @@
 import Foundation
 import HamasenCore
 
-/// Writes down what the extension saw, so the app's poll has something to
+/// Writes down what Finder was shown, so the app's poll has something to
 /// compare a later listing against.
+///
+/// Only Finder's listings, not the background walk's: the poll re-checks the
+/// folders somebody has opened, and those are recorded when they are opened.
+/// Recording the walk as well would rewrite a file the size of every tree on
+/// every page — gigabytes per walk — and move the baseline forward daily, so a
+/// change made between two openings of a folder would go unreported.
 ///
 /// Serialized on one queue: the extension lists several directories at once,
 /// and the record is one file. Off the calling task, because a listing should

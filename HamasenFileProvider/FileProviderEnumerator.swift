@@ -46,22 +46,34 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
         }
     }
 
-    func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
-        // Read errors must not reach the diff: an empty list would be reported
-        // as "every server was deleted" and wipe them from Finder.
+    /// What the server list looks like now, and how that differs from the
+    /// list the anchor was made from.
+    struct PendingChanges {
         let configs: [ServerConfig]
-        do {
-            configs = try ConnectionRegistry.mountedConfigs()
-        } catch {
-            observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
-            return
-        }
+        let diff: ServerListChangeTracker.Diff
+    }
 
+    /// Read errors must not reach the diff: an empty list would be reported
+    /// as "every server was deleted" and wipe them from Finder.
+    static func pendingChanges(since anchor: NSFileProviderSyncAnchor) throws -> PendingChanges {
+        let configs = try ConnectionRegistry.mountedConfigs()
         let diff = ServerListChangeTracker.diff(
             previous: ServerListChangeTracker.decode(anchor.rawValue),
             current: configs
         )
+        return PendingChanges(configs: configs, diff: diff)
+    }
 
+    func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
+        do {
+            report(try Self.pendingChanges(since: anchor), to: observer)
+        } catch {
+            observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
+        }
+    }
+
+    func report(_ changes: PendingChanges, to observer: NSFileProviderChangeObserver) {
+        let diff = changes.diff
         if !diff.updated.isEmpty {
             observer.didUpdate(diff.updated.map(ServerFolderItem.init))
         }
@@ -74,7 +86,7 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
                 }
             )
         }
-        observer.finishEnumeratingChanges(upTo: Self.anchor(for: configs), moreComing: false)
+        observer.finishEnumeratingChanges(upTo: Self.anchor(for: changes.configs), moreComing: false)
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {

@@ -64,13 +64,24 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
 
         let indexable = configs.filter(\.indexesInBackground).map(\.id)
         var walk = store.walk(for: token, serverIDs: indexable, limits: AppSettings.indexingLimits())
+        if token == nil {
+            Self.log.notice(
+                "Walk started over \(indexable.count) of \(configs.count) servers: "
+                + "depth \(walk.limits.maximumDepth), per server \(walk.limits.maximumDirectories) directories, "
+                + "\(walk.limits.maximumItems) items")
+        } else {
+            Self.log.debug("Walk page: queued=\(walk.queue.count) listed=\(walk.directoriesListed)")
+        }
 
         if token == nil {
             observer.didEnumerate(configs.map(ServerFolderItem.init))
         }
 
         guard let pending = walk.current else {
-            store.clear()
+            // Nothing to list because every server opted out. Still a walk
+            // that ran, or it would be due again on every signal.
+            walk.markCompleted()
+            try? store.save(walk)
             observer.finishEnumerating(upTo: nil)
             return
         }
@@ -80,15 +91,19 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             do {
                 let service = try await registry.service(for: pending.serverID)
                 let items = try await service.listDirectory(at: pending.path)
+                Self.log.debug("Walked \(pending.path) on \(pending.serverID): \(items.count) items")
                 observer.didEnumerate(items.map { RemoteFileItem(serverID: pending.serverID, remoteItem: $0) })
-                RemoteDirectoryRecord.record(
-                    items, serverID: pending.serverID, directoryPath: pending.path)
-                walk.advance(subdirectories: items.filter(\.isDirectory).map(\.name))
+                walk.advance(itemCount: items.count, subdirectories: items.filter(\.isDirectory).map(\.name))
             } catch {
                 // One directory the account cannot read, or one server that
                 // is down, must not end the walk for every other server.
                 Self.log.notice("Skipping \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
                 walk.skipCurrent()
+            }
+
+            if walk.isFinished {
+                walk.markCompleted()
+                Self.log.notice("Walk finished after \(walk.directoriesListed) directories")
             }
 
             do {
@@ -103,7 +118,6 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             }
 
             if walk.isFinished {
-                store.clear()
                 observer.finishEnumerating(upTo: nil)
             } else {
                 observer.finishEnumerating(upTo: NSFileProviderPage(WorkingSetWalk.encode(walk.token)))
@@ -111,8 +125,33 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         }
     }
 
+    /// The system asks for the working set from the first page once, when
+    /// the domain is created; after that only for changes, and only when
+    /// signalled. An expired anchor is the one answer that makes it start
+    /// from the first page again, so that is how a walk that is due gets
+    /// to run.
+    ///
+    /// Not while a server change is waiting, though: enumerating the working
+    /// set adds to it and removes nothing, so a removed server reported that
+    /// way would stay in Finder. The change goes out first; the walk starts
+    /// on the next signal.
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
-        serverList.enumerateChanges(for: observer, from: anchor)
+        let changes: ServerListEnumerator.PendingChanges
+        do {
+            changes = try ServerListEnumerator.pendingChanges(since: anchor)
+        } catch {
+            observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
+            return
+        }
+
+        let walkIsDue = (try? WorkingSetWalkStore())?.isWalkDue() ?? false
+        Self.log.debug("Working set changes requested: serverChanges=\(!changes.diff.isEmpty) walkDue=\(walkIsDue)")
+
+        if changes.diff.isEmpty, walkIsDue {
+            observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
+            return
+        }
+        serverList.report(changes, to: observer)
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {

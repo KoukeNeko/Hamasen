@@ -325,6 +325,11 @@ private struct IndexingSection: View {
     @AppStorage(AppSettings.Keys.indexingDirectoryLimit, store: AppSettings.sharedStore)
     private var directoryLimit = AppSettings.defaultIndexingDirectoryLimit
 
+    @AppStorage(AppSettings.Keys.indexingItemLimit, store: AppSettings.sharedStore)
+    private var itemLimit = AppSettings.defaultIndexingItemLimit
+
+    @Environment(ServerListModel.self) private var model
+
     var body: some View {
         Section {
             Stepper(value: $depth, in: AppSettings.indexingDepthRange) {
@@ -336,8 +341,13 @@ private struct IndexingSection: View {
                         .monospacedDigit()
                 }
             }
-            Picker("每次索引的目錄數上限", selection: directoryLimitSelection) {
+            Picker("每台伺服器的目錄數上限", selection: directoryLimitSelection) {
                 ForEach(IndexingDirectoryLimit.allCases) { limit in
+                    Text(limit.displayName).tag(limit)
+                }
+            }
+            Picker("每台伺服器的項目數上限", selection: itemLimitSelection) {
+                ForEach(IndexingItemLimit.allCases) { limit in
                     Text(limit.displayName).tag(limit)
                 }
             }
@@ -346,17 +356,26 @@ private struct IndexingSection: View {
         } footer: {
             // The cost is named because it is real money on S3 and is not
             // visible anywhere else: the walk happens when nobody is looking.
-            Text("Finder 沒開過的資料夾也會在背景列舉，讓 Spotlight 找得到裡面的檔案。每個資料夾是一次列舉請求，S3 會計費；可以在個別伺服器關閉。")
+            Text("Finder 沒開過的資料夾也會在背景列舉，讓 Spotlight 找得到裡面的檔案。每天重新列舉一次，每台伺服器各有自己的上限：目錄數是對伺服器的請求數（S3 會計費），項目數是這台 Mac 要建立的占位檔數。可以在個別伺服器關閉。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .onChange(of: depth) { model.index.settingsChanged() }
+        .onChange(of: directoryLimit) { model.index.settingsChanged() }
+        .onChange(of: itemLimit) { model.index.settingsChanged() }
     }
 
     private var directoryLimitSelection: Binding<IndexingDirectoryLimit> {
         Binding(
             get: { IndexingDirectoryLimit(directories: directoryLimit) },
             set: { directoryLimit = $0.rawValue })
+    }
+
+    private var itemLimitSelection: Binding<IndexingItemLimit> {
+        Binding(
+            get: { IndexingItemLimit(items: itemLimit) },
+            set: { itemLimit = $0.rawValue })
     }
 }
 

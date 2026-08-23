@@ -89,7 +89,7 @@ enum CustomActionRunner {
             try await copyLocalPath(of: identifier)
             return nil
         case .refresh:
-            try await FinderDomain.signalServerListChanged()
+            try await FinderDomain.signalWorkingSet()
             return nil
         case .unmountServer:
             let entity = try singleServerEntity(in: entities)

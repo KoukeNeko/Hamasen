@@ -48,6 +48,14 @@ public struct WorkingSetWalkStore: Sendable {
         try? FileManager.default.removeItem(at: fileURL)
     }
 
+    /// Whether the working set should be enumerated from the first page
+    /// again. True with no walk on file at all, which is how a domain that
+    /// predates the walk, or one whose settings were just changed, gets one.
+    public func isWalkDue(at now: Date = Date()) -> Bool {
+        guard let walk = load() else { return true }
+        return walk.isStale(at: now)
+    }
+
     /// The walk a page token refers to, or a fresh one when the token names a
     /// walk that is gone or a step this one has passed.
     ///
