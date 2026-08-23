@@ -16,6 +16,10 @@ on:
       - '**.md'
       - LICENSE
       - Docs/**
+      # The pipeline is not the product. A commit that also touches sources
+      # still releases: a push is skipped only when every changed file is
+      # ignored.
+      - '.github/**'
   workflow_dispatch:
     inputs:
       build_number:
