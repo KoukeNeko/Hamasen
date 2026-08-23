@@ -1941,6 +1941,28 @@
         }
       }
     },
+    "已掛載，連線失敗": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mounted, not answering"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マウント済み・接続できません"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已掛載，連線失敗"
+          }
+        }
+      }
+    },
     "從工具列的＋新增第一台伺服器": {
       "localizations": {
         "en": {
@@ -2290,6 +2312,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "更新 Finder 位置失敗：%@"
+          }
+        }
+      }
+    },
+    "未掛載": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not mounted"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未マウント"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未掛載"
           }
         }
       }
@@ -3895,5 +3939,5 @@
       }
     }
   },
-  "version": "1.0"
+  "version": "1.1"
 }

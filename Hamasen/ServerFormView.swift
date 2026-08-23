@@ -58,28 +58,6 @@ struct ServerFormView: View {
 
     private var isS3: Bool { transferProtocol == .s3 }
 
-    private var accountLabel: LocalizedStringKey { isS3 ? "Access Key ID" : "使用者名稱" }
-    private var secretLabel: LocalizedStringKey { isS3 ? "Secret Access Key" : "密碼" }
-
-    /// The first path component is the bucket, and S3 has nothing to connect
-    /// to without one. Caught here rather than at the first mount, when the
-    /// form is gone and the message has to stand on its own.
-    ///
-    /// Asked of the parser rather than restated, so the form cannot come to
-    /// disagree with what the service will accept.
-    private var namesABucket: Bool {
-        guard isS3 else { return true }
-        let path = ServerConfig.normalizedRemotePath(remotePath)
-        return (try? S3ObjectKey(absolutePath: path)) != nil
-    }
-
-    /// An empty field reads as one not filled in yet, the way an empty name
-    /// does. A field with something in it that cannot work has to say so, or
-    /// the disabled button is a dead end with no stated reason.
-    private var remotePathIsUnusable: Bool {
-        !remotePath.trimmingCharacters(in: .whitespaces).isEmpty && !namesABucket
-    }
-
     private var parsedPort: Int? {
         guard let port = Int(portText), (1...65535).contains(port) else { return nil }
         return port
@@ -100,7 +78,7 @@ struct ServerFormView: View {
             && !username.trimmingCharacters(in: .whitespaces).isEmpty
             && parsedPort != nil
             && hasCredential
-            && namesABucket
+            && S3ServerFields.namesABucket(remotePath, transferProtocol: transferProtocol)
     }
 
     var body: some View {
@@ -111,7 +89,8 @@ struct ServerFormView: View {
                     ProtocolPicker(transferProtocol: $transferProtocol, portText: $portText)
                     TextField("主機", text: $host, prompt: Text("example.com"))
                     TextField("連接埠", text: $portText)
-                    TextField(accountLabel, text: $username)
+                    TextField(
+                        S3ServerFields.accountLabel(for: transferProtocol), text: $username)
                 }
                 AuthenticationFields(
                     method: $authenticationMethod,
@@ -121,22 +100,15 @@ struct ServerFormView: View {
                     hasStoredKey: false,
                     allowsBlankPassword: isEditing,
                     allowsPrivateKey: transferProtocol.supportsPrivateKeyAuthentication,
-                    secretLabel: secretLabel
+                    secretLabel: S3ServerFields.secretLabel(for: transferProtocol)
                 )
                 if isS3 {
-                    Section("S3") {
-                        TextField("區域", text: $s3Region, prompt: Text("自動判斷"))
-                        Picker("定址方式", selection: $s3AddressingStyle) {
-                            ForEach(S3AddressingStyle.allCases, id: \.self) { style in
-                                Text(style.displayName).tag(style)
-                            }
-                        }
-                    }
+                    S3OptionsSection(region: $s3Region, addressingStyle: $s3AddressingStyle)
                 }
                 Section {
                     TextField(
                         "遠端路徑", text: $remotePath,
-                        prompt: Text(isS3 ? "/bucket" : "/")
+                        prompt: S3ServerFields.remotePathPrompt(for: transferProtocol)
                     )
                     Picker("儲存方式", selection: $storageMode) {
                         ForEach(ServerConfig.StorageMode.allCases, id: \.self) { mode in
@@ -152,21 +124,8 @@ struct ServerFormView: View {
                 } header: {
                     Text("掛載")
                 } footer: {
-                    if remotePathIsUnusable {
-                        Label(
-                            "遠端路徑要以 bucket 名稱開頭，例如 /my-bucket 或 /my-bucket/backups。",
-                            systemImage: "exclamationmark.triangle.fill"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .labelStyle(.titleAndIcon)
-                        .fixedSize(horizontal: false, vertical: true)
-                    } else if isS3 {
-                        Text("遠端路徑的第一段是 bucket 名稱，必填。後面可以再接一層前綴，例如 /my-bucket/backups。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    S3RemotePathFooter(
+                        remotePath: remotePath, transferProtocol: transferProtocol)
                 }
             }
             // The port moves with the protocol the same way, in ProtocolPicker:

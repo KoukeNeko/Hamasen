@@ -40,6 +40,8 @@ struct ServerDetailView: View {
     @State private var draftStorageMode: ServerConfig.StorageMode
     @State private var draftCacheAllowance: CacheAllowance
     @State private var draftAuthenticationMethod: ServerConfig.AuthenticationMethod
+    @State private var draftS3Region: String
+    @State private var draftS3AddressingStyle: S3AddressingStyle
     @State private var importedKey: PrivateKeyImporter.ImportedKey?
     @State private var draftKeyPassphrase: String = ""
 
@@ -66,6 +68,8 @@ struct ServerDetailView: View {
         _draftStorageMode = State(initialValue: server.storageMode)
         _draftCacheAllowance = State(initialValue: CacheAllowance(bytes: server.cacheLimitBytes))
         _draftAuthenticationMethod = State(initialValue: server.authenticationMethod)
+        _draftS3Region = State(initialValue: server.s3Region ?? "")
+        _draftS3AddressingStyle = State(initialValue: server.s3AddressingStyle)
     }
 
     // MARK: - Draft state
@@ -81,6 +85,9 @@ struct ServerDetailView: View {
         let host = draftHost.trimmingCharacters(in: .whitespaces)
         let username = draftUsername.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty, !host.isEmpty, !username.isEmpty else { return nil }
+        guard S3ServerFields.namesABucket(draftRemotePath, transferProtocol: draftProtocol) else {
+            return nil
+        }
         return ServerConfig(
             id: server.id,
             name: name,
@@ -91,7 +98,9 @@ struct ServerDetailView: View {
             authenticationMethod: draftAuthenticationMethod,
             remotePath: draftRemotePath,
             storageMode: draftStorageMode,
-            cacheLimitBytes: draftCacheAllowance.bytes
+            cacheLimitBytes: draftCacheAllowance.bytes,
+            s3Region: draftS3Region.trimmingCharacters(in: .whitespaces),
+            s3AddressingStyle: draftS3AddressingStyle
         )
     }
 
@@ -159,11 +168,45 @@ struct ServerDetailView: View {
 
     // MARK: - Header
 
+    /// A mount is a registration, not a promise that the server is answering.
+    /// The two are usually the same thing, and when they are not, saying only
+    /// the first is how the header comes to contradict the test result
+    /// underneath it.
+    private enum MountPresentation {
+        case notMounted
+        case mounted
+        case mountedButUnreachable
+
+        var text: String {
+            switch self {
+            case .notMounted: return String(localized: "未掛載")
+            case .mounted: return String(localized: "已掛載")
+            case .mountedButUnreachable: return String(localized: "已掛載，連線失敗")
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .notMounted: return .gray
+            case .mounted: return .green
+            case .mountedButUnreachable: return .orange
+            }
+        }
+    }
+
+    /// Unreachable is only claimed where it has just been observed: a failed
+    /// test, not a guess.
+    private var mountPresentation: MountPresentation {
+        guard isMounted else { return .notMounted }
+        if case .failure = testState { return .mountedButUnreachable }
+        return .mounted
+    }
+
     private var header: some View {
         HStack(spacing: 14) {
             Image(systemName: "externaldrive.connected.to.line.below")
                 .font(.system(size: 34))
-                .foregroundStyle(isMounted ? Color.green : Color.secondary)
+                .foregroundStyle(isMounted ? mountPresentation.tint : Color.secondary)
                 .frame(width: 48)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -172,10 +215,7 @@ struct ServerDetailView: View {
                 HStack(spacing: 6) {
                     badge(server.transferProtocol.displayName, tint: .blue)
                     badge(server.authenticationMethod.displayName, tint: .purple)
-                    badge(
-                        isMounted ? "已掛載" : "未掛載",
-                        tint: isMounted ? .green : .gray
-                    )
+                    badge(mountPresentation.text, tint: mountPresentation.tint)
                     Text("\(server.username)@\(server.host):\(String(server.port))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -225,10 +265,18 @@ struct ServerDetailView: View {
                 ProtocolPicker(transferProtocol: $draftProtocol, portText: $draftPortText)
                 TextField("主機", text: $draftHost, prompt: Text("example.com"))
                 TextField("連接埠", text: $draftPortText)
-                TextField("使用者名稱", text: $draftUsername)
+                TextField(
+                    S3ServerFields.accountLabel(for: draftProtocol), text: $draftUsername)
             }
-            Section("掛載") {
-                TextField("遠端路徑", text: $draftRemotePath, prompt: Text("/"))
+            if draftProtocol == .s3 {
+                S3OptionsSection(
+                    region: $draftS3Region, addressingStyle: $draftS3AddressingStyle)
+            }
+            Section {
+                TextField(
+                    "遠端路徑", text: $draftRemotePath,
+                    prompt: S3ServerFields.remotePathPrompt(for: draftProtocol)
+                )
                 Picker("儲存方式", selection: $draftStorageMode) {
                     ForEach(ServerConfig.StorageMode.allCases, id: \.self) { mode in
                         Text(mode.displayName).tag(mode)
@@ -246,6 +294,11 @@ struct ServerDetailView: View {
                     allowance: draftCacheAllowance.bytes
                 )
                 .padding(.vertical, 4)
+            } header: {
+                Text("掛載")
+            } footer: {
+                S3RemotePathFooter(
+                    remotePath: draftRemotePath, transferProtocol: draftProtocol)
             }
             if draftProtocol.supportsPrivateKeyAuthentication {
                 // SSH is the only protocol here with a host key of its own;
@@ -261,7 +314,8 @@ struct ServerDetailView: View {
                 // Only offer "leave blank to keep" when there is in fact a
                 // stored password to keep.
                 allowsBlankPassword: hasStoredPassword,
-                allowsPrivateKey: draftProtocol.supportsPrivateKeyAuthentication
+                allowsPrivateKey: draftProtocol.supportsPrivateKeyAuthentication,
+                secretLabel: S3ServerFields.secretLabel(for: draftProtocol)
             )
         }
         .formStyle(.grouped)
