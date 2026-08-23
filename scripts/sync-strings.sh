@@ -31,6 +31,26 @@ readonly CATALOG="$PROJECT_ROOT/Hamasen/Localizable.xcstrings"
 readonly PACKAGE_CATALOG="$PROJECT_ROOT/HamasenCore/Sources/HamasenCore/Localizable.xcstrings"
 
 sync_package_catalog() {
+    if (( CHECK_ONLY )); then
+        local before
+        before="$(mktemp)"
+        cp "$PACKAGE_CATALOG" "$before"
+        write_package_catalog >/dev/null
+        if ! diff -q "$before" "$PACKAGE_CATALOG" >/dev/null; then
+            cp "$before" "$PACKAGE_CATALOG"
+            rm -f "$before"
+            echo "error: HamasenCore's catalog is out of date; run scripts/sync-strings.sh" >&2
+            exit 1
+        fi
+        cp "$before" "$PACKAGE_CATALOG"
+        rm -f "$before"
+        echo "==> HamasenCore's catalog is up to date"
+        return
+    fi
+    write_package_catalog
+}
+
+write_package_catalog() {
     echo "==> Syncing HamasenCore's catalog"
     /usr/bin/python3 - "$PROJECT_ROOT/HamasenCore/Sources/HamasenCore" "$PACKAGE_CATALOG" <<'EOF'
 import json, pathlib, re, sys
@@ -106,9 +126,21 @@ if [[ -z "$build_dir" ]]; then
 fi
 
 echo "==> Building so the extractor runs"
+# Matched to scripts/verify.sh so the two share one incremental build instead
+# of invalidating each other's, and so this runs where there is no signing
+# identity and none may be created.
+if [[ "${HAMASEN_UNSIGNED_BUILD:-0}" == "1" ]]; then
+    signing_arguments=(
+        CODE_SIGNING_ALLOWED=NO
+        CODE_SIGNING_REQUIRED=NO
+        CODE_SIGN_IDENTITY=
+    )
+else
+    signing_arguments=(-allowProvisioningUpdates)
+fi
 xcodebuild -project "$PROJECT_ROOT/Hamasen.xcodeproj" -scheme "$SCHEME" \
     -configuration Debug -destination 'platform=macOS' \
-    -allowProvisioningUpdates build | grep -E "error:|BUILD"
+    "${signing_arguments[@]}" build | grep -E "error:|BUILD"
 
 # Objects-normal holds one .stringsdata per compiled source file.
 stringsdata_dir="$build_dir/Hamasen.build/Debug/Hamasen.build/Objects-normal/arm64"
@@ -137,3 +169,34 @@ if (( CHECK_ONLY )); then
 fi
 
 sync_package_catalog
+
+# Keys matching the source is not the same as the app being translated. A key
+# the extractor added is a string somebody will see, and until it carries a
+# value in every language the app ships, what they see is the source text.
+check_translations() {
+    /usr/bin/python3 - "$CATALOG" "$PACKAGE_CATALOG" <<'EOF'
+import json, pathlib, sys
+
+LANGUAGES = ("en", "ja", "zh-Hant")
+untranslated = []
+for path in map(pathlib.Path, sys.argv[1:]):
+    catalog = json.loads(path.read_text())
+    for key, entry in catalog.get("strings", {}).items():
+        localizations = entry.get("localizations", {})
+        missing = [
+            language for language in LANGUAGES
+            if not localizations.get(language, {}).get("stringUnit", {}).get("value")
+        ]
+        if missing:
+            untranslated.append((path.name, key, missing))
+
+if untranslated:
+    print("error: these strings have no translation:", file=sys.stderr)
+    for name, key, missing in untranslated:
+        print(f"       {name}: {key}  (missing {', '.join(missing)})", file=sys.stderr)
+    sys.exit(1)
+print("==> Every string is translated")
+EOF
+}
+
+check_translations
