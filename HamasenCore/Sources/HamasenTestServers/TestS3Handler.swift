@@ -16,7 +16,7 @@ import Crypto
 import Foundation
 import NIOCore
 import NIOHTTP1
-@testable import HamasenCore
+import HamasenCore
 
 /// Serves the subset of the S3 API the app uses, over the in-memory store.
 final class S3Handler: ChannelInboundHandler {
@@ -234,15 +234,14 @@ final class S3Handler: ChannelInboundHandler {
 
     // MARK: - Objects
 
+    /// A HEAD carries no body, which cuts both ways: the client has only the
+    /// status to read a failure from, and the size has to be declared in a
+    /// header or there is no way to learn it without downloading the object.
     private func headObject(_ target: Target, context: ChannelHandlerContext) {
         guard let stored = store.object(forKey: target.key) else {
-            // HEAD carries no body, so there is no error document to read a
-            // code out of. The client has only the status.
             send(status: .notFound, context: context)
             return
         }
-        // A HEAD carries no body but must still describe the object, which
-        // is the only way a client learns its size without downloading it.
         send(status: .ok, contentLength: stored.data.count,
              extraHeaders: objectHeaders(for: stored), context: context)
     }

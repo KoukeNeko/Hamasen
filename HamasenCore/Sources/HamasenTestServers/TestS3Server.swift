@@ -17,7 +17,7 @@ import Foundation
 import NIOCore
 import NIOHTTP1
 import NIOPosix
-@testable import HamasenCore
+import HamasenCore
 
 /// In-process S3-compatible server, so the S3 tests are as hermetic as the
 /// SFTP and FTP ones: no cloud account, no container, no network.
@@ -29,38 +29,50 @@ import NIOPosix
 /// Only path-style addressing is served. A loopback address cannot host
 /// `bucket.127.0.0.1`, so virtual-hosted addressing is unreachable from here
 /// and is covered by `S3EndpointTests` instead.
-final class TestS3Server {
-    static let credentials = AWSCredentials(
+public final class TestS3Server {
+    public static let credentials = AWSCredentials(
         accessKeyID: "AKIAIOSFODNN7EXAMPLE",
         secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
-    static let bucket = "hamasen-test"
+    public static let bucket = "hamasen-test"
 
     /// Behaviour real implementations differ on, which a uniformly
     /// well-behaved fake would hide.
-    struct Behaviour: Sendable {
+    public struct Behaviour: Sendable {
         /// Caps a listing so pagination is exercised without needing a
         /// thousand objects to trigger it.
-        var maxKeysPerPage = 1_000
+        public var maxKeysPerPage = 1_000
         /// Return keys raw despite `encoding-type=url`, as some
         /// implementations do.
-        var ignoresEncodingType = false
+        public var ignoresEncodingType = false
         /// Answer writes with AccessDenied while still accepting the
         /// signature, the way a read-only key behaves.
-        var forbidsWrites = false
+        public var forbidsWrites = false
         /// Serve this many writes, then fail every one after. Lets a test
         /// interrupt a multipart upload partway, which is the only way to
         /// find out whether the parts already sent are abandoned — an upload
         /// left open keeps billing for them.
-        var failWritesAfter: Int?
+        public var failWritesAfter: Int?
 
-        static let wellBehaved = Behaviour()
+        public static let wellBehaved = Behaviour()
+
+        public init(
+            maxKeysPerPage: Int = 1_000,
+            ignoresEncodingType: Bool = false,
+            forbidsWrites: Bool = false,
+            failWritesAfter: Int? = nil
+        ) {
+            self.maxKeysPerPage = maxKeysPerPage
+            self.ignoresEncodingType = ignoresEncodingType
+            self.forbidsWrites = forbidsWrites
+            self.failWritesAfter = failWritesAfter
+        }
     }
 
     private static let portRange = 20_000..<60_000
     private static let maxBindAttempts = 5
 
-    let port: Int
-    let store: TestS3ObjectStore
+    public let port: Int
+    public let store: TestS3ObjectStore
     private let channel: Channel
     private let group: MultiThreadedEventLoopGroup
 
@@ -72,13 +84,15 @@ final class TestS3Server {
         self.group = group
     }
 
-    /// An endpoint pointing at this server, for a service under test.
-    var endpoint: S3Endpoint {
+    public var endpoint: S3Endpoint {
         S3Endpoint(scheme: "http", host: "127.0.0.1", port: port,
                    region: S3Endpoint.regionlessRegion, addressingStyle: .path)
     }
 
-    static func start(behaviour: Behaviour = .wellBehaved) async throws -> TestS3Server {
+    public static func start(
+        behaviour: Behaviour = .wellBehaved,
+        preferredPort: Int? = nil
+    ) async throws -> TestS3Server {
         let store = TestS3ObjectStore()
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let bootstrap = ServerBootstrap(group: group)
@@ -90,8 +104,9 @@ final class TestS3Server {
             }
 
         var lastError: Error?
-        for _ in 0..<maxBindAttempts {
-            let candidatePort = Int.random(in: portRange)
+        for attempt in 0..<maxBindAttempts {
+            let candidatePort = attempt == 0 ? (preferredPort ?? Int.random(in: portRange))
+                : Int.random(in: portRange)
             do {
                 let channel = try await bootstrap.bind(host: "127.0.0.1", port: candidatePort).get()
                 return TestS3Server(
@@ -104,7 +119,13 @@ final class TestS3Server {
         throw lastError ?? RemoteFileServiceError.connectionFailed(underlying: "無法綁定測試埠")
     }
 
-    func stop() async throws {
+    /// Reads one element out of a response body, for a caller driving the
+    /// HTTP API directly rather than through the client.
+    public static func value(ofElement name: String, in data: Data) -> String? {
+        S3Handler.values(ofElement: name, in: data).first
+    }
+
+    public func stop() async throws {
         try? await channel.close()
         try? await group.shutdownGracefully()
     }
@@ -115,10 +136,10 @@ final class TestS3Server {
 /// Objects live in a dictionary rather than a directory because S3 keys are
 /// not paths. "notes" and "notes/draft" are both ordinary keys in the same
 /// bucket, and no filesystem can hold a file and a directory under one name.
-final class TestS3ObjectStore: @unchecked Sendable {
-    struct StoredObject: Sendable, Equatable {
-        var data: Data
-        var lastModified: Date
+public final class TestS3ObjectStore: @unchecked Sendable {
+    public struct StoredObject: Sendable, Equatable {
+        public var data: Data
+        public var lastModified: Date
     }
 
     private let lock = NSLock()
@@ -126,32 +147,32 @@ final class TestS3ObjectStore: @unchecked Sendable {
     private var uploads: [String: [Int: Data]] = [:]
     private var writes = 0
 
-    func recordWrite() {
+    public func recordWrite() {
         lock.lock()
         defer { lock.unlock() }
         writes += 1
     }
 
-    var writeCount: Int {
+    public var writeCount: Int {
         lock.lock()
         defer { lock.unlock() }
         return writes
     }
 
-    func put(_ data: Data, forKey key: String, modifiedAt date: Date = Date()) {
+    public func put(_ data: Data, forKey key: String, modifiedAt date: Date = Date()) {
         lock.lock()
         defer { lock.unlock() }
         objects[key] = StoredObject(data: data, lastModified: date)
     }
 
-    func object(forKey key: String) -> StoredObject? {
+    public func object(forKey key: String) -> StoredObject? {
         lock.lock()
         defer { lock.unlock() }
         return objects[key]
     }
 
     @discardableResult
-    func remove(key: String) -> Bool {
+    public func remove(key: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         return objects.removeValue(forKey: key) != nil
@@ -159,13 +180,13 @@ final class TestS3ObjectStore: @unchecked Sendable {
 
     /// Sorted, because S3 lists keys in lexicographic order and pagination is
     /// meaningless without a stable one.
-    func sortedKeys() -> [String] {
+    public func sortedKeys() -> [String] {
         lock.lock()
         defer { lock.unlock() }
         return objects.keys.sorted()
     }
 
-    var count: Int {
+    public var count: Int {
         lock.lock()
         defer { lock.unlock() }
         return objects.count
@@ -173,7 +194,7 @@ final class TestS3ObjectStore: @unchecked Sendable {
 
     // MARK: Multipart
 
-    func beginUpload() -> String {
+    public func beginUpload() -> String {
         let id = UUID().uuidString
         lock.lock()
         defer { lock.unlock() }
@@ -181,7 +202,7 @@ final class TestS3ObjectStore: @unchecked Sendable {
         return id
     }
 
-    func addPart(_ data: Data, number: Int, toUpload id: String) -> Bool {
+    public func addPart(_ data: Data, number: Int, toUpload id: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard uploads[id] != nil else { return false }
@@ -192,7 +213,7 @@ final class TestS3ObjectStore: @unchecked Sendable {
     /// Assembles the parts in the order the client listed them, which is what
     /// makes a wrongly ordered CompleteMultipartUpload produce a wrong file
     /// here as it would anywhere else.
-    func completeUpload(_ id: String, partNumbers: [Int]) -> Data? {
+    public func completeUpload(_ id: String, partNumbers: [Int]) -> Data? {
         lock.lock()
         defer { lock.unlock() }
         guard let parts = uploads[id] else { return nil }
@@ -205,13 +226,13 @@ final class TestS3ObjectStore: @unchecked Sendable {
         return assembled
     }
 
-    func abortUpload(_ id: String) -> Bool {
+    public func abortUpload(_ id: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         return uploads.removeValue(forKey: id) != nil
     }
 
-    var openUploadCount: Int {
+    public var openUploadCount: Int {
         lock.lock()
         defer { lock.unlock() }
         return uploads.count

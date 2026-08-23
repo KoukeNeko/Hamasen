@@ -15,6 +15,7 @@
 import Foundation
 import Testing
 @testable import HamasenCore
+import HamasenTestServers
 
 @Suite("S3FileService")
 struct S3FileServiceTests {

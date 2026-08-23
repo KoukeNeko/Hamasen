@@ -15,6 +15,7 @@
 import Foundation
 import Testing
 @testable import HamasenCore
+import HamasenTestServers
 
 /// Tests the harness, not the app.
 ///
@@ -102,6 +103,30 @@ struct TestS3ServerTests {
             }
             #expect(response.status == 403)
             #expect(response.text.contains("SignatureDoesNotMatch"))
+        }
+    }
+
+    /// The signature is defined over the parameters in sorted order, so a
+    /// client may send them in any order at all. This server used to compare
+    /// the arriving order and refused curl, whose own signer sorts — and
+    /// would have refused every other correct client with it. The suite could
+    /// not see it, because the client under test happens to send them sorted.
+    @Test
+    func acceptsQueryParametersSentOutOfCanonicalOrder() async throws {
+        try await withServer { server in
+            server.store.put(Data("x".utf8), forKey: "a/1.txt")
+            let response = try await send("GET", query: [
+                URLQueryItem(name: "list-type", value: "2"),
+                URLQueryItem(name: "prefix", value: "a/"),
+            ], on: server) { url in
+                var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+                components.percentEncodedQuery = components.percentEncodedQuery?
+                    .split(separator: "&").reversed().joined(separator: "&")
+                return components.url ?? url
+            }
+            #expect(response.status == 200)
+            let listing = try S3ListResponseParser.parse(response.data)
+            #expect(listing.objects.map(\.key) == ["a/1.txt"])
         }
     }
 
@@ -314,7 +339,7 @@ struct TestS3ServerTests {
                 "POST", key: "big.bin", query: [URLQueryItem(name: "uploads", value: "")],
                 on: server)
             let uploadID = try #require(
-                S3Handler.values(ofElement: "uploadid", in: initiated.data).first)
+                TestS3Server.value(ofElement: "uploadid", in: initiated.data))
 
             for (index, chunk) in ["alpha", "beta", "gamma"].enumerated() {
                 let response = try await send(
@@ -349,7 +374,7 @@ struct TestS3ServerTests {
                 "POST", key: "big.bin", query: [URLQueryItem(name: "uploads", value: "")],
                 on: server)
             let uploadID = try #require(
-                S3Handler.values(ofElement: "uploadid", in: initiated.data).first)
+                TestS3Server.value(ofElement: "uploadid", in: initiated.data))
             #expect(server.store.openUploadCount == 1)
             let aborted = try await send(
                 "DELETE", key: "big.bin",

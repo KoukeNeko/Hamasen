@@ -37,7 +37,7 @@ let package = Package(
             resources: [.process("Localizable.xcstrings")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        // The in-process SFTP and FTP servers the client is exercised
+        // The in-process SFTP, FTP and S3 servers the client is exercised
         // against. Outside the test target so the demo executable can run
         // the same ones rather than a second copy of them.
         .target(
@@ -46,6 +46,7 @@ let package = Package(
                 "HamasenCore",
                 .product(name: "Citadel", package: "Citadel"),
                 .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
             ]
         ),

@@ -14,7 +14,7 @@
 
 import Crypto
 import Foundation
-@testable import HamasenCore
+import HamasenCore
 
 /// Checks an arriving request's signature the way a real service does.
 ///
@@ -22,13 +22,17 @@ import Foundation
 /// untested by every service-level test in the suite — and it is the part
 /// whose failures arrive as a 403 that names no cause.
 ///
+/// The derivation below is written out rather than borrowed from
+/// `AWSSignatureV4`. An oracle that shares the code it checks agrees with a
+/// wrong signing key as readily as a right one.
+///
 /// What this catches is *divergence*: the request that was signed differing
 /// from the request that was sent. It cannot catch an encoding that is wrong
 /// but consistent, because the client would then sign the same wrong bytes it
 /// transmits; `S3AddressingTests` pins the encoding itself against an
 /// independent reference.
-enum TestS3SignatureVerifier {
-    enum Failure: Error, Equatable, CustomStringConvertible {
+public enum TestS3SignatureVerifier {
+    public enum Failure: Error, Equatable, CustomStringConvertible {
         case missingAuthorization
         case malformedAuthorization(String)
         case unknownAccessKey(String)
@@ -36,7 +40,7 @@ enum TestS3SignatureVerifier {
         case signatureMismatch(expected: String, received: String)
         case payloadHashMismatch(declared: String, actual: String)
 
-        var description: String {
+        public var description: String {
             switch self {
             case .missingAuthorization:
                 return "no Authorization header"
@@ -57,7 +61,7 @@ enum TestS3SignatureVerifier {
     /// - Parameter uri: the request target exactly as it arrived. Using the
     ///   raw bytes rather than anything re-derived is the whole point: a
     ///   client whose URL and signature disagree is what this exists to catch.
-    static func verify(
+    public static func verify(
         method: String,
         uri: String,
         headers: [(name: String, value: String)],
@@ -75,7 +79,7 @@ enum TestS3SignatureVerifier {
 
         let declaredHash = lookup["x-amz-content-sha256"] ?? ""
         if declaredHash != AWSSignatureV4.unsignedPayload {
-            let actual = AWSSignatureV4.payloadHash(of: body)
+            let actual = hexadecimal(SHA256.hash(data: body))
             guard actual == declaredHash else {
                 throw Failure.payloadHashMismatch(declared: declaredHash, actual: actual)
             }
@@ -91,22 +95,26 @@ enum TestS3SignatureVerifier {
         let canonicalRequest = [
             method,
             split.map { String(uri[uri.startIndex..<$0]) } ?? uri,
-            split.map { String(uri[uri.index(after: $0)...]) } ?? "",
+            canonicalQuery(split.map { String(uri[uri.index(after: $0)...]) } ?? ""),
             canonicalHeaders,
             parts.signedHeaders.joined(separator: ";"),
             declaredHash,
         ].joined(separator: "\n")
 
-        let toSign = AWSSignatureV4.stringToSign(
-            canonicalRequest: canonicalRequest,
-            timestamp: lookup["x-amz-date"] ?? "",
-            scope: parts.scope)
-        let key = AWSSignatureV4.signingKey(
-            secretAccessKey: credentials.secretAccessKey,
-            day: parts.day, region: parts.region, service: parts.service)
-        let expected = HMAC<SHA256>
-            .authenticationCode(for: Data(toSign.utf8), using: key)
-            .reduce(into: "") { $0 += String(format: "%02x", $1) }
+        let toSign = [
+            "AWS4-HMAC-SHA256",
+            lookup["x-amz-date"] ?? "",
+            parts.scope,
+            hexadecimal(SHA256.hash(data: Data(canonicalRequest.utf8))),
+        ].joined(separator: "\n")
+
+        var key = SymmetricKey(data: Data("AWS4\(credentials.secretAccessKey)".utf8))
+        for component in [parts.day, parts.region, parts.service, "aws4_request"] {
+            key = SymmetricKey(data: Data(HMAC<SHA256>.authenticationCode(
+                for: Data(component.utf8), using: key)))
+        }
+        let expected = hexadecimal(
+            HMAC<SHA256>.authenticationCode(for: Data(toSign.utf8), using: key))
 
         guard expected == parts.signature else {
             throw Failure.signatureMismatch(expected: expected, received: parts.signature)
@@ -156,7 +164,31 @@ enum TestS3SignatureVerifier {
             signature: signature)
     }
 
+    /// The path is taken verbatim, because a request whose URL and signature
+    /// disagree is what this exists to catch. The query cannot be: the
+    /// signature is defined over the parameters in sorted order, so a client
+    /// is free to send them in any order and a server that compared the
+    /// arriving order would reject correct requests. Discovered by curl,
+    /// whose own signer sorts and which this refused until it did too.
+    private static func canonicalQuery(_ raw: String) -> String {
+        guard !raw.isEmpty else { return "" }
+        return raw
+            .split(separator: "&", omittingEmptySubsequences: true)
+            .map { field -> (String, String) in
+                guard let equals = field.firstIndex(of: "=") else { return (String(field), "") }
+                return (String(field[field.startIndex..<equals]),
+                        String(field[field.index(after: equals)...]))
+            }
+            .sorted { $0 < $1 }
+            .map { "\($0.0)=\($0.1)" }
+            .joined(separator: "&")
+    }
+
     private static func collapsingWhitespace(in value: String) -> String {
         value.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    private static func hexadecimal(_ bytes: some Sequence<UInt8>) -> String {
+        bytes.reduce(into: "") { $0 += String(format: "%02x", $1) }
     }
 }
