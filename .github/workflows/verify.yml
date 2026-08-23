@@ -29,6 +29,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Nothing after checkout talks to git over the network, so the
+          # token is not left behind in .git/config for the build to see.
+          persist-credentials: false
 
       - uses: ./.github/actions/pin-xcode
 
