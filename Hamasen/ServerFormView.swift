@@ -73,6 +73,13 @@ struct ServerFormView: View {
         return (try? S3ObjectKey(absolutePath: path)) != nil
     }
 
+    /// An empty field reads as one not filled in yet, the way an empty name
+    /// does. A field with something in it that cannot work has to say so, or
+    /// the disabled button is a dead end with no stated reason.
+    private var remotePathIsUnusable: Bool {
+        !remotePath.trimmingCharacters(in: .whitespaces).isEmpty && !namesABucket
+    }
+
     private var parsedPort: Int? {
         guard let port = Int(portText), (1...65535).contains(port) else { return nil }
         return port
@@ -145,12 +152,33 @@ struct ServerFormView: View {
                 } header: {
                     Text("掛載")
                 } footer: {
-                    if isS3 {
+                    if remotePathIsUnusable {
+                        Label(
+                            "遠端路徑要以 bucket 名稱開頭，例如 /my-bucket 或 /my-bucket/backups。",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .labelStyle(.titleAndIcon)
+                        .fixedSize(horizontal: false, vertical: true)
+                    } else if isS3 {
                         Text("遠端路徑的第一段是 bucket 名稱，必填。後面可以再接一層前綴，例如 /my-bucket/backups。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+            }
+            // The port moves with the protocol the same way, in ProtocolPicker:
+            // what the user typed is theirs, what they did not is the previous
+            // protocol's default and follows the switch. S3 cannot mount the
+            // root, so the default that suits every other protocol has to get
+            // out of the way of the hint that replaces it.
+            .onChange(of: transferProtocol) { previous, updated in
+                if updated == .s3, remotePath == ServerConfig.defaultRemotePath {
+                    remotePath = ""
+                } else if previous == .s3, remotePath.isEmpty {
+                    remotePath = ServerConfig.defaultRemotePath
                 }
             }
             .formStyle(.grouped)
