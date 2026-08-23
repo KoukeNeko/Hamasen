@@ -81,6 +81,8 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 let service = try await registry.service(for: pending.serverID)
                 let items = try await service.listDirectory(at: pending.path)
                 observer.didEnumerate(items.map { RemoteFileItem(serverID: pending.serverID, remoteItem: $0) })
+                RemoteDirectoryRecord.record(
+                    items, serverID: pending.serverID, directoryPath: pending.path)
                 walk.advance(subdirectories: items.filter(\.isDirectory).map(\.name))
             } catch {
                 // One directory the account cannot read, or one server that

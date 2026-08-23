@@ -55,6 +55,9 @@ public enum SharedConstants {
     /// The working-set walk in progress, kept between the pages the system
     /// asks for. See `WorkingSetWalk`.
     public static let workingSetWalkFileName = "working-set-walk.json"
+    /// What each remote directory last looked like, so a later listing can be
+    /// told apart from it. See `RemoteDirectorySnapshot`.
+    public static let remoteDirectorySnapshotFileName = "remote-directories.json"
 
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar

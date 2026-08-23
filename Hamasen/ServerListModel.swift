@@ -39,6 +39,7 @@ final class ServerListModel {
     /// What the mounted servers hold on this Mac, and what keeps it within
     /// bounds.
     let cache = CacheSupervisor()
+    let remoteChanges = RemoteChangeWatcher()
 
     private let credentialStore = KeychainCredentialStore()
 
@@ -94,6 +95,7 @@ final class ServerListModel {
             servers: { [weak self] in self?.mountedServers ?? [] },
             reporting: { [weak self] notice in self?.notice = notice }
         )
+        remoteChanges.start(servers: { [weak self] in self?.mountedServers ?? [] })
     }
 
     /// Earlier versions registered one domain per server (identifier = server

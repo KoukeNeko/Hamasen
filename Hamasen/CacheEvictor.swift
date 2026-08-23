@@ -65,7 +65,7 @@ actor CacheEvictor {
     /// server rather than when the allowance needs enforcing.
     func measureUsage(for servers: [ServerConfig]) async -> [UUID: CacheUsage] {
         guard let manager = try? FinderDomain.manager(),
-              let materialized = try? await materializedItems(from: manager)
+              let materialized = try? await MaterializedItems.all(from: manager)
         else { return [:] }
         let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
         let items = await measured(cachedItems(from: materialized), for: servers, using: manager)
@@ -132,7 +132,7 @@ actor CacheEvictor {
 
         do {
             let cached = await measured(
-                cachedItems(from: try await materializedItems(from: manager)),
+                cachedItems(from: try await MaterializedItems.all(from: manager)),
                 for: servers,
                 using: manager
             )
@@ -214,63 +214,4 @@ actor CacheEvictor {
         }
     }
 
-    /// The materialized set is served as an enumerator, so it has to be
-    /// drained page by page.
-    private func materializedItems(
-        from manager: NSFileProviderManager
-    ) async throws -> [any NSFileProviderItemProtocol] {
-        try await withCheckedThrowingContinuation { continuation in
-            let collector = MaterializedItemCollector(continuation: continuation)
-            collector.start(manager.enumeratorForMaterializedItems())
-        }
-    }
-}
-
-/// Collects one enumeration of the materialized set and resumes its
-/// continuation exactly once, whichever way the enumeration ends.
-private nonisolated final class MaterializedItemCollector: NSObject, NSFileProviderEnumerationObserver, @unchecked Sendable {
-    private let continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>
-    private var items: [any NSFileProviderItemProtocol] = []
-    private var hasResumed = false
-    /// Held because the enumerator is otherwise only referenced by the call
-    /// that started it, and it has to outlive that call.
-    private var enumerator: (any NSFileProviderEnumerator)?
-
-    /// Nonisolated because the enumerator drives this from whatever queue it
-    /// runs on; the protocol it conforms to is declared on the main actor,
-    /// which would otherwise put every callback there.
-    init(continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>) {
-        self.continuation = continuation
-    }
-
-    func start(_ enumerator: any NSFileProviderEnumerator) {
-        self.enumerator = enumerator
-        enumerator.enumerateItems(for: self, startingAt: NSFileProviderPage(Data()))
-    }
-
-    func didEnumerate(_ items: [any NSFileProviderItemProtocol]) {
-        self.items.append(contentsOf: items)
-    }
-
-    func finishEnumerating(upTo nextPage: NSFileProviderPage?) {
-        if let nextPage {
-            enumerator?.enumerateItems(for: self, startingAt: nextPage)
-            return
-        }
-        finish { $0.resume(returning: items) }
-    }
-
-    func finishEnumeratingWithError(_ error: any Error) {
-        finish { $0.resume(throwing: error) }
-    }
-
-    private func finish(
-        _ resume: (CheckedContinuation<[any NSFileProviderItemProtocol], Error>) -> Void
-    ) {
-        guard !hasResumed else { return }
-        hasResumed = true
-        enumerator?.invalidate()
-        enumerator = nil
-        resume(continuation)
-    }
 }

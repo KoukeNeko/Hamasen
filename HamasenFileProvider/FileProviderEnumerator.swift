@@ -118,6 +118,10 @@ final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
                 let service = try await registry.service(for: serverID)
                 let items = try await service.listDirectory(at: directoryPath)
                 observer.didEnumerate(items.map { RemoteFileItem(serverID: serverID, remoteItem: $0) })
+                // Every listing is a free observation of what is there. The
+                // poll that looks for changes has nothing to compare against
+                // unless the browsing that happens anyway writes it down.
+                RemoteDirectoryRecord.record(items, serverID: serverID, directoryPath: directoryPath)
                 observer.finishEnumerating(upTo: nil)
             } catch {
                 observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))

@@ -2448,6 +2448,28 @@
         }
       }
     },
+    "檢查頻率": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check every"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認間隔"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查頻率"
+          }
+        }
+      }
+    },
     "正在上傳": {
       "localizations": {
         "en": {
@@ -3330,6 +3352,28 @@
         }
       }
     },
+    "變更通知": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Notifications"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更通知"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "變更通知"
+          }
+        }
+      }
+    },
     "讓 Spotlight 索引整個伺服器": {
       "localizations": {
         "en": {
@@ -3470,6 +3514,28 @@
         }
       }
     },
+    "這些協定都不會主動通知，所以只能定期詢問。每次只重新查看你開過的資料夾，每個資料夾一次列舉請求，S3 會計費。預設關閉。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None of these protocols push changes, so the only way to notice one is to ask. Each round re-checks just the folders you have opened, one listing request per folder, which S3 bills for. Off by default."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらのプロトコルは変更を通知しないため、定期的に問い合わせるしかありません。1 回ごとに開いたことのあるフォルダだけを見直し、フォルダごとに 1 件のリスト取得を行います。S3 では課金対象です。既定ではオフです。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這些協定都不會主動通知，所以只能定期詢問。每次只重新查看你開過的資料夾，每個資料夾一次列舉請求，S3 會計費。預設關閉。"
+          }
+        }
+      }
+    },
     "這份備份是加密的，需要匯出時設定的密碼。": {
       "localizations": {
         "en": {
@@ -3554,6 +3620,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "這個協定不加密，密碼與檔案內容在網路上是可讀的。同一台伺服器若支援，請改用 SFTP 或 FTPS。"
+          }
+        }
+      }
+    },
+    "通知伺服器上的變更": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notify me about changes on servers"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバー上の変更を通知"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知伺服器上的變更"
           }
         }
       }

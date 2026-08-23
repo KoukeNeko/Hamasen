@@ -36,6 +36,7 @@ public enum AppSettings {
         public static let domainCapabilityGeneration = "domainCapabilityGeneration"
         public static let indexingDepth = "indexingDepth"
         public static let indexingDirectoryLimit = "indexingDirectoryLimit"
+        public static let remoteChangePollSeconds = "remoteChangePollSeconds"
     }
 
     public static let defaultConnectTimeoutSeconds = 30
@@ -97,6 +98,25 @@ public enum AppSettings {
     public static let defaultIndexingDirectoryLimit = WorkingSetWalk.Limits.default.maximumDirectories
     public static let indexingDirectoryLimitRange = 50...50_000
 
+    /// How often the app re-lists the directories somebody has open, to
+    /// notice what changed on the server.
+    ///
+    /// Off by default. Nothing here has a change feed, so noticing means
+    /// asking, and asking costs a listing request per directory — billed on
+    /// S3. Nextcloud polls every sixty seconds against a server that is
+    /// usually somebody's own; this is pointed at buckets that charge, so the
+    /// person paying decides.
+    public static let remoteChangePollOff = 0
+    public static let remoteChangePollRange = 30...3_600
+    public static let defaultRemoteChangePollSeconds = remoteChangePollOff
+
+    /// nil when polling is off.
+    public static func remoteChangePollInterval(from store: UserDefaults = sharedStore) -> TimeInterval? {
+        let seconds = store.integer(forKey: Keys.remoteChangePollSeconds)
+        guard remoteChangePollRange.contains(seconds) else { return nil }
+        return TimeInterval(seconds)
+    }
+
     public static func indexingLimits(from store: UserDefaults = sharedStore) -> WorkingSetWalk.Limits {
         let depth = store.integer(forKey: Keys.indexingDepth)
         let directories = store.integer(forKey: Keys.indexingDirectoryLimit)
@@ -121,6 +141,24 @@ public enum AppSettings {
             return max(defaultS3MultipartThresholdBytes, partSize)
         }
         return max(storedValue, partSize)
+    }
+}
+
+/// How often Settings offers to ask a server what changed.
+public enum RemoteChangePollInterval: Int, CaseIterable, Sendable, Identifiable {
+    case oneMinute = 60
+    case fiveMinutes = 300
+    case fifteenMinutes = 900
+    case oneHour = 3_600
+
+    public var id: Int { rawValue }
+
+    public init(seconds: Int) {
+        self = Self.allCases.first { $0.rawValue == seconds } ?? .fiveMinutes
+    }
+
+    public var displayName: String {
+        Duration.seconds(rawValue).formatted(.units(allowed: [.hours, .minutes], width: .wide))
     }
 }
 

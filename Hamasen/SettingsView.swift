@@ -250,6 +250,8 @@ private struct AdvancedSettingsView: View {
 
             IndexingSection()
 
+            RemoteChangeSection()
+
             S3UploadSection()
 
             Section {
@@ -261,6 +263,56 @@ private struct AdvancedSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// How often, if at all, the app asks a server what changed.
+private struct RemoteChangeSection: View {
+    @AppStorage(AppSettings.Keys.remoteChangePollSeconds, store: AppSettings.sharedStore)
+    private var pollSeconds = AppSettings.defaultRemoteChangePollSeconds
+
+    @Environment(ServerListModel.self) private var model
+
+    var body: some View {
+        Section {
+            Toggle("通知伺服器上的變更", isOn: enabled)
+            if pollSeconds != AppSettings.remoteChangePollOff {
+                Picker("檢查頻率", selection: interval) {
+                    ForEach(RemoteChangePollInterval.allCases) { choice in
+                        Text(choice.displayName).tag(choice)
+                    }
+                }
+            }
+        } header: {
+            Text("變更通知")
+        } footer: {
+            // The cost is the point: no protocol here pushes changes, so
+            // noticing one means asking, and asking is billed on S3.
+            Text("這些協定都不會主動通知，所以只能定期詢問。每次只重新查看你開過的資料夾，每個資料夾一次列舉請求，S3 會計費。預設關閉。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var enabled: Binding<Bool> {
+        Binding(
+            get: { pollSeconds != AppSettings.remoteChangePollOff },
+            set: { isOn in
+                pollSeconds = isOn
+                    ? RemoteChangePollInterval.fiveMinutes.rawValue
+                    : AppSettings.remoteChangePollOff
+                model.remoteChanges.restart()
+            })
+    }
+
+    private var interval: Binding<RemoteChangePollInterval> {
+        Binding(
+            get: { RemoteChangePollInterval(seconds: pollSeconds) },
+            set: {
+                pollSeconds = $0.rawValue
+                model.remoteChanges.restart()
+            })
     }
 }
 
