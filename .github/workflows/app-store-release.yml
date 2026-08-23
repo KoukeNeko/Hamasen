@@ -16,6 +16,10 @@ on:
       - '**.md'
       - LICENSE
       - Docs/**
+      # The pipeline is not the product. A commit that also touches sources
+      # still releases: a push is skipped only when every changed file is
+      # ignored.
+      - '.github/**'
   workflow_dispatch:
     inputs:
       build_number:
@@ -34,6 +38,11 @@ on:
 concurrency:
   group: app-store-release
   cancel-in-progress: false
+
+# Neither workflow writes anything back to GitHub, so the token gets nothing
+# beyond reading the tree it checks out.
+permissions:
+  contents: read
 
 env:
   ARCHIVE_PATH: ${{ github.workspace }}/build/Hamasen.xcarchive
