@@ -31,6 +31,9 @@ public enum AppSettings {
         public static let hasShownRemountForOnlineOnly = "hasShownRemountForOnlineOnly"
         public static let s3MultipartThresholdBytes = "s3MultipartThresholdBytes"
         public static let s3PartSizeBytes = "s3PartSizeBytes"
+        /// Which set of domain capabilities the registered domain was created
+        /// with. See `FinderDomain.capabilityGeneration`.
+        public static let domainCapabilityGeneration = "domainCapabilityGeneration"
     }
 
     public static let defaultConnectTimeoutSeconds = 30

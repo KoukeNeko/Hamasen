@@ -56,14 +56,50 @@ public enum FinderDomain {
         return nil
     }
 
-    /// Adds the domain unless it is already registered.
+    /// Bumped whenever a property of `domain` changes what the system will
+    /// ask the extension for.
+    ///
+    /// Adding a domain that already exists updates its display name and
+    /// hidden state — the header says so, and lists only those two. Every
+    /// other capability is fixed when the domain is created, so a domain
+    /// registered before a capability existed can never gain it. This is what
+    /// tells the two apart.
+    ///
+    /// 1: the original domain.
+    /// 2: search, so Spotlight can ask the extension for results (macOS 26+).
+    private static let capabilityGeneration = 2
+
+    /// Whether a registered domain predates what `domain` now declares.
+    ///
+    /// Wrong in either direction is expensive: never replacing leaves a
+    /// capability permanently unreachable, and replacing every launch throws
+    /// the replica away every launch.
+    static func needsReplacing(storedGeneration: Int) -> Bool {
+        storedGeneration < capabilityGeneration
+    }
+
+    /// Adds the domain, replacing one created before the capabilities it
+    /// declares now.
+    ///
+    /// Replacing means removing, which drops the replica: cached copies are
+    /// downloaded again the next time they are opened. Edits that have not
+    /// reached the server are kept, which is what `.preserveDirtyUserData`
+    /// is for. That cost is paid once, and only by someone whose domain
+    /// predates a capability.
     public static func register() async throws {
+        let store = AppSettings.sharedStore
         let domains = try await NSFileProviderManager.domains()
         let isRegistered = domains.contains {
             $0.identifier.rawValue == SharedConstants.mainDomainIdentifier
         }
-        guard !isRegistered else { return }
+
+        if isRegistered {
+            let generation = store.integer(forKey: AppSettings.Keys.domainCapabilityGeneration)
+            guard needsReplacing(storedGeneration: generation) else { return }
+            _ = try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData)
+        }
         try await NSFileProviderManager.add(domain)
+        store.set(capabilityGeneration, forKey: AppSettings.Keys.domainCapabilityGeneration)
     }
 
     /// Asks the system to re-enumerate.
