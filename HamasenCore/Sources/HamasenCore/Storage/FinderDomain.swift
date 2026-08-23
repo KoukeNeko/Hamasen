@@ -22,10 +22,19 @@ import Foundation
 /// the domain bookkeeping lives here instead of being repeated — and
 /// drifting — in each.
 public enum FinderDomain {
-    public static let domain = NSFileProviderDomain(
-        identifier: NSFileProviderDomainIdentifier(rawValue: SharedConstants.mainDomainIdentifier),
-        displayName: SharedConstants.mainDomainDisplayName
-    )
+    public static let domain: NSFileProviderDomain = {
+        let domain = NSFileProviderDomain(
+            identifier: NSFileProviderDomainIdentifier(
+                rawValue: SharedConstants.mainDomainIdentifier),
+            displayName: SharedConstants.mainDomainDisplayName
+        )
+        // Off by default, and the extension's NSFileProviderSearching
+        // conformance is never consulted without it.
+        if #available(macOS 26, *) {
+            domain.supportsStringSearchRequest = true
+        }
+        return domain
+    }()
 
     /// Registers the domain when something is mounted and removes it when
     /// nothing is, then asks Finder to re-read the server list.

@@ -35,6 +35,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
     private let domain: NSFileProviderDomain
     private let registry = ConnectionRegistry()
 
+    /// The same registry, reachable from the search conformance in its own
+    /// file. Private would mean a second registry and a second set of
+    /// connections for every query.
+    var searchRegistry: ConnectionRegistry { registry }
+
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
         super.init()
