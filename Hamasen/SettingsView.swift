@@ -248,9 +248,9 @@ private struct AdvancedSettingsView: View {
         Form {
             BackupSection(model: model)
 
-            IndexingSection()
+            IndexingSection(model: model)
 
-            RemoteChangeSection()
+            RemoteChangeSection(model: model)
 
             S3UploadSection()
 
@@ -268,10 +268,10 @@ private struct AdvancedSettingsView: View {
 
 /// How often, if at all, the app asks a server what changed.
 private struct RemoteChangeSection: View {
+    let model: ServerListModel
+
     @AppStorage(AppSettings.Keys.remoteChangePollSeconds, store: AppSettings.sharedStore)
     private var pollSeconds = AppSettings.defaultRemoteChangePollSeconds
-
-    @Environment(ServerListModel.self) private var model
 
     var body: some View {
         Section {
@@ -319,6 +319,8 @@ private struct RemoteChangeSection: View {
 /// How far the background walk goes so Spotlight can index what Finder has
 /// not opened.
 private struct IndexingSection: View {
+    let model: ServerListModel
+
     @AppStorage(AppSettings.Keys.indexingDepth, store: AppSettings.sharedStore)
     private var depth = AppSettings.defaultIndexingDepth
 
@@ -327,8 +329,6 @@ private struct IndexingSection: View {
 
     @AppStorage(AppSettings.Keys.indexingItemLimit, store: AppSettings.sharedStore)
     private var itemLimit = AppSettings.defaultIndexingItemLimit
-
-    @Environment(ServerListModel.self) private var model
 
     var body: some View {
         Section {
