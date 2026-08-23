@@ -134,16 +134,38 @@ public actor SFTPFileService: RemoteFileService {
             throw Self.mapError(error, operation: String(localized: "列出目錄", bundle: .module), path: path)
         }
 
-        return nameBatches
-            .flatMap(\.components)
-            .filter { $0.filename != "." && $0.filename != ".." }
-            .map { component in
-                Self.makeRemoteItem(
-                    path: RemotePath.join(path, component.filename),
-                    name: component.filename,
-                    attributes: component.attributes
-                )
-            }
+        var items: [RemoteItem] = []
+        for component in nameBatches.flatMap(\.components)
+        where component.filename != "." && component.filename != ".." {
+            let item = Self.makeRemoteItem(
+                path: RemotePath.join(path, component.filename),
+                name: component.filename,
+                attributes: component.attributes
+            )
+            items.append(item.kind == .symlink ? await resolvingLink(item, sftp: sftp) : item)
+        }
+        return items
+    }
+
+    /// Reports a symlink as whatever it points at.
+    ///
+    /// Listing a directory describes each entry itself, so a symlink is a
+    /// symlink; asking about one path follows the link, so the same entry is
+    /// a directory. The system compares the two, finds a file that is a
+    /// symlink here and a directory there, and retries that reconciliation
+    /// for as long as the item exists — a `.bun` cache full of them kept
+    /// fileproviderd's database busy until the daemon gave up and exited,
+    /// taking this extension with it.
+    ///
+    /// Following is also what the person browsing expects: a link to a
+    /// folder opens, a link to a file downloads. One extra request per
+    /// symlink, and only for symlinks. A link that points nowhere stays a
+    /// symlink, which is what it is.
+    private func resolvingLink(_ item: RemoteItem, sftp: SFTPClient) async -> RemoteItem {
+        guard let target = try? await sftp.getAttributes(at: remoteAbsolutePath(for: item.path)) else {
+            return item
+        }
+        return Self.makeRemoteItem(path: item.path, name: item.name, attributes: target)
     }
 
     public func itemInfo(at path: String) async throws -> RemoteItem {
