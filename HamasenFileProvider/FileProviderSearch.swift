@@ -103,6 +103,10 @@ final class RemoteSearchEnumerator: NSObject, NSFileProviderSearchEnumerator {
 
         let task = Task { [weak self] in
             var collected: [RemoteSearchResult] = []
+            defer {
+                FileProviderExtension.log.notice(
+                    "Search \"\(query)\" collected \(collected.count) result(s)")
+            }
             do {
                 for config in try ConnectionRegistry.mountedConfigs() {
                     if collected.count >= limit { break }
@@ -161,6 +165,7 @@ extension FileProviderExtension: NSFileProviderSearching {
     func searchEnumerator(
         for request: NSFileProviderStringSearchRequest
     ) -> any NSFileProviderSearchEnumerator {
-        RemoteSearchEnumerator(request: request, registry: searchRegistry)
+        Self.log.notice("Search requested: \"\(request.query)\" (\(request.desiredNumberOfResults) wanted)")
+        return RemoteSearchEnumerator(request: request, registry: searchRegistry)
     }
 }

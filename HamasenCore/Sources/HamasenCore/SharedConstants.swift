@@ -52,6 +52,9 @@ public enum SharedConstants {
     /// The host keys each endpoint has presented, so a changed one can be
     /// told from a first sighting.
     public static let knownHostsFileName = "known-hosts.json"
+    /// The working-set walk in progress, kept between the pages the system
+    /// asks for. See `WorkingSetWalk`.
+    public static let workingSetWalkFileName = "working-set-walk.json"
 
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar

@@ -43,7 +43,19 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
         super.init()
+        if #available(macOS 26, *) {
+            Self.log.notice(
+                "Extension started for \(domain.identifier.rawValue); "
+                + "supportsStringSearchRequest=\(domain.supportsStringSearchRequest) "
+                + "userEnabled=\(domain.userEnabled) hidden=\(domain.isHidden) "
+                + "testingModes=\(domain.testingModes.rawValue) "
+                + "supportsKnownFolders=\(domain.supportedKnownFolders.rawValue) "
+                + "replicatedKnownFolders=\(domain.replicatedKnownFolders.rawValue) "
+                + "backingStoreIdentity=\(domain.backingStoreIdentity.map { String(decoding: $0, as: UTF8.self) } ?? "nil")")
+        }
     }
+
+    static let log = HamasenLog(category: "extension")
 
     func invalidate() {
         let registry = registry
@@ -337,10 +349,13 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         switch containerItemIdentifier {
         case .trashContainer:
             return EmptyEnumerator()
-        case .rootContainer, .workingSet:
-            // The working set is how a replicated extension propagates
-            // changes, so it enumerates the same server folders as the root.
+        case .rootContainer:
             return ServerListEnumerator()
+        case .workingSet:
+            // What the replica holds and what Spotlight indexes. The server
+            // folders, as the root has, and then every directory beneath
+            // them that the settings allow.
+            return WorkingSetEnumerator(registry: registry)
         default:
             switch ItemIdentifierMapper.entity(for: containerItemIdentifier) {
             case .serverRoot(let serverID):

@@ -133,6 +133,10 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     /// S3 only. `.automatic` puts the bucket in the hostname for Amazon and
     /// in the path for everyone else, which is what R2 and MinIO need.
     public var s3AddressingStyle: S3AddressingStyle
+    /// Whether the extension walks this server's tree in the background so
+    /// Spotlight can index it. Every directory is one listing request, which
+    /// on S3 is billed, so a server can decline.
+    public var indexesInBackground: Bool
 
     public init(
         id: UUID = UUID(),
@@ -146,7 +150,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         storageMode: StorageMode = .automatic,
         cacheLimitBytes: Int64? = nil,
         s3Region: String? = nil,
-        s3AddressingStyle: S3AddressingStyle = .automatic
+        s3AddressingStyle: S3AddressingStyle = .automatic,
+        indexesInBackground: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -160,6 +165,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.cacheLimitBytes = cacheLimitBytes
         self.s3Region = s3Region
         self.s3AddressingStyle = s3AddressingStyle
+        self.indexesInBackground = indexesInBackground
     }
 
     /// Configurations written before key authentication existed have no
@@ -200,6 +206,10 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             S3AddressingStyle.self,
             forKey: .s3AddressingStyle
         ) ?? .automatic
+        // On for servers saved before the setting existed: what they get is
+        // Spotlight finding their files, which nobody had a reason to refuse.
+        self.indexesInBackground = try container.decodeIfPresent(
+            Bool.self, forKey: .indexesInBackground) ?? true
     }
 
     /// What makes two entries the same connection.

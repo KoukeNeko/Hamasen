@@ -34,6 +34,8 @@ public enum AppSettings {
         /// Which set of domain capabilities the registered domain was created
         /// with. See `FinderDomain.capabilityGeneration`.
         public static let domainCapabilityGeneration = "domainCapabilityGeneration"
+        public static let indexingDepth = "indexingDepth"
+        public static let indexingDirectoryLimit = "indexingDirectoryLimit"
     }
 
     public static let defaultConnectTimeoutSeconds = 30
@@ -85,6 +87,23 @@ public enum AppSettings {
 
     public static func isDebugLoggingEnabled(from store: UserDefaults = sharedStore) -> Bool {
         store.bool(forKey: Keys.debugLoggingEnabled)
+    }
+
+    /// How far down the background walk goes, and how many directories it
+    /// lists in one walk. Each directory is a request — billed on S3, load on
+    /// anything else — so both are bounded and both can be set.
+    public static let defaultIndexingDepth = WorkingSetWalk.Limits.default.maximumDepth
+    public static let indexingDepthRange = 1...20
+    public static let defaultIndexingDirectoryLimit = WorkingSetWalk.Limits.default.maximumDirectories
+    public static let indexingDirectoryLimitRange = 50...50_000
+
+    public static func indexingLimits(from store: UserDefaults = sharedStore) -> WorkingSetWalk.Limits {
+        let depth = store.integer(forKey: Keys.indexingDepth)
+        let directories = store.integer(forKey: Keys.indexingDirectoryLimit)
+        return WorkingSetWalk.Limits(
+            maximumDepth: indexingDepthRange.contains(depth) ? depth : defaultIndexingDepth,
+            maximumDirectories: indexingDirectoryLimitRange.contains(directories)
+                ? directories : defaultIndexingDirectoryLimit)
     }
 
     public static func s3PartSizeBytes(from store: UserDefaults = sharedStore) -> Int {

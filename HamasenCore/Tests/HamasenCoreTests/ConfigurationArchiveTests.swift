@@ -168,6 +168,7 @@ struct ConfigurationArchiveTests {
                 "remotePath",
                 "storageMode",
                 "s3AddressingStyle",
+                "indexesInBackground",
             ]
         )
     }
@@ -204,6 +205,7 @@ struct ConfigurationArchiveTests {
                 "cacheLimitBytes",
                 "s3Region",
                 "s3AddressingStyle",
+                "indexesInBackground",
             ]
         )
     }
