@@ -167,6 +167,43 @@ struct ConfigurationArchiveTests {
                 "authenticationMethod",
                 "remotePath",
                 "storageMode",
+                "s3AddressingStyle",
+            ]
+        )
+    }
+
+    /// The check above only sees fields that are always written. An optional
+    /// one is absent from a server that does not use it, and would reach a
+    /// backup unexamined — so the optional fields are pinned on a server that
+    /// has them set.
+    @Test("設定了選用欄位的伺服器，備份裡的欄位也就是這些")
+    func writesOnlyTheFieldsItShouldWhenTheOptionalOnesAreSet() throws {
+        var server = Self.server("R2")
+        server.transferProtocol = .s3
+        server.cacheLimitBytes = 1_073_741_824
+        server.s3Region = "auto"
+        server.s3AddressingStyle = .path
+
+        let data = try Self.archive(servers: [server]).encoded()
+        let json = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        let entry = try #require((json["servers"] as? [[String: Any]])?.first)
+
+        #expect(
+            Set(entry.keys) == [
+                "id",
+                "name",
+                "transferProtocol",
+                "host",
+                "port",
+                "username",
+                "authenticationMethod",
+                "remotePath",
+                "storageMode",
+                "cacheLimitBytes",
+                "s3Region",
+                "s3AddressingStyle",
             ]
         )
     }

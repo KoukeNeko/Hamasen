@@ -48,22 +48,26 @@ public enum RemoteFileServiceFactory {
                 config: config,
                 credentials: credentials,
                 endpoint: s3Endpoint(for: config),
-                connectTimeoutSeconds: connectTimeoutSeconds
+                connectTimeoutSeconds: connectTimeoutSeconds,
+                multipartThresholdBytes: AppSettings.s3MultipartThresholdBytes(),
+                partSizeBytes: AppSettings.s3PartSizeBytes()
             )
         }
     }
 
-    /// The defaults are chosen so the common providers work as typed: the
-    /// region is written into Amazon's own hostnames and can be read back
-    /// out, everything else is regionless, and only Amazon wants the bucket
-    /// in the hostname.
-    private static func s3Endpoint(for config: ServerConfig) -> S3Endpoint {
+    /// Unset settings are derived so the common providers work as typed:
+    /// the region is written into Amazon's own hostnames and can be read
+    /// back out, everything else is regionless, and only Amazon wants the
+    /// bucket in the hostname. The stored values exist for the provider that
+    /// does not fit that guess.
+    static func s3Endpoint(for config: ServerConfig) -> S3Endpoint {
         S3Endpoint(
             scheme: config.transferProtocol.urlScheme ?? "https",
             host: config.host,
             port: config.port == config.transferProtocol.defaultPort ? nil : config.port,
-            region: S3Endpoint.inferredRegion(forHost: config.host),
-            addressingStyle: .automatic
+            region: config.s3Region.flatMap { $0.isEmpty ? nil : $0 }
+                ?? S3Endpoint.inferredRegion(forHost: config.host),
+            addressingStyle: config.s3AddressingStyle
         )
     }
 

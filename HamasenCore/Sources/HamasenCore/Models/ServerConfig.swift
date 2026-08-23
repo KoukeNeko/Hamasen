@@ -127,6 +127,12 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     /// How much of it may stay, in bytes; nil leaves it to the system.
     /// Ignored while the mode is online only, which keeps nothing anyway.
     public var cacheLimitBytes: Int64?
+    /// S3 only. nil reads the region out of the endpoint, which is where
+    /// Amazon writes it and where nobody else has one to write.
+    public var s3Region: String?
+    /// S3 only. `.automatic` puts the bucket in the hostname for Amazon and
+    /// in the path for everyone else, which is what R2 and MinIO need.
+    public var s3AddressingStyle: S3AddressingStyle
 
     public init(
         id: UUID = UUID(),
@@ -138,7 +144,9 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         authenticationMethod: AuthenticationMethod = .password,
         remotePath: String = ServerConfig.defaultRemotePath,
         storageMode: StorageMode = .automatic,
-        cacheLimitBytes: Int64? = nil
+        cacheLimitBytes: Int64? = nil,
+        s3Region: String? = nil,
+        s3AddressingStyle: S3AddressingStyle = .automatic
     ) {
         self.id = id
         self.name = name
@@ -150,6 +158,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.remotePath = ServerConfig.normalizedRemotePath(remotePath)
         self.storageMode = storageMode
         self.cacheLimitBytes = cacheLimitBytes
+        self.s3Region = s3Region
+        self.s3AddressingStyle = s3AddressingStyle
     }
 
     /// Configurations written before key authentication existed have no
@@ -183,6 +193,13 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         // Absent before a limit could be set, and absent again whenever the
         // user chooses not to have one.
         self.cacheLimitBytes = try container.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes)
+        // Added with S3. Every server saved before it has neither, and the
+        // absent values are the ones that mean "work it out from the host".
+        self.s3Region = try container.decodeIfPresent(String.self, forKey: .s3Region)
+        self.s3AddressingStyle = try container.decodeIfPresent(
+            S3AddressingStyle.self,
+            forKey: .s3AddressingStyle
+        ) ?? .automatic
     }
 
     /// What makes two entries the same connection.

@@ -29,10 +29,34 @@ public enum AppSettings {
         /// Whether the user has been told that content stored before the
         /// online-only mode existed can only be freed by remounting.
         public static let hasShownRemountForOnlineOnly = "hasShownRemountForOnlineOnly"
+        public static let s3MultipartThresholdBytes = "s3MultipartThresholdBytes"
+        public static let s3PartSizeBytes = "s3PartSizeBytes"
     }
 
     public static let defaultConnectTimeoutSeconds = 30
     public static let connectTimeoutRange = 5...300
+
+    private static let bytesPerMebibyte = 1024 * 1024
+
+    /// Above this an upload is sent in parts. Below it a single request is
+    /// fewer round trips and cannot leave an unfinished upload behind.
+    public static let defaultS3MultipartThresholdBytes = 100 * bytesPerMebibyte
+    public static let s3MultipartThresholdRange =
+        (5 * bytesPerMebibyte)...(5 * 1024 * bytesPerMebibyte)
+
+    public static let defaultS3PartSizeBytes = 16 * bytesPerMebibyte
+    /// S3's own bounds: no part below 5 MiB except the last, none above 5 GiB.
+    public static let s3PartSizeRange = (5 * bytesPerMebibyte)...(5 * 1024 * bytesPerMebibyte)
+
+    /// The largest file that can be uploaded at the given part size, because
+    /// one upload is capped at this many parts. Shown next to the setting:
+    /// a smaller part size silently lowers this ceiling, and the failure it
+    /// eventually causes says nothing about why.
+    public static let s3MaximumParts = 10_000
+
+    public static func s3LargestUploadableBytes(partSizeBytes: Int) -> Int {
+        partSizeBytes * s3MaximumParts
+    }
 
     /// The shared store; falls back to standard defaults when the App Group
     /// container is unavailable (e.g. in unit tests without entitlements).
@@ -58,6 +82,23 @@ public enum AppSettings {
 
     public static func isDebugLoggingEnabled(from store: UserDefaults = sharedStore) -> Bool {
         store.bool(forKey: Keys.debugLoggingEnabled)
+    }
+
+    public static func s3PartSizeBytes(from store: UserDefaults = sharedStore) -> Int {
+        let storedValue = store.integer(forKey: Keys.s3PartSizeBytes)
+        guard s3PartSizeRange.contains(storedValue) else { return defaultS3PartSizeBytes }
+        return storedValue
+    }
+
+    /// Never below the part size: a threshold under one part would send a
+    /// single-part multipart upload, which is more requests for no gain.
+    public static func s3MultipartThresholdBytes(from store: UserDefaults = sharedStore) -> Int {
+        let partSize = s3PartSizeBytes(from: store)
+        let storedValue = store.integer(forKey: Keys.s3MultipartThresholdBytes)
+        guard s3MultipartThresholdRange.contains(storedValue) else {
+            return max(defaultS3MultipartThresholdBytes, partSize)
+        }
+        return max(storedValue, partSize)
     }
 }
 
