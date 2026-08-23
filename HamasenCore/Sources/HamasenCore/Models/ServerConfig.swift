@@ -23,6 +23,9 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         case webdavs
         case ftp
         case ftps
+        /// Every S3-compatible service: Cloudflare R2, Amazon, MinIO,
+        /// Backblaze, Wasabi. One API and one signature serve all of them.
+        case s3
 
         public var displayName: String {
             switch self {
@@ -31,6 +34,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .webdavs: return "WebDAV (HTTPS)"
             case .ftp: return "FTP"
             case .ftps: return "FTPS"
+            case .s3: return "S3"
             }
         }
 
@@ -40,6 +44,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .webdav: return 80
             case .webdavs: return 443
             case .ftp, .ftps: return 21
+            case .s3: return 443
             }
         }
 
@@ -51,6 +56,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .webdav: return "http"
             case .webdavs: return "https"
             case .ftp, .ftps: return nil
+            case .s3: return "https"
             }
         }
 

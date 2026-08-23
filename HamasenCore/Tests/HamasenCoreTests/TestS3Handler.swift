@@ -89,6 +89,20 @@ final class S3Handler: ChannelInboundHandler {
                  status: .forbidden, context: context)
             return
         }
+        if let limit = behaviour.failWritesAfter, isWrite {
+            // An abort is a DELETE, and refusing it too would make the test
+            // unable to tell a client that gave up cleanly from one that did
+            // not clean up at all.
+            let isAbort = head.uri.contains("uploadId") && head.method == .DELETE
+            if !isAbort {
+                store.recordWrite()
+                if store.writeCount > limit {
+                    send(error: "InternalError", message: "write \(store.writeCount) refused",
+                         status: .internalServerError, context: context)
+                    return
+                }
+            }
+        }
 
         switch (head.method, target.key.isEmpty) {
         case (.HEAD, true):
@@ -227,7 +241,10 @@ final class S3Handler: ChannelInboundHandler {
             send(status: .notFound, context: context)
             return
         }
-        send(status: .ok, extraHeaders: objectHeaders(for: stored), context: context)
+        // A HEAD carries no body but must still describe the object, which
+        // is the only way a client learns its size without downloading it.
+        send(status: .ok, contentLength: stored.data.count,
+             extraHeaders: objectHeaders(for: stored), context: context)
     }
 
     private func getObject(_ target: Target, head: HTTPRequestHead,
@@ -393,11 +410,12 @@ final class S3Handler: ChannelInboundHandler {
         status: HTTPResponseStatus,
         body: Data = Data(),
         contentType: String? = nil,
+        contentLength: Int? = nil,
         extraHeaders: [String: String] = [:],
         context: ChannelHandlerContext
     ) {
         var headers = HTTPHeaders()
-        headers.add(name: "Content-Length", value: String(body.count))
+        headers.add(name: "Content-Length", value: String(contentLength ?? body.count))
         if let contentType { headers.add(name: "Content-Type", value: contentType) }
         for (name, value) in extraHeaders { headers.add(name: name, value: value) }
 

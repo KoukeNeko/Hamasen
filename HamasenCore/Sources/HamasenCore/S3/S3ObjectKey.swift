@@ -30,12 +30,14 @@ public enum S3PathError: Error, Equatable, Sendable {
 /// inside it, which is why a "directory" here is only ever a prefix.
 public struct S3ObjectKey: Sendable, Equatable {
     public let bucket: String
-    /// No leading or trailing separator. Empty means the bucket itself.
+    /// Verbatim, except for a leading separator that S3 keys never carry.
+    /// A trailing one is kept: `photos/` and `photos` are different objects,
+    /// and that difference is the entire existence of an empty folder.
     public let key: String
 
     public init(bucket: String, key: String) {
         self.bucket = bucket
-        self.key = Self.trimmingSeparators(key)
+        self.key = Self.trimmingLeadingSeparators(key)
     }
 
     /// Splits a server-absolute path, the form `RemotePath.resolve` produces.
@@ -56,12 +58,18 @@ public struct S3ObjectKey: Sendable, Equatable {
     /// The bucket root is the empty string rather than "/", because S3 keys
     /// do not begin with a separator and asking for one lists nothing.
     public var directoryPrefix: String {
-        key.isEmpty ? "" : key + RemotePath.separator
+        if key.isEmpty { return "" }
+        return key.hasSuffix(RemotePath.separator) ? key : key + RemotePath.separator
     }
 
     /// The zero-byte object that makes an otherwise empty folder visible.
     /// S3 has no directories, so this marker is the whole of their existence.
     public var folderMarkerKey: String { directoryPrefix }
+
+    /// The marker addressed as an object, with its trailing separator intact.
+    public var folderMarker: S3ObjectKey {
+        S3ObjectKey(bucket: bucket, key: folderMarkerKey)
+    }
 
     public var isBucketRoot: Bool { key.isEmpty }
 
@@ -77,9 +85,16 @@ public struct S3ObjectKey: Sendable, Equatable {
         S3ObjectKey(bucket: bucket, key: key.isEmpty ? component : key + RemotePath.separator + component)
     }
 
-    /// Only the ends are trimmed. A key may legitimately contain "//" — S3
-    /// stores keys as opaque strings — so collapsing interior runs would
-    /// rename somebody's object.
+    private static func trimmingLeadingSeparators(_ value: String) -> String {
+        var trimmed = Substring(value)
+        while trimmed.hasPrefix(RemotePath.separator) { trimmed = trimmed.dropFirst() }
+        return String(trimmed)
+    }
+
+    /// Only the ends are trimmed, and only for a path: a trailing separator
+    /// there is syntax, not part of a name. A key may legitimately contain
+    /// "//" — S3 stores keys as opaque strings — so collapsing interior runs
+    /// would rename somebody's object.
     private static func trimmingSeparators(_ value: String) -> String {
         var trimmed = Substring(value)
         while trimmed.hasPrefix(RemotePath.separator) { trimmed = trimmed.dropFirst() }

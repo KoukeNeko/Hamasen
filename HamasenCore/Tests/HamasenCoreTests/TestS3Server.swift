@@ -47,6 +47,11 @@ final class TestS3Server {
         /// Answer writes with AccessDenied while still accepting the
         /// signature, the way a read-only key behaves.
         var forbidsWrites = false
+        /// Serve this many writes, then fail every one after. Lets a test
+        /// interrupt a multipart upload partway, which is the only way to
+        /// find out whether the parts already sent are abandoned — an upload
+        /// left open keeps billing for them.
+        var failWritesAfter: Int?
 
         static let wellBehaved = Behaviour()
     }
@@ -119,6 +124,19 @@ final class TestS3ObjectStore: @unchecked Sendable {
     private let lock = NSLock()
     private var objects: [String: StoredObject] = [:]
     private var uploads: [String: [Int: Data]] = [:]
+    private var writes = 0
+
+    func recordWrite() {
+        lock.lock()
+        defer { lock.unlock() }
+        writes += 1
+    }
+
+    var writeCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return writes
+    }
 
     func put(_ data: Data, forKey key: String, modifiedAt date: Date = Date()) {
         lock.lock()

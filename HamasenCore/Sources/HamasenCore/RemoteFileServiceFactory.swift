@@ -43,7 +43,28 @@ public enum RemoteFileServiceFactory {
                 credentials: credentials,
                 connectTimeoutSeconds: connectTimeoutSeconds
             )
+        case .s3:
+            return S3FileService(
+                config: config,
+                credentials: credentials,
+                endpoint: s3Endpoint(for: config),
+                connectTimeoutSeconds: connectTimeoutSeconds
+            )
         }
+    }
+
+    /// The defaults are chosen so the common providers work as typed: the
+    /// region is written into Amazon's own hostnames and can be read back
+    /// out, everything else is regionless, and only Amazon wants the bucket
+    /// in the hostname.
+    private static func s3Endpoint(for config: ServerConfig) -> S3Endpoint {
+        S3Endpoint(
+            scheme: config.transferProtocol.urlScheme ?? "https",
+            host: config.host,
+            port: config.port == config.transferProtocol.defaultPort ? nil : config.port,
+            region: S3Endpoint.inferredRegion(forHost: config.host),
+            addressingStyle: .automatic
+        )
     }
 
     /// Where SSH host keys are remembered.

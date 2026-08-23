@@ -66,6 +66,33 @@ struct S3ObjectKeyTests {
         }
     }
 
+    /// A trailing separator is part of the key, not decoration. It is the
+    /// only thing that distinguishes an empty folder's marker from an object
+    /// of the same name, and trimming it wrote the marker to the wrong key.
+    @Test
+    func aTrailingSeparatorSurvivesInAKey() {
+        let marker = S3ObjectKey(bucket: "b", key: "photos/")
+        #expect(marker.key == "photos/")
+        #expect(marker.absolutePath == "/b/photos/")
+        // And it is not doubled by asking for the prefix again.
+        #expect(marker.directoryPrefix == "photos/")
+    }
+
+    @Test
+    func theFolderMarkerIsAddressableAsAnObject() {
+        let folder = S3ObjectKey(bucket: "b", key: "photos")
+        #expect(folder.folderMarker.key == "photos/")
+        #expect(folder.folderMarker.absolutePath == "/b/photos/")
+        #expect(S3ObjectKey(bucket: "b", key: "").folderMarker.key == "")
+    }
+
+    /// A path's trailing separator is syntax rather than part of a name, so
+    /// parsing one still drops it.
+    @Test
+    func parsingAPathStillDropsItsTrailingSeparator() throws {
+        #expect(try S3ObjectKey(absolutePath: "/b/photos/").key == "photos")
+    }
+
     @Test
     func appendingBuildsAChildKey() {
         let root = S3ObjectKey(bucket: "b", key: "")
