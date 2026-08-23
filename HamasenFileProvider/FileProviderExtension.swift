@@ -71,6 +71,10 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void
     ) -> Progress {
+        if identifier == .trashContainer {
+            completionHandler(TrashItem(), nil)
+            return Self.answered()
+        }
         switch ItemIdentifierMapper.entity(for: identifier) {
         case .root:
             completionHandler(RootItem(), nil)
@@ -107,6 +111,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
     ) -> Progress {
         let domain = domain
         return performing(at: Self.location(of: itemIdentifier)) { service, location in
+            Self.log.notice("Fetching \(location.path) on \(location.serverID)")
             let info = try await service.itemInfo(at: location.path)
             let localURL = try Self.makeTemporaryFileURL(for: domain)
             try await service.downloadFile(at: location.path, to: localURL)

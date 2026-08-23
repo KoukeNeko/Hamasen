@@ -36,6 +36,33 @@ final class RootItem: NSObject, NSFileProviderItem {
     }
 }
 
+/// The domain's trash. Nothing ever goes in it — items do not allow
+/// trashing, so Finder deletes outright — but the system keeps one per
+/// domain on disk and has to be able to ask about it. Answering "no such
+/// item" left the system's copy dataless and its import of the domain
+/// failing on that one folder, retried for hours; and while a domain is
+/// importing, the system downloads nothing in the background, so a pinned
+/// file stayed a placeholder for days.
+final class TrashItem: NSObject, NSFileProviderItem {
+    private static let name = ".Trash"
+
+    var itemIdentifier: NSFileProviderItemIdentifier { .trashContainer }
+    var parentItemIdentifier: NSFileProviderItemIdentifier { .trashContainer }
+    var filename: String { Self.name }
+    var contentType: UTType { .folder }
+
+    var capabilities: NSFileProviderItemCapabilities {
+        [.allowsReading, .allowsContentEnumerating]
+    }
+
+    var itemVersion: NSFileProviderItemVersion {
+        NSFileProviderItemVersion(
+            contentVersion: Data("trash".utf8),
+            metadataVersion: Data("trash".utf8)
+        )
+    }
+}
+
 /// A server's top-level folder (named after the server). Managed from the
 /// app, so Finder cannot rename, move, or delete it.
 final class ServerFolderItem: NSObject, NSFileProviderItem {
