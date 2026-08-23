@@ -4,11 +4,15 @@ name: CodeQL
 # project: it segfaulted (exit 139) before the extractor saw a single Swift
 # file, which left the language silently dropped from the analysis. A manual
 # build mode hands the extractor the real compilations instead.
+#
+# Only where it earns its cost. The Swift analysis takes over half an hour,
+# and what it is for is stopping something reaching main — so it runs on the
+# way in and on what arrived, not on every commit at the frontier.
 on:
   push:
-    branches: [main, beta, dev]
+    branches: [main]
   pull_request:
-    branches: [main, beta, dev]
+    branches: [main]
   schedule:
     # Queries improve between commits; a weekly run catches what the rules
     # learned since the code last changed.
