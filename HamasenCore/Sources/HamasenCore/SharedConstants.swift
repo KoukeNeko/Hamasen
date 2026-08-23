@@ -59,6 +59,9 @@ public enum SharedConstants {
     /// told apart from it. See `RemoteDirectorySnapshot`.
     public static let remoteDirectorySnapshotFileName = "remote-directories.json"
 
+    /// Directories whose contents the system has to be told about again.
+    public static let directoryRefreshQueueFileName = "directory-refresh-queue.json"
+
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar
     /// label comes from the app's localized display name (哈瑪星 / Hamasen);

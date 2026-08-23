@@ -102,14 +102,15 @@ final class RemoteChangeWatcher {
             await Self.notify(summary)
 
             // The system's own re-enumeration is what updates Finder; the
-            // notification only tells the person. Each changed directory is
-            // signalled so the window does not keep showing the old listing
-            // next to a notification naming a file it does not have.
-            for change in changes where !change.isEmpty {
-                let directory = ItemIdentifierMapper.identifier(
-                    for: ItemIdentifierMapper.directoryEntity(serverID: server.id, path: change.directoryPath))
-                try? await manager.signalEnumerator(for: directory)
+            // notification only tells the person. The changed directories
+            // are queued for the extension to report, so the window does not
+            // keep showing the old listing next to a notification naming a
+            // file it does not have.
+            let changed = changes.filter { !$0.isEmpty }.map {
+                DirectoryRefreshQueue.Entry(serverID: server.id, path: $0.directoryPath)
             }
+            try? DirectoryRefreshQueue().enqueue(changed)
+            try? await manager.signalEnumerator(for: .workingSet)
         }
     }
 

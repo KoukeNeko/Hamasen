@@ -125,16 +125,18 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         }
     }
 
-    /// The system asks for the working set from the first page once, when
-    /// the domain is created; after that only for changes, and only when
-    /// signalled. An expired anchor is the one answer that makes it start
-    /// from the first page again, so that is how a walk that is due gets
-    /// to run.
+    /// The one channel a replicated extension has for changes: the system
+    /// asks here when signalled, and propagates what it hears to whatever
+    /// Finder is showing. Three things come through it — the server list's
+    /// own diff, the directories somebody queued for a refresh, and, when a
+    /// walk is due, an expired anchor, which is the one answer that makes
+    /// the system start from the first page again.
     ///
-    /// Not while a server change is waiting, though: enumerating the working
-    /// set adds to it and removes nothing, so a removed server reported that
-    /// way would stay in Finder. The change goes out first; the walk starts
-    /// on the next signal.
+    /// Not while a server change or a refresh is waiting, though: enumerating
+    /// the working set adds to it and removes nothing, so a removed server
+    /// reported that way would stay in Finder, and a queued refresh would
+    /// wait for the next signal. Those go out first; the walk starts next
+    /// time.
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
         let changes: ServerListEnumerator.PendingChanges
         do {
@@ -144,14 +146,32 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             return
         }
 
+        let refreshes = (try? DirectoryRefreshQueue().drain()) ?? []
         let walkIsDue = (try? WorkingSetWalkStore())?.isWalkDue() ?? false
-        Self.log.debug("Working set changes requested: serverChanges=\(!changes.diff.isEmpty) walkDue=\(walkIsDue)")
+        Self.log.notice(
+            "Working set changes requested: serverChanges=\(!changes.diff.isEmpty) "
+            + "refreshes=\(refreshes.count) walkDue=\(walkIsDue)")
 
-        if changes.diff.isEmpty, walkIsDue {
+        if changes.diff.isEmpty, refreshes.isEmpty, walkIsDue {
             observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
             return
         }
-        serverList.report(changes, to: observer)
+
+        let registry = registry
+        let serverList = serverList
+        Task {
+            for refresh in refreshes.sorted(by: { $0.path < $1.path }) {
+                do {
+                    try await DirectoryRefresh.report(
+                        serverID: refresh.serverID, directoryPath: refresh.path, registry: registry, to: observer)
+                } catch {
+                    // Whatever noticed the change will notice it again; a
+                    // server that is down must not hold up the server list.
+                    Self.log.notice("Could not refresh \(refresh.path) on \(refresh.serverID): \(error.localizedDescription)")
+                }
+            }
+            serverList.report(changes, to: observer)
+        }
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {

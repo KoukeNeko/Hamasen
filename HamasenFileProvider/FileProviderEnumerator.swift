@@ -137,15 +137,9 @@ final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
         }
     }
 
-    /// Brings the system's copy of the directory up to date with the server's.
-    ///
-    /// Every current item goes out as updated, and the system keeps the ones
-    /// whose version did not move. Nothing here can tell a pin from an edit
-    /// on the server, and that is the point: the pin lives in the metadata
-    /// version, so an item pinned a moment ago comes back different and
-    /// Finder redraws it. Deletions come from the record, which is why the
-    /// record is written here, as the system is told, and not by the poll
-    /// that noticed the change.
+    /// Answers with what is on the server now. The system asks on its own
+    /// schedule; a replicated extension cannot make it ask (see
+    /// DirectoryRefreshQueue), so this is a courtesy, not the channel.
     ///
     /// The anchor carries nothing: the record is the state, so any anchor
     /// the system hands back gets the same answer.
@@ -155,18 +149,8 @@ final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
         let registry = registry
         Task {
             do {
-                let service = try await registry.service(for: serverID)
-                let items = try await service.listDirectory(at: directoryPath)
-                let change = await RemoteDirectoryRecord.changes(
-                    afterRecording: items, serverID: serverID, directoryPath: directoryPath)
-                observer.didUpdate(items.map { RemoteFileItem(serverID: serverID, remoteItem: $0) })
-                let removed = (change?.removedNames ?? []).map { name in
-                    ItemIdentifierMapper.identifier(
-                        for: .item(serverID: serverID, path: RemotePath.join(directoryPath, name)))
-                }
-                if !removed.isEmpty {
-                    observer.didDeleteItems(withIdentifiers: removed)
-                }
+                try await DirectoryRefresh.report(
+                    serverID: serverID, directoryPath: directoryPath, registry: registry, to: observer)
                 observer.finishEnumeratingChanges(upTo: Self.anchor(), moreComing: false)
             } catch {
                 observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))

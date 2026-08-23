@@ -44,8 +44,12 @@ extension FileProviderExtension: NSFileProviderCustomAction {
                 completionHandler(nil)
                 await afterCompletion?()
             } catch is CancellationError {
+                CustomActionRunner.log.notice("\(action.rawValue) cancelled by the system")
                 completionHandler(CocoaError(.userCancelled))
             } catch {
+                // Finder shows little or nothing for a failed action, so the
+                // log is the only place the reason survives.
+                CustomActionRunner.log.error("\(action.rawValue) failed: \(error.localizedDescription)")
                 completionHandler(error)
             }
         }
@@ -56,12 +60,12 @@ extension FileProviderExtension: NSFileProviderCustomAction {
 
 /// Executes one context-menu action on the selection Finder passed along.
 enum CustomActionRunner {
-    private static let log = HamasenLog(category: "CustomActions")
+    static let log = HamasenLog(category: "CustomActions")
 
     /// Work that must wait until the system has been told the action is
-    /// done. Only unmounting the last server needs it: removing the domain
-    /// stops this very extension, so it cannot happen before the completion
-    /// is reported.
+    /// done. Unmounting the last server removes the domain, which stops this
+    /// very extension; and asking the system to re-enumerate a folder while
+    /// it is still waiting on the action never gets an answer.
     typealias AfterCompletion = () async -> Void
 
     static func run(
@@ -101,11 +105,9 @@ enum CustomActionRunner {
             try await freeLocalSpace(of: entities)
             return nil
         case .keepOnMac:
-            try await setPinned(true, on: entities)
-            return nil
+            return try setPinned(true, on: entities)
         case .stopKeepingOnMac:
-            try await setPinned(false, on: entities)
-            return nil
+            return try setPinned(false, on: entities)
         }
     }
 
@@ -168,26 +170,60 @@ enum CustomActionRunner {
     /// Records that the user wants the selection kept on this Mac, or no
     /// longer wants it.
     ///
-    /// The pin only has to be written: the item reports it, and the cache
-    /// sweep reads the same file, so nothing here has to touch content. The
-    /// system learns of it through the item's metadata version, which is why
-    /// the pin is part of that version — and why each parent is signalled:
-    /// the badge and the menu entry change the moment the system looks, not
-    /// the next time it happens to.
-    private static func setPinned(_ isPinned: Bool, on entities: [ProviderEntity]) async throws {
+    /// Records the pin, then — once the action is reported done — has the
+    /// system look again and, for a new pin, fetch the content.
+    ///
+    /// The pin itself only has to be written: the item reports it, and the
+    /// cache sweep reads the same file. The system learns of it through the
+    /// item's metadata version, which is why the pin is part of that version
+    /// and why each parent is queued for a refresh: the badge and the menu
+    /// entry change the moment the system looks, not the next time it
+    /// happens to. The keep-downloaded policy alone leaves the download to
+    /// the background downloader and its own idea of a convenient time — a
+    /// 4 GB file pinned days ago was still dataless — so the download is
+    /// asked for outright.
+    private static func setPinned(_ isPinned: Bool, on entities: [ProviderEntity]) throws -> AfterCompletion? {
         let store = try PinnedItemsStore()
-        var parents: Set<NSFileProviderItemIdentifier> = []
+        var parents: Set<DirectoryRefreshQueue.Entry> = []
+        var items: [NSFileProviderItemIdentifier] = []
         for entity in entities {
-            guard case .item = entity else { continue }
-            try store.setPinned(isPinned, for: ItemIdentifierMapper.identifier(for: entity).rawValue)
-            parents.insert(ItemIdentifierMapper.identifier(for: ItemIdentifierMapper.parentEntity(of: entity)))
+            guard case .item = entity, let serverID = entity.serverID else { continue }
+            let identifier = ItemIdentifierMapper.identifier(for: entity)
+            try store.setPinned(isPinned, for: identifier.rawValue)
+            items.append(identifier)
+            parents.insert(.init(serverID: serverID, path: RemotePath.parent(of: entity.path)))
         }
         PinnedItems.invalidate()
-        log.debug("\(isPinned ? "Pinned" : "Unpinned") \(entities.count) items")
+        log.notice("\(isPinned ? "Pinned" : "Unpinned") \(items.count) items")
+        return {
+            await refresh(parents)
+            if isPinned {
+                await download(items)
+            }
+        }
+    }
 
-        let manager = try FinderDomain.manager()
-        for parent in parents {
-            try await manager.signalEnumerator(for: parent)
+    private static func refresh(_ directories: Set<DirectoryRefreshQueue.Entry>) async {
+        do {
+            try DirectoryRefreshQueue().enqueue(directories)
+            try await FinderDomain.signalWorkingSet()
+        } catch {
+            // The pin is recorded either way; the system picks it up on its
+            // next enumeration instead of now.
+            log.error("Could not ask for a refresh of \(directories.count) directories: \(error.localizedDescription)")
+        }
+    }
+
+    private static func download(_ items: [NSFileProviderItemIdentifier]) async {
+        for item in items {
+            do {
+                try await FinderDomain.manager().requestDownloadForItem(
+                    withIdentifier: item, requestedRange: NSRange(location: NSNotFound, length: 0))
+                log.notice("Download requested for \(item.rawValue)")
+            } catch {
+                // Still pinned: the background downloader gets to it later.
+                log.error("Could not request the download of \(item.rawValue): \(error.localizedDescription)")
+            }
         }
     }
 
