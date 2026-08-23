@@ -160,6 +160,7 @@ final class S3Handler: ChannelInboundHandler {
     }
 
     private func listObjects(_ target: Target, context: ChannelHandlerContext) {
+        store.recordListing()
         let prefix = target.query["prefix"] ?? ""
         let delimiter = target.query["delimiter"].flatMap { $0.isEmpty ? nil : $0 }
         let requestedMax = target.query["max-keys"].flatMap(Int.init) ?? behaviour.maxKeysPerPage

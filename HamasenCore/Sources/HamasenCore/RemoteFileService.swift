@@ -66,6 +66,65 @@ public protocol RemoteFileService: Sendable {
 
     /// Moves or renames an item within the same connection.
     func moveItem(from oldPath: String, to newPath: String) async throws
+
+    /// Finds items whose name matches `query`, anywhere below `path`.
+    ///
+    /// Declared here rather than only in the extension below so the call is
+    /// dispatched dynamically: the default walks, and a protocol that can do
+    /// better replaces it. Written the other way, S3's version would never be
+    /// reached through the protocol.
+    ///
+    /// Returning fewer than exist is expected. No protocol here has a search
+    /// call, so the default visits directories one by one, and the caller's
+    /// limit is what stops it.
+    func searchItems(matching query: String, under path: String, limit: Int) async throws -> [RemoteItem]
+}
+
+extension RemoteFileService {
+    /// Visits directories breadth-first, nearest first, until the limit is
+    /// reached or there is nothing left.
+    ///
+    /// Breadth-first because a match beside what the user is looking at is
+    /// worth more than one twenty levels down, and because a depth-first walk
+    /// of a deep tree spends its whole budget in the first branch.
+    ///
+    /// Cancellation is not an optimisation here. The system starts a new
+    /// query on every keystroke, so a walk that ignored it would leave one
+    /// request in flight per character typed.
+    public func searchItems(
+        matching query: String, under path: String, limit: Int
+    ) async throws -> [RemoteItem] {
+        /// A walk that never stopped would keep costing requests long after
+        /// the user gave up reading the results.
+        let maximumDirectories = 200
+
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty, limit > 0 else { return [] }
+
+        var found: [RemoteItem] = []
+        var queue = [path]
+        var visited = 0
+
+        while !queue.isEmpty, found.count < limit, visited < maximumDirectories {
+            try Task.checkCancellation()
+            let directory = queue.removeFirst()
+            visited += 1
+
+            // A directory that cannot be read stops that branch, not the
+            // search: one folder the account may not enter is not a reason to
+            // report nothing at all.
+            guard let items = try? await listDirectory(at: directory) else { continue }
+
+            for item in items {
+                if item.name.localizedStandardContains(query) {
+                    found.append(item)
+                    if found.count == limit { break }
+                }
+                if item.isDirectory { queue.append(item.path) }
+            }
+        }
+        return found
+    }
 }
 
 /// Shared error type for RemoteFileService implementations so upper layers

@@ -476,9 +476,31 @@ public actor S3FileService: RemoteFileService {
         _ object: S3ObjectKey, path: String, operation: String
     ) async throws -> [String] {
         var keys: [String] = []
+        try await forEachObject(under: object, path: path, operation: operation) { entry in
+            keys.append(entry.key)
+            return .continue
+        }
+        return keys
+    }
+
+    private enum PageWalk {
+        case `continue`
+        case stop
+    }
+
+    /// Pages through a whole subtree, handing each object to `body` and
+    /// stopping as soon as it asks to. Shared so a search that has found
+    /// enough does not have to read the rest of the bucket to find out.
+    private func forEachObject(
+        under object: S3ObjectKey,
+        path: String,
+        operation: String,
+        body: (S3ListResponseParser.Object) -> PageWalk
+    ) async throws {
         var continuationToken: String?
         var pages = 0
         repeat {
+            try Task.checkCancellation()
             var query = [
                 Listing.typeParameter,
                 Listing.encodingParameter,
@@ -494,7 +516,9 @@ public actor S3FileService: RemoteFileService {
                 throw RemoteFileServiceError.operationFailed(
                     operation: operation, path: path, underlying: "無法解讀伺服器的列舉回應")
             }
-            keys += listing.objects.map(\.key)
+            for entry in listing.objects where body(entry) == .stop {
+                return
+            }
             continuationToken = listing.isTruncated ? listing.nextContinuationToken : nil
             pages += 1
         } while continuationToken != nil && pages < Listing.maximumPages
@@ -503,7 +527,40 @@ public actor S3FileService: RemoteFileService {
             throw RemoteFileServiceError.operationFailed(
                 operation: operation, path: path, underlying: "伺服器的列舉沒有結束")
         }
-        return keys
+    }
+
+    /// Replaces the walking default, because a bucket can be searched for real.
+    ///
+    /// `ListObjectsV2` without a delimiter returns every key beneath a prefix,
+    /// so one paginated listing covers the whole subtree — where SFTP and the
+    /// rest have to visit each directory and give up at a budget. Results here
+    /// are complete rather than however far a walk got.
+    public func searchItems(
+        matching query: String, under path: String, limit: Int
+    ) async throws -> [RemoteItem] {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty, limit > 0 else { return [] }
+
+        let object = try object(for: path)
+        let prefix = object.directoryPrefix
+        var found: [RemoteItem] = []
+
+        try await forEachObject(under: object, path: path, operation: Self.searchOperation) { entry in
+            let suffix = String(entry.key.dropFirst(prefix.count))
+            // The marker of an empty folder is the folder, not a file in it,
+            // and a name it cannot be searched by.
+            guard !suffix.isEmpty, !suffix.hasSuffix(RemotePath.separator) else { return .continue }
+            let name = RemotePath.name(of: RemotePath.root + suffix)
+            guard name.localizedStandardContains(query) else { return .continue }
+            found.append(RemoteItem(
+                path: RemotePath.join(path, suffix),
+                name: name,
+                kind: .file,
+                size: entry.size,
+                modificationDate: entry.lastModified))
+            return found.count >= limit ? .stop : .continue
+        }
+        return found
     }
 
     private func delete(keys: [String], bucket: String, path: String) async throws {
@@ -760,6 +817,7 @@ public actor S3FileService: RemoteFileService {
     private static let createOperation = String(localized: "建立資料夾", bundle: .module)
     private static let deleteOperation = String(localized: "刪除", bundle: .module)
     private static let moveOperation = String(localized: "移動", bundle: .module)
+    private static let searchOperation = String(localized: "搜尋", bundle: .module)
 }
 
 /// Reads the first element with a given local name, for the one value a

@@ -146,6 +146,21 @@ public final class TestS3ObjectStore: @unchecked Sendable {
     private var objects: [String: StoredObject] = [:]
     private var uploads: [String: [Int: Data]] = [:]
     private var writes = 0
+    private var listings = 0
+
+    /// How many times a bucket listing was served, so a test can tell one
+    /// request covering a subtree from one request per directory.
+    public var listingCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return listings
+    }
+
+    public func recordListing() {
+        lock.lock()
+        defer { lock.unlock() }
+        listings += 1
+    }
 
     public func recordWrite() {
         lock.lock()
