@@ -58,18 +58,24 @@ struct DemoServers {
         print(
             """
 
-            Three demo servers are running.
+            Three demo servers are running. Nothing here outlives this process.
 
-              SFTP   127.0.0.1:\(sftp.port)
-              FTP    127.0.0.1:\(ftp.port)
-              user   \(TestSFTPServer.username)
-              pass   \(TestSFTPServer.password)
+              SFTP    127.0.0.1:\(sftp.port)
+              FTP     127.0.0.1:\(ftp.port)
+                      user \(TestSFTPServer.username)   password \(TestSFTPServer.password)
+                      Both accept that one account.
 
-              S3     \(s3Hostname):\(s3.port)   remote path /\(TestS3Server.bucket)
-              key    \(TestS3Server.credentials.accessKeyID)
-              secret \(TestS3Server.credentials.secretAccessKey)
+              S3      \(s3Hostname):\(s3.port)
+                      remote path  /\(TestS3Server.bucket)
+                      access key   \(TestS3Server.credentials.accessKeyID)
+                      secret key   \(TestS3Server.credentials.secretAccessKey)
 
-            For a picture without an address in it, name them once:
+            Add one in Hamasen under the matching protocol. Set the port by
+            hand: the form fills in the protocol's own default, which none of
+            these use. For S3 the remote path is the bucket and is required.
+
+            For a picture with no address in it, name the SFTP and FTP servers
+            once:
 
               printf '\\n# Hamasen demo servers\\n127.0.0.1\\t\(sftpHostname)\\n127.0.0.1\\t\(ftpHostname)\\n' | sudo tee -a /etc/hosts
 
@@ -78,8 +84,9 @@ struct DemoServers {
 
               sudo sed -i '' '/hamasen.test/d;/# Hamasen demo servers/d' /etc/hosts
 
-            Add either in Hamasen, give it whatever display name suits the
-            picture, and mount it. Nothing here outlives this process.
+            The S3 one stays on \(s3Hostname). The app speaks plain HTTP to a
+            loopback address and HTTPS to everything else, and a name pointing
+            at 127.0.0.1 is not a loopback address as far as that check goes.
 
             Press Ctrl-C to stop.
 
