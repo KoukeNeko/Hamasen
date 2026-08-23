@@ -105,3 +105,23 @@ struct S3RemotePathFooter: View {
         }
     }
 }
+
+/// Whether this server is walked in the background for Spotlight.
+///
+/// In both forms, because a setting that exists in only one of them is one
+/// the user can create and then never see again.
+struct BackgroundIndexingToggle: View {
+    @Binding var isOn: Bool
+    let transferProtocol: ServerConfig.TransferProtocol
+
+    var body: some View {
+        Toggle("讓 Spotlight 索引整個伺服器", isOn: $isOn)
+        if isOn && transferProtocol == .s3 {
+            // Said here rather than only in Settings, because this is where
+            // the server that will be billed is chosen.
+            Text("每個資料夾是一次列舉請求，S3 供應商會計費。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}

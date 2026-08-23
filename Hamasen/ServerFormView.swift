@@ -32,6 +32,7 @@ struct ServerFormView: View {
     @State private var cacheAllowance: CacheAllowance
     @State private var s3Region: String
     @State private var s3AddressingStyle: S3AddressingStyle
+    @State private var indexesInBackground: Bool
 
     @State private var authenticationMethod: ServerConfig.AuthenticationMethod
     @State private var password: String = ""
@@ -51,6 +52,7 @@ struct ServerFormView: View {
         _cacheAllowance = State(initialValue: CacheAllowance(bytes: existingServer?.cacheLimitBytes))
         _s3Region = State(initialValue: existingServer?.s3Region ?? "")
         _s3AddressingStyle = State(initialValue: existingServer?.s3AddressingStyle ?? .automatic)
+        _indexesInBackground = State(initialValue: existingServer?.indexesInBackground ?? true)
         _authenticationMethod = State(initialValue: existingServer?.authenticationMethod ?? .password)
     }
 
@@ -121,6 +123,8 @@ struct ServerFormView: View {
                         }
                     }
                     .disabled(storageMode == .onlineOnly)
+                    BackgroundIndexingToggle(
+                        isOn: $indexesInBackground, transferProtocol: transferProtocol)
                 } header: {
                     Text("掛載")
                 } footer: {
@@ -176,7 +180,8 @@ struct ServerFormView: View {
             storageMode: storageMode,
             cacheLimitBytes: cacheAllowance.bytes,
             s3Region: s3Region.trimmingCharacters(in: .whitespaces),
-            s3AddressingStyle: s3AddressingStyle
+            s3AddressingStyle: s3AddressingStyle,
+            indexesInBackground: indexesInBackground
         )
         let usesKey = authenticationMethod == .privateKey
         let credentials = CredentialUpdate(

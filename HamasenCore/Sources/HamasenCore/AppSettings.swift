@@ -124,6 +124,32 @@ public enum AppSettings {
     }
 }
 
+/// The directory budgets Settings offers for the background walk.
+///
+/// A stepper over 50…50 000 is no way to choose a number, and a free field
+/// needs validation for a bound nobody can be expected to know. A handful of
+/// round figures says what the choice is about: how much of a server to
+/// index before stopping.
+public enum IndexingDirectoryLimit: Int, CaseIterable, Sendable, Identifiable {
+    case twoHundred = 200
+    case fiveHundred = 500
+    case twoThousand = 2_000
+    case fiveThousand = 5_000
+    case twentyThousand = 20_000
+
+    public var id: Int { rawValue }
+
+    public init(directories: Int) {
+        self = Self.allCases.first { $0.rawValue == directories }
+            ?? Self(rawValue: AppSettings.defaultIndexingDirectoryLimit)
+            ?? .twoThousand
+    }
+
+    public var displayName: String {
+        rawValue.formatted(.number)
+    }
+}
+
 /// The part sizes Settings offers.
 ///
 /// A free number field would need its own validation for bounds nobody can

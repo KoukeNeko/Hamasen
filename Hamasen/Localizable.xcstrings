@@ -177,6 +177,28 @@
         }
       }
     },
+    "%lld 層": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld levels"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 階層"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 層"
+          }
+        }
+      }
+    },
     "%lld 秒": {
       "localizations": {
         "en": {
@@ -358,6 +380,28 @@
         }
       }
     },
+    "Finder 沒開過的資料夾也會在背景列舉，讓 Spotlight 找得到裡面的檔案。每個資料夾是一次列舉請求，S3 會計費；可以在個別伺服器關閉。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folders Finder has not opened are listed in the background so Spotlight can find what is in them. Every folder is one listing request, which S3 bills for; it can be turned off per server."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder で開いていないフォルダもバックグラウンドで取得し、中のファイルを Spotlight で検索できるようにします。フォルダごとに 1 回のリスト取得リクエストが発生し、S3 では課金対象になります。サーバごとにオフにできます。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder 沒開過的資料夾也會在背景列舉，讓 Spotlight 找得到裡面的檔案。每個資料夾是一次列舉請求，S3 會計費；可以在個別伺服器關閉。"
+          }
+        }
+      }
+    },
     "GitHub Issues": {
       "localizations": {
         "en": {
@@ -492,6 +536,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Secret Access Key"
+          }
+        }
+      }
+    },
+    "Spotlight 索引": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spotlight indexing"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spotlight インデックス"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spotlight 索引"
           }
         }
       }
@@ -2448,6 +2514,50 @@
         }
       }
     },
+    "每個資料夾是一次列舉請求，S3 供應商會計費。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every folder is one listing request, which S3 providers bill for."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダごとに 1 回のリスト取得リクエストが発生し、S3 プロバイダでは課金対象になります。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個資料夾是一次列舉請求，S3 供應商會計費。"
+          }
+        }
+      }
+    },
+    "每次索引的目錄數上限": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folders per indexing pass"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 回のインデックスで処理するフォルダ数の上限"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次索引的目錄數上限"
+          }
+        }
+      }
+    },
     "每段大小": {
       "localizations": {
         "en": {
@@ -2932,6 +3042,28 @@
         }
       }
     },
+    "索引深度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Index depth"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インデックスの深さ"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "索引深度"
+          }
+        }
+      }
+    },
     "結束 Hamasen": {
       "localizations": {
         "en": {
@@ -3194,6 +3326,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "讀取伺服器設定失敗：%@"
+          }
+        }
+      }
+    },
+    "讓 Spotlight 索引整個伺服器": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Index the whole server for Spotlight"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバ全体を Spotlight でインデックスする"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讓 Spotlight 索引整個伺服器"
           }
         }
       }

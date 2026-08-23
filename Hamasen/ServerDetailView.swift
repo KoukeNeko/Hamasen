@@ -42,6 +42,7 @@ struct ServerDetailView: View {
     @State private var draftAuthenticationMethod: ServerConfig.AuthenticationMethod
     @State private var draftS3Region: String
     @State private var draftS3AddressingStyle: S3AddressingStyle
+    @State private var draftIndexesInBackground: Bool
     @State private var importedKey: PrivateKeyImporter.ImportedKey?
     @State private var draftKeyPassphrase: String = ""
 
@@ -70,6 +71,7 @@ struct ServerDetailView: View {
         _draftAuthenticationMethod = State(initialValue: server.authenticationMethod)
         _draftS3Region = State(initialValue: server.s3Region ?? "")
         _draftS3AddressingStyle = State(initialValue: server.s3AddressingStyle)
+        _draftIndexesInBackground = State(initialValue: server.indexesInBackground)
     }
 
     // MARK: - Draft state
@@ -100,7 +102,8 @@ struct ServerDetailView: View {
             storageMode: draftStorageMode,
             cacheLimitBytes: draftCacheAllowance.bytes,
             s3Region: draftS3Region.trimmingCharacters(in: .whitespaces),
-            s3AddressingStyle: draftS3AddressingStyle
+            s3AddressingStyle: draftS3AddressingStyle,
+            indexesInBackground: draftIndexesInBackground
         )
     }
 
@@ -288,6 +291,8 @@ struct ServerDetailView: View {
                     }
                 }
                 .disabled(draftStorageMode == .onlineOnly)
+                BackgroundIndexingToggle(
+                    isOn: $draftIndexesInBackground, transferProtocol: draftProtocol)
 
                 StorageBarView(
                     usage: model.cache.usage[server.id] ?? CacheUsage(pinnedBytes: 0, evictableBytes: 0),

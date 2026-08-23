@@ -248,6 +248,8 @@ private struct AdvancedSettingsView: View {
         Form {
             BackupSection(model: model)
 
+            IndexingSection()
+
             S3UploadSection()
 
             Section {
@@ -259,6 +261,50 @@ private struct AdvancedSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// How far the background walk goes so Spotlight can index what Finder has
+/// not opened.
+private struct IndexingSection: View {
+    @AppStorage(AppSettings.Keys.indexingDepth, store: AppSettings.sharedStore)
+    private var depth = AppSettings.defaultIndexingDepth
+
+    @AppStorage(AppSettings.Keys.indexingDirectoryLimit, store: AppSettings.sharedStore)
+    private var directoryLimit = AppSettings.defaultIndexingDirectoryLimit
+
+    var body: some View {
+        Section {
+            Stepper(value: $depth, in: AppSettings.indexingDepthRange) {
+                HStack {
+                    Text("索引深度")
+                    Spacer()
+                    Text("\(depth) 層")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            Picker("每次索引的目錄數上限", selection: directoryLimitSelection) {
+                ForEach(IndexingDirectoryLimit.allCases) { limit in
+                    Text(limit.displayName).tag(limit)
+                }
+            }
+        } header: {
+            Text("Spotlight 索引")
+        } footer: {
+            // The cost is named because it is real money on S3 and is not
+            // visible anywhere else: the walk happens when nobody is looking.
+            Text("Finder 沒開過的資料夾也會在背景列舉，讓 Spotlight 找得到裡面的檔案。每個資料夾是一次列舉請求，S3 會計費；可以在個別伺服器關閉。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var directoryLimitSelection: Binding<IndexingDirectoryLimit> {
+        Binding(
+            get: { IndexingDirectoryLimit(directories: directoryLimit) },
+            set: { directoryLimit = $0.rawValue })
     }
 }
 
