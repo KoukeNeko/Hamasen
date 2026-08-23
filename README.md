@@ -313,6 +313,13 @@ Planned: streaming uploads, remote change tracking.
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/LICENSE-APACHE_2.0-2196F3?style=for-the-badge&logo=github"></a>
 </p>
 
+
+## Support
+
+If Hamasen is useful to you, you can support development:
+
+<a href="https://buymeacoffee.com/doershing"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-doershing-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
+
 ## License
 
 [Apache 2.0](LICENSE) © KoukeNeko
