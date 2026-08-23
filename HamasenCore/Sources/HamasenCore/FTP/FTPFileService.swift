@@ -143,15 +143,39 @@ public actor FTPFileService: RemoteFileService {
         do {
             // MLSD states what each entry is; LIST leaves it to be guessed
             // from whatever the server's directory tool prints.
+            let entries: [RemoteItem]
             if features.contains("MLSD") {
                 let body = try await transferIn(command: "MLSD \(remotePath)", on: connection)
-                return FTPListing.parseMachineListing(body, directory: path)
+                entries = FTPListing.parseMachineListing(body, directory: path)
+            } else {
+                let body = try await transferIn(command: "LIST \(remotePath)", on: connection)
+                entries = FTPListing.parseUnixListing(body, directory: path)
             }
-            let body = try await transferIn(command: "LIST \(remotePath)", on: connection)
-            return FTPListing.parseUnixListing(body, directory: path)
+            return try await resolvingLinks(in: entries)
         } catch {
             throw Self.serviceError(error, operation: Self.listOperation, path: path)
         }
+    }
+
+    /// Reports each symlink as whatever it points at.
+    ///
+    /// A listing says an entry is a link; asking about that one path answers
+    /// with what CWD accepts, which for a link to a folder is a folder. The
+    /// system compares the two and retries that reconciliation for as long
+    /// as the item exists. Asking here, with the same call the later lookup
+    /// makes, is what keeps the two answers the same.
+    private func resolvingLinks(in entries: [RemoteItem]) async throws -> [RemoteItem] {
+        guard entries.contains(where: { $0.kind == .symlink }) else { return entries }
+        var resolved: [RemoteItem] = []
+        for entry in entries {
+            guard entry.kind == .symlink else {
+                resolved.append(entry)
+                continue
+            }
+            // A link that points nowhere stays a link, which is what it is.
+            resolved.append((try? await itemInfo(at: entry.path)) ?? entry)
+        }
+        return resolved
     }
 
     public func itemInfo(at path: String) async throws -> RemoteItem {
