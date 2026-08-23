@@ -62,7 +62,7 @@ public enum RemoteFileServiceFactory {
     /// does not fit that guess.
     static func s3Endpoint(for config: ServerConfig) -> S3Endpoint {
         S3Endpoint(
-            scheme: config.transferProtocol.urlScheme ?? "https",
+            scheme: S3Endpoint.scheme(forHost: config.host),
             host: config.host,
             port: config.port == config.transferProtocol.defaultPort ? nil : config.port,
             region: config.s3Region.flatMap { $0.isEmpty ? nil : $0 }

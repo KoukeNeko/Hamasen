@@ -72,6 +72,23 @@ public struct S3Endpoint: Sendable, Equatable {
 
     // MARK: - Addressing
 
+    /// Plain HTTP for a loopback address, HTTPS for everything else.
+    ///
+    /// The signature keeps the secret off the wire either way, but the
+    /// objects themselves would travel in the clear, so this is not offered
+    /// as a setting. A loopback address is the one case where there is no
+    /// wire: the traffic never leaves the machine, and it is what makes a
+    /// server running here — MinIO, or the demo one — reachable at all.
+    public static func scheme(forHost host: String) -> String {
+        isLoopback(host) ? "http" : "https"
+    }
+
+    static func isLoopback(_ host: String) -> Bool {
+        let bare = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        return bare == "localhost" || bare == "::1" || bare.hasPrefix("127.")
+    }
+
+
     /// Amazon writes the region into its own hostnames, so a user pointing at
     /// AWS should not have to type it twice. Everything else reports
     /// `regionlessRegion`, which R2 and MinIO accept.

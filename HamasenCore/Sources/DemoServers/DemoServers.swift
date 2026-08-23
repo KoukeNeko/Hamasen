@@ -15,8 +15,7 @@
 import Foundation
 import HamasenTestServers
 
-/// Runs an SFTP and an FTP server on this Mac, serving a directory of
-/// made-up files.
+/// Runs an SFTP, an FTP and an S3 server on this Mac, serving made-up files.
 ///
 /// It exists so the app can be shown — a screenshot, a walkthrough — without
 /// pointing it at a real server, whose hostname and account would be in every
@@ -29,6 +28,7 @@ import HamasenTestServers
 struct DemoServers {
     private static let sftpPort = 2222
     private static let ftpPort = 2121
+    private static let s3Port = 9000
 
     /// Names for the demo servers, under the TLD RFC 2606 reserves for
     /// exactly this. `.test` can never be registered, so these can never
@@ -40,23 +40,34 @@ struct DemoServers {
     /// it. /etc/hosts is not consulted over the network and is not filtered.
     private static let sftpHostname = "files.hamasen.test"
     private static let ftpHostname = "ftp.hamasen.test"
+    /// Not named through /etc/hosts like the other two: the app speaks plain
+    /// HTTP to a loopback address and HTTPS to anything else, and a name
+    /// resolving to 127.0.0.1 is not a loopback address as far as that check
+    /// is concerned.
+    private static let s3Hostname = "127.0.0.1"
 
     static func main() async throws {
         let sftp = try await TestSFTPServer.start(preferredPort: sftpPort)
         let ftp = try await TestFTPServer.start(preferredPort: ftpPort)
+        let s3 = try await TestS3Server.start(preferredPort: s3Port)
 
         try DemoContent.populate(sftp.rootDirectory)
         try DemoContent.populate(ftp.rootDirectory)
+        DemoContent.populate(s3.store)
 
         print(
             """
 
-            Two demo servers are running. Both accept the same account.
+            Three demo servers are running.
 
               SFTP   127.0.0.1:\(sftp.port)
               FTP    127.0.0.1:\(ftp.port)
               user   \(TestSFTPServer.username)
               pass   \(TestSFTPServer.password)
+
+              S3     \(s3Hostname):\(s3.port)   remote path /\(TestS3Server.bucket)
+              key    \(TestS3Server.credentials.accessKeyID)
+              secret \(TestS3Server.credentials.secretAccessKey)
 
             For a picture without an address in it, name them once:
 
@@ -87,6 +98,7 @@ struct DemoServers {
         }
         try await sftp.stop()
         try await ftp.stop()
+        try await s3.stop()
     }
 }
 
@@ -119,6 +131,20 @@ enum DemoContent {
         ("deploy.sh", 2),
     ]
 
+    /// The same tree as objects. S3 has no directories, so a folder is the
+    /// shared start of other keys — and an empty one would need a marker,
+    /// which nothing here has.
+    static func populate(_ store: TestS3ObjectStore) {
+        for (directory, files) in tree {
+            for file in files {
+                store.put(body(for: file), forKey: "\(directory)/\(file.name)")
+            }
+        }
+        for file in looseFiles {
+            store.put(body(for: file), forKey: file.name)
+        }
+    }
+
     static func populate(_ root: URL) throws {
         for (directory, files) in tree {
             let url = root.appendingPathComponent(directory)
@@ -135,11 +161,15 @@ enum DemoContent {
     /// Filled with repeated text rather than zeroes, so anything that opens
     /// one sees a file rather than a blank of the right length.
     private static func write(_ file: (name: String, kilobytes: Int), into directory: URL) throws {
+        try body(for: file).write(to: directory.appendingPathComponent(file.name))
+    }
+
+    private static func body(for file: (name: String, kilobytes: Int)) -> Data {
         let line = "Demo content for \(file.name). Not a real file.\n"
         var contents = ""
         while contents.utf8.count < file.kilobytes * 1024 {
             contents += line
         }
-        try Data(contents.utf8).write(to: directory.appendingPathComponent(file.name))
+        return Data(contents.utf8)
     }
 }

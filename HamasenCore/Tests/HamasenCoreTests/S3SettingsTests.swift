@@ -86,6 +86,20 @@ struct S3SettingsTests {
         #expect(endpoint(host: "minio.example.com", port: 9000).port == 9000)
     }
 
+    /// A server running on this machine is the one case where there is no
+    /// wire for the objects to travel over in the clear, and it is what
+    /// makes MinIO — or the demo server — reachable at all.
+    @Test(arguments: [
+        ("127.0.0.1", "http"), ("127.1.2.3", "http"), ("localhost", "http"),
+        ("::1", "http"), ("[::1]", "http"),
+        ("abc.r2.cloudflarestorage.com", "https"), ("s3.amazonaws.com", "https"),
+        ("192.168.1.10", "https"), ("minio.example.com", "https"),
+    ])
+    func plainHTTPIsUsedOnlyForALoopbackAddress(host: String, scheme: String) {
+        #expect(S3Endpoint.scheme(forHost: host) == scheme)
+        #expect(endpoint(host: host).scheme == scheme)
+    }
+
     @Test
     func theStoredAddressingStyleIsCarriedThrough() {
         #expect(endpoint(host: "s3.amazonaws.com", style: .path)
