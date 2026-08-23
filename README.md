@@ -6,8 +6,9 @@
 
 <p align="center">
   <strong>Your servers, docked in Finder.</strong><br>
-  Mount SFTP, FTP and WebDAV servers as native Finder locations — browse, open,
-  edit and drag files without a separate client window.
+  Mount SFTP, FTP, WebDAV and S3-compatible storage as native Finder
+  locations — browse, open, edit and drag files without a separate client
+  window.
 </p>
 
 <p align="center">
@@ -143,10 +144,16 @@ be running only for the per-server space limits, which it enforces as it runs.
   encrypted keys included)
 - **FTP** and **FTPS** (explicit `AUTH TLS`), passive mode
 - **WebDAV** over HTTP or HTTPS, Basic authentication
+- **S3-compatible object storage** — Cloudflare R2, Amazon S3, MinIO,
+  Backblaze B2, Wasabi, and anything else speaking the same API. The region
+  and the addressing style are read out of the hostname, and both can be set
+  by hand for a provider that fits neither guess.
 
 Plain FTP and plain WebDAV send credentials and contents in the clear. The
 protocol picker says so where the choice is made; neither is a good idea over a
-network you do not control.
+network you do not control. S3 is always HTTPS, except to a loopback address —
+where there is no network for anything to travel over, and where a server
+running on this Mac would otherwise be unreachable.
 
 ## Why "Hamasen" 哈瑪星?
 
@@ -176,6 +183,9 @@ Hamasen.xcodeproj
     ├── FTPFileService           Written here: control and data connections,
     │                            passive mode, MLSD/LIST, REST, AUTH TLS
     ├── WebDAVFileService        URLSession, no dependencies
+    ├── S3FileService            URLSession over one REST API and one
+    │                            signature, which is every S3-compatible
+    │                            provider; AWSSignatureV4 written here
     ├── KnownHosts               Host keys, recorded on first use
     ├── ConfigurationArchive     Backup, plain and passphrase-sealed
     ├── CacheEvictionPlan        What to drop, given each server's allowance
@@ -225,14 +235,17 @@ Development signing certificate.
 
 Tests need no network and no external service. `HamasenCoreTests` stands up an
 in-process SFTP server (Citadel's server API over a temp directory), an
-in-process WebDAV server, and an in-process FTP server, and runs the real
-clients against them. 209 tests cover connecting with either credential type,
+in-process WebDAV server, an in-process FTP server and an in-process S3 server,
+and runs the real clients against them. The S3 one verifies every signature it
+is sent, so the hardest part of that protocol is exercised rather than assumed.
+317 tests cover connecting with either credential type,
 authentication failures, key parsing, listing, upload and download integrity,
 ranged reads across chunk boundaries, create/delete/rename, the `remotePath`
 base directory, item identifier encoding, misbehaving-server quirks
 (redirects, 207, 416, ignored `Range` headers), FTP reply and listing parsing,
-host key checking, the eviction plan, backup encryption, and the diffing that
-drives Finder updates.
+host key checking, the eviction plan, backup encryption, the diffing that
+drives Finder updates, and Signature Version 4 pinned step by step against the
+worked example Amazon publishes.
 
 To see the app without pointing it at a real server:
 
@@ -240,8 +253,10 @@ To see the app without pointing it at a real server:
 cd HamasenCore && swift run DemoServers
 ```
 
-It runs the same SFTP and FTP servers the tests use, over invented files, and
-prints the ports, the account and an `/etc/hosts` line that gives them names.
+It runs the same SFTP, FTP and S3 servers the tests use and prints what each
+one needs. The two file servers hold a made-up home directory; the bucket holds
+what a bucket holds — content hashes, date partitions and an empty folder that
+exists only as the zero-byte object named after it.
 
 ## Troubleshooting
 
@@ -303,13 +318,29 @@ Running the app from Xcode after archiving does the same thing.
 - The Finder context menu follows the system language, not the app's: Finder
   draws that menu and reads the names in its own language.
 
+Object storage is not a file system, and three of the differences are visible:
+
+- **Nothing is renamed.** Moving a file copies it on the server and deletes the
+  original; moving a folder does that once per object inside it. Everything is
+  copied before anything is deleted, so an interrupted move leaves the source
+  intact and some duplicates behind rather than losing what had not been copied.
+- **An empty folder is one zero-byte object** named after it. That is the only
+  form it can take, so a folder made by another tool may not be there, and one
+  made here may not show up in a tool that hides such objects.
+- **A key can name both an object and a folder**, since `a` says nothing about
+  `a/b`. Finder cannot show one name twice: the object is shown, and what lies
+  under the prefix is not reachable.
+
+Listing a bucket costs requests, which some providers bill for. Browsing in
+Finder issues them as you go.
+
 Planned: streaming uploads, remote change tracking.
 
 <p>
   <img alt="SwiftUI" src="https://img.shields.io/badge/SWIFTUI-0071E3?style=for-the-badge&logo=swift&logoColor=white">
   <a href="https://github.com/apple/swift-nio"><img alt="SwiftNIO" src="https://img.shields.io/badge/SWIFTNIO-F05138?style=for-the-badge&logo=swift&logoColor=white"></a>
   <a href="https://github.com/orlandos-nl/Citadel"><img alt="Citadel" src="https://img.shields.io/badge/CITADEL-SSH-7F52FF?style=for-the-badge"></a>
-  <img alt="209 tests" src="https://img.shields.io/badge/TESTS-209-4CAF50?style=for-the-badge&logo=swift&logoColor=white">
+  <img alt="317 tests" src="https://img.shields.io/badge/TESTS-317-4CAF50?style=for-the-badge&logo=swift&logoColor=white">
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/LICENSE-APACHE_2.0-2196F3?style=for-the-badge&logo=github"></a>
 </p>
 
