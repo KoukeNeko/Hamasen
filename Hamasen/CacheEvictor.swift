@@ -61,13 +61,27 @@ actor CacheEvictor {
         var usage: [UUID: CacheUsage] = [:]
     }
 
+    /// The pinned identifiers, or nil when they cannot be read.
+    ///
+    /// Never an empty set in that case: with nothing known to be pinned every
+    /// pinned file becomes a candidate, and the sweep would evict what the
+    /// user asked to keep. The extension's `PinnedItems` refuses the same way.
+    private func loadPinned() -> Set<String>? {
+        do {
+            return try PinnedItemsStore().loadPinnedIdentifiers()
+        } catch {
+            log.error("Skipping the cache pass: the pinned items could not be read: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Measures without dropping anything, for when the user is looking at a
     /// server rather than when the allowance needs enforcing.
     func measureUsage(for servers: [ServerConfig]) async -> [UUID: CacheUsage] {
         guard let manager = try? FinderDomain.manager(),
               let materialized = try? await MaterializedItems.all(from: manager)
         else { return [:] }
-        let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
+        guard let pinned = loadPinned() else { return [:] }
         let items = await measured(cachedItems(from: materialized), for: servers, using: manager)
         return CacheEvictionPlan.usage(of: items, pinned: pinned)
     }
@@ -137,7 +151,7 @@ actor CacheEvictor {
                 using: manager
             )
             // What the user pinned is exempt, whatever the allowance says.
-            let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
+            guard let pinned = loadPinned() else { return Outcome() }
             var outcome = Outcome(
                 heldOverByPins: CacheEvictionPlan.serversHeldOverAllowanceByPins(
                     items: cached, policies: policies, pinned: pinned

@@ -220,4 +220,75 @@ struct WorkingSetWalkTests {
         store.clear()
         #expect(store.isWalkDue(at: start + oneHour))
     }
+
+    // MARK: - The walk as change batches
+
+    private func makeStore() -> WorkingSetWalkStore {
+        WorkingSetWalkStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("walk-\(UUID().uuidString).json"))
+    }
+
+    /// With no walk on file the first change batch begins one, which is how
+    /// the daily walk starts without an expired anchor.
+    @Test
+    func aDueWalkStartsInTheNextChangeBatch() {
+        let store = makeStore()
+        let walk = store.walkForChangeBatch(after: nil, serverIDs: [a], limits: .default, at: start)
+        #expect(walk?.current == .init(serverID: a, path: "/", depth: 0))
+    }
+
+    @Test
+    func aWalkThatIsNotDueIsNotStarted() throws {
+        let store = makeStore()
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        walk.advance(itemCount: 0, subdirectories: [])
+        walk.markCompleted(at: start)
+        try store.save(walk)
+        #expect(store.walkForChangeBatch(after: walk.token, serverIDs: [a], limits: .default, at: start + oneHour) == nil)
+        #expect(store.walkForChangeBatch(after: nil, serverIDs: [a], limits: .default, at: start + oneHour) == nil)
+    }
+
+    /// The anchor names the walk; the batch after this one resumes it.
+    @Test
+    func anUnfinishedWalkIsResumedFromItsToken() throws {
+        let store = makeStore()
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        walk.advance(itemCount: 0, subdirectories: ["x"])
+        try store.save(walk)
+        let resumed = store.walkForChangeBatch(after: walk.token, serverIDs: [a], limits: .default, at: start + oneHour)
+        #expect(resumed == walk)
+    }
+
+    /// A saved step the system never recorded leaves the anchor one behind.
+    /// Refusing it would strand the walk until it goes stale.
+    @Test
+    func aTokenOneStepBehindStillResumesTheSameWalk() throws {
+        let store = makeStore()
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        let behind = walk.token
+        walk.advance(itemCount: 0, subdirectories: ["x"])
+        try store.save(walk)
+        #expect(store.walkForChangeBatch(after: behind, serverIDs: [a], limits: .default, at: start + oneHour) == walk)
+    }
+
+    /// Another walk (the first import pages through its own) replaced the
+    /// file. This anchor's walk is gone, and the newer one is not ours to
+    /// step through.
+    @Test
+    func aTokenFromAnotherWalkDoesNotResumeIt() throws {
+        let store = makeStore()
+        let other = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        try store.save(WorkingSetWalk(serverIDs: [a], startedAt: start))
+        #expect(store.walkForChangeBatch(after: other.token, serverIDs: [a], limits: .default, at: start + oneHour) == nil)
+    }
+
+    /// The anchor of a batch carries the token as JSON beside the list
+    /// digest, and the header refuses more than 500 bytes.
+    @Test
+    func theAnchorAWalkStepEndsOnFitsTheLimit() {
+        var walk = WorkingSetWalk(serverIDs: [a])
+        for _ in 0..<500 { walk.advance(itemCount: 0, subdirectories: ["x"]) }
+        let anchor = WorkingSetAnchor(serverList: String(repeating: "f", count: 32), walk: walk.token)
+        #expect(anchor.encoded().count < 500)
+    }
 }

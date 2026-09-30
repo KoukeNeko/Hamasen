@@ -109,14 +109,15 @@ final class ServerListModel {
         else { return }
 
         guard !legacyDomains.isEmpty else { return }
+        var legacyServerIDs: Set<UUID> = []
         for domain in legacyDomains {
             if let serverID = UUID(uuidString: domain.identifier.rawValue),
                servers.contains(where: { $0.id == serverID }) {
-                mountedServerIDs.insert(serverID)
+                legacyServerIDs.insert(serverID)
             }
             try? await NSFileProviderManager.remove(domain)
         }
-        persistMountedSet()
+        persistMountedServers(adding: legacyServerIDs)
     }
 
     // MARK: - CRUD
@@ -340,8 +341,7 @@ final class ServerListModel {
     }
 
     func mount(_ config: ServerConfig) async {
-        mountedServerIDs.insert(config.id)
-        persistMountedSet()
+        persistMountedServers(adding: [config.id])
         await syncDomainRegistration()
     }
 
@@ -355,6 +355,9 @@ final class ServerListModel {
             errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
             return
         }
+        // Its directories would be reported as new when it comes back. A miss
+        // is reclaimed by the poll's next `keepOnly` or by pruning.
+        try? RemoteDirectorySnapshotStore().forget(serverID: config.id)
         await syncDomainRegistration()
     }
 
@@ -445,10 +448,14 @@ final class ServerListModel {
 
     // MARK: - Domain helpers
 
-    private func persistMountedSet() {
+    /// Adds to the mounted set by delta and takes the result from the store.
+    ///
+    /// The extension removes servers from the same file (unmounting from
+    /// Finder), so writing back the set this model holds could undo that.
+    private func persistMountedServers(adding serverIDs: Set<UUID>) {
         guard let stores = stores() else { return }
         do {
-            try stores.mounted.saveMountedServerIDs(mountedServerIDs)
+            mountedServerIDs = try stores.mounted.addMountedServers(serverIDs)
         } catch {
             errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
         }
@@ -464,6 +471,14 @@ final class ServerListModel {
             )
         } catch {
             errorMessage = String(localized: "更新 Finder 位置失敗：\(error.localizedDescription)")
+        }
+        // The progress objects belong to the domain's manager, which only
+        // exists once the domain does — and a replaced domain has a new one.
+        // Bound here, after the registration, and dropped with the domain.
+        if mountedServerIDs.isEmpty {
+            transfers.stop()
+        } else {
+            transfers.refreshDomainBinding()
         }
         // Content that never made it to the server survives the unmount;
         // showing it is the only way the user learns it is there.

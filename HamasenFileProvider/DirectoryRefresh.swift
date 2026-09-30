@@ -25,25 +25,39 @@ import HamasenCore
 /// so an item pinned a moment ago comes back different and Finder redraws
 /// it. Deletions come from the record of the last listing, which is why the
 /// record is written here, as the system is told, and not by the poll that
-/// noticed the change.
+/// noticed the change. A directory with no record yet has no known deletions,
+/// so its first refresh only updates; the record it writes serves the next.
+///
+/// "Every current item" costs no spurious re-download: the content version
+/// comes from `RemoteItem.contentVersionToken`, the same derivation the
+/// record diffs, so an item the server did not change comes back with the
+/// version the system already holds.
 enum DirectoryRefresh {
+    @discardableResult
     static func report(
         serverID: UUID,
         directoryPath: String,
         registry: ConnectionRegistry,
         to observer: NSFileProviderChangeObserver
-    ) async throws {
+    ) async throws -> [RemoteItem] {
         let service = try await registry.service(for: serverID)
         let items = try await service.listDirectory(at: directoryPath)
         let change = await RemoteDirectoryRecord.changes(
             afterRecording: items, serverID: serverID, directoryPath: directoryPath)
         observer.didUpdate(items.map { RemoteFileItem(serverID: serverID, remoteItem: $0) })
-        let removed = (change?.removedNames ?? []).map { name in
-            ItemIdentifierMapper.identifier(
-                for: .item(serverID: serverID, path: RemotePath.join(directoryPath, name)))
-        }
+        let removed = identifiers(ofRemoved: change?.removedNames ?? [], serverID: serverID, directoryPath: directoryPath)
         if !removed.isEmpty {
             observer.didDeleteItems(withIdentifiers: removed)
+        }
+        return items
+    }
+
+    static func identifiers(
+        ofRemoved names: [String], serverID: UUID, directoryPath: String
+    ) -> [NSFileProviderItemIdentifier] {
+        names.map { name in
+            ItemIdentifierMapper.identifier(
+                for: .item(serverID: serverID, path: RemotePath.join(directoryPath, name)))
         }
     }
 }

@@ -55,9 +55,16 @@ public enum SharedConstants {
     /// The working-set walk in progress, kept between the pages the system
     /// asks for. See `WorkingSetWalk`.
     public static let workingSetWalkFileName = "working-set-walk.json"
-    /// What each remote directory last looked like, so a later listing can be
-    /// told apart from it. See `RemoteDirectorySnapshot`.
-    public static let remoteDirectorySnapshotFileName = "remote-directories.json"
+    /// What each remote directory last looked like, one file per directory,
+    /// so a later listing can be told apart from it. See
+    /// `RemoteDirectorySnapshotStore`.
+    public static let remoteDirectoriesDirectoryName = "remote-directories"
+    /// The single file that held all of the above before it was split.
+    /// Only ever deleted.
+    public static let legacyRemoteDirectorySnapshotFileName = "remote-directories.json"
+    /// Server-list snapshots the sync anchor refers to by digest. See
+    /// `ServerListSnapshotStore`.
+    public static let serverListSnapshotsDirectoryName = "server-list-snapshots"
 
     /// Directories whose contents the system has to be told about again.
     public static let directoryRefreshQueueFileName = "directory-refresh-queue.json"

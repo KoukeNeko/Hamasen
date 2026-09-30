@@ -129,14 +129,26 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
     /// asks here when signalled, and propagates what it hears to whatever
     /// Finder is showing. Three things come through it — the server list's
     /// own diff, the directories somebody queued for a refresh, and, when a
-    /// walk is due, an expired anchor, which is the one answer that makes
-    /// the system start from the first page again.
+    /// walk is due, the walk itself, one directory per call.
     ///
-    /// Not while a server change or a refresh is waiting, though: enumerating
-    /// the working set adds to it and removes nothing, so a removed server
-    /// reported that way would stay in Finder, and a queued refresh would
-    /// wait for the next signal. Those go out first; the walk starts next
-    /// time.
+    /// The walk used to be started by answering with an expired anchor, which
+    /// makes the system drop its working set and import it again — and while
+    /// a domain is importing, background downloads stall. Reported as changes
+    /// it costs nothing but the listings: each call lists a directory,
+    /// reports what is in it, and ends with `moreComing`, which the header
+    /// says makes the system ask again with the anchor just returned. The
+    /// anchor carries which walk and which step, the walk's queue being in
+    /// the app group.
+    ///
+    /// Not in the same call as a server change or a refresh, though:
+    /// enumerating the working set adds to it and removes nothing, so a
+    /// removed server reported that way would stay in Finder, and a queued
+    /// refresh would wait for the next signal. Those go out first, and ask
+    /// to be called again for the walk.
+    ///
+    /// A refresh leaves the queue once it was reported. One that failed stays
+    /// for the next signal, and does not hold the walk back: that would let
+    /// a server that is down stop every other server from being indexed.
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
         let changes: ServerListEnumerator.PendingChanges
         do {
@@ -146,31 +158,108 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             return
         }
 
-        let refreshes = (try? DirectoryRefreshQueue().drain()) ?? []
-        let walkIsDue = (try? WorkingSetWalkStore())?.isWalkDue() ?? false
+        let queue = try? DirectoryRefreshQueue()
+        let queued: Set<DirectoryRefreshQueue.Entry>
+        do {
+            queued = try queue?.pending() ?? []
+        } catch {
+            Self.log.error("Could not read the refresh queue: \(error.localizedDescription)")
+            queued = []
+        }
+
+        let walkStore = try? WorkingSetWalkStore()
+        let indexable = changes.configs.filter(\.indexesInBackground).map(\.id)
+        let limits = AppSettings.indexingLimits()
+        let nextWalk = walkStore?.walkForChangeBatch(
+            after: changes.previousWalk, serverIDs: indexable, limits: limits)
         Self.log.notice(
             "Working set changes requested: serverChanges=\(!changes.diff.isEmpty) "
-            + "refreshes=\(refreshes.count) walkDue=\(walkIsDue)")
-
-        if changes.diff.isEmpty, refreshes.isEmpty, walkIsDue {
-            observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
-            return
-        }
+            + "refreshes=\(queued.count) walkDue=\(nextWalk != nil)")
 
         let registry = registry
         let serverList = serverList
         Task {
-            for refresh in refreshes.sorted(by: { $0.path < $1.path }) {
+            var reported: Set<DirectoryRefreshQueue.Entry> = []
+            for refresh in queued.sorted(by: { $0.path < $1.path }) {
                 do {
                     try await DirectoryRefresh.report(
                         serverID: refresh.serverID, directoryPath: refresh.path, registry: registry, to: observer)
+                    reported.insert(refresh)
                 } catch {
-                    // Whatever noticed the change will notice it again; a
-                    // server that is down must not hold up the server list.
+                    // Stays queued: the change is not lost with the server
+                    // being down, and a server that is down must not hold up
+                    // the server list.
                     Self.log.notice("Could not refresh \(refresh.path) on \(refresh.serverID): \(error.localizedDescription)")
                 }
             }
-            serverList.report(changes, to: observer)
+            var clearedRefreshes = false
+            if !reported.isEmpty {
+                do {
+                    try queue?.remove(reported)
+                    clearedRefreshes = true
+                } catch {
+                    // Reported again next time, which is harmless — but not
+                    // a reason to ask for another call, which would find the
+                    // same entries and never end.
+                    Self.log.error("Could not take reported refreshes off the queue: \(error.localizedDescription)")
+                }
+            }
+
+            guard var walk = nextWalk, let walkStore else {
+                serverList.report(changes, to: observer, walk: changes.previousWalk)
+                return
+            }
+            if !changes.diff.isEmpty || clearedRefreshes {
+                serverList.report(changes, to: observer, walk: changes.previousWalk, moreComing: true)
+                return
+            }
+
+            await Self.step(&walk, registry: registry, to: observer)
+            do {
+                try walkStore.save(walk)
+            } catch {
+                // Without the file the next call cannot resume. Ending here
+                // keeps what was listed; the walk is due again.
+                Self.log.error("Could not save the working-set walk: \(error.localizedDescription)")
+                serverList.report(changes, to: observer, walk: changes.previousWalk)
+                return
+            }
+            serverList.report(changes, to: observer, walk: walk.token, moreComing: !walk.isFinished)
+        }
+    }
+
+    /// Lists the walk's current directory and reports it, or skips it.
+    ///
+    /// What the last opening recorded is compared but not replaced, so names
+    /// gone since are reported deleted while the poll's baseline stays where
+    /// it was.
+    private static func step(
+        _ walk: inout WorkingSetWalk, registry: ConnectionRegistry, to observer: NSFileProviderChangeObserver
+    ) async {
+        if let pending = walk.current {
+            do {
+                let service = try await registry.service(for: pending.serverID)
+                let items = try await service.listDirectory(at: pending.path)
+                Self.log.debug("Walked \(pending.path) on \(pending.serverID): \(items.count) items")
+                observer.didUpdate(items.map { RemoteFileItem(serverID: pending.serverID, remoteItem: $0) })
+                let removed = DirectoryRefresh.identifiers(
+                    ofRemoved: RemoteDirectoryRecord.removedNames(
+                        from: items, serverID: pending.serverID, directoryPath: pending.path),
+                    serverID: pending.serverID, directoryPath: pending.path)
+                if !removed.isEmpty {
+                    observer.didDeleteItems(withIdentifiers: removed)
+                }
+                walk.advance(itemCount: items.count, subdirectories: items.filter(\.isDirectory).map(\.name))
+            } catch {
+                // One directory the account cannot read, or one server that
+                // is down, must not end the walk for every other server.
+                Self.log.notice("Skipping \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
+                walk.skipCurrent()
+            }
+        }
+        if walk.isFinished {
+            walk.markCompleted()
+            Self.log.notice("Walk finished after \(walk.directoriesListed) directories")
         }
     }
 

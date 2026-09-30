@@ -24,16 +24,19 @@ import HamasenCore
 /// any other container are ignored by the system — so mount, unmount, and
 /// rename changes have to be reported here to reach Finder.
 ///
-/// The previous server list is carried inside the sync anchor, which is what
-/// lets `enumerateChanges` report a precise diff without keeping state
-/// between calls.
+/// The previous server list is found from the sync anchor, which names it by
+/// digest (`ServerListSnapshotStore`), and that is what lets
+/// `enumerateChanges` report a precise diff without keeping state between
+/// calls. The list itself would not fit: the system treats an anchor over 500
+/// bytes as expired.
 final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     func invalidate() {}
 
-    private static func anchor(for configs: [ServerConfig]) -> NSFileProviderSyncAnchor {
-        NSFileProviderSyncAnchor(
-            ServerListChangeTracker.encode(ServerListChangeTracker.snapshot(of: configs))
-        )
+    private static func anchor(
+        for configs: [ServerConfig], walk: WorkingSetWalk.Token? = nil
+    ) throws -> NSFileProviderSyncAnchor {
+        let digest = try ServerListSnapshotStore().save(ServerListChangeTracker.snapshot(of: configs))
+        return NSFileProviderSyncAnchor(WorkingSetAnchor(serverList: digest, walk: walk).encoded())
     }
 
     func enumerateItems(for observer: NSFileProviderEnumerationObserver, startingAt page: NSFileProviderPage) {
@@ -51,17 +54,22 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     struct PendingChanges {
         let configs: [ServerConfig]
         let diff: ServerListChangeTracker.Diff
+        /// What the anchor carried besides the list, for the working set.
+        let previousWalk: WorkingSetWalk.Token?
     }
 
     /// Read errors must not reach the diff: an empty list would be reported
-    /// as "every server was deleted" and wipe them from Finder.
+    /// as "every server was deleted" and wipe them from Finder. The same goes
+    /// for an anchor whose list cannot be found: it is expired, and the
+    /// system starts over, where an empty previous list would make every
+    /// server look new and every server folder already there look unchanged.
     static func pendingChanges(since anchor: NSFileProviderSyncAnchor) throws -> PendingChanges {
         let configs = try ConnectionRegistry.mountedConfigs()
-        let diff = ServerListChangeTracker.diff(
-            previous: ServerListChangeTracker.decode(anchor.rawValue),
-            current: configs
-        )
-        return PendingChanges(configs: configs, diff: diff)
+        guard let previous = WorkingSetAnchor.decode(anchor.rawValue),
+              let previousList = try ServerListSnapshotStore().load(digest: previous.serverList)
+        else { throw NSFileProviderError(.syncAnchorExpired) }
+        let diff = ServerListChangeTracker.diff(previous: previousList, current: configs)
+        return PendingChanges(configs: configs, diff: diff, previousWalk: previous.walk)
     }
 
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
@@ -72,7 +80,15 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
         }
     }
 
-    func report(_ changes: PendingChanges, to observer: NSFileProviderChangeObserver) {
+    /// Reports the server list's own changes and ends the batch. `walk` is
+    /// what the new anchor says about the walk, and `moreComing` asks the
+    /// system to come straight back.
+    func report(
+        _ changes: PendingChanges,
+        to observer: NSFileProviderChangeObserver,
+        walk: WorkingSetWalk.Token? = nil,
+        moreComing: Bool = false
+    ) {
         let diff = changes.diff
         if !diff.updated.isEmpty {
             observer.didUpdate(diff.updated.map(ServerFolderItem.init))
@@ -86,7 +102,12 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
                 }
             )
         }
-        observer.finishEnumeratingChanges(upTo: Self.anchor(for: changes.configs), moreComing: false)
+        do {
+            observer.finishEnumeratingChanges(
+                upTo: try Self.anchor(for: changes.configs, walk: walk), moreComing: moreComing)
+        } catch {
+            observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
+        }
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
@@ -99,7 +120,7 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
             completionHandler(nil)
             return
         }
-        completionHandler(Self.anchor(for: configs))
+        completionHandler(try? Self.anchor(for: configs))
     }
 }
 

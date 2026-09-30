@@ -49,4 +49,58 @@ struct DirectoryRefreshQueueTests {
         _ = try queue.drain()
         #expect(try queue.drain().isEmpty)
     }
+
+    /// A refresh is taken off the queue when it was reported, not before: one
+    /// that failed, or one whose process died, must still be there.
+    @Test
+    func pendingLeavesTheQueueAsItWas() throws {
+        let queue = makeQueue()
+        try queue.enqueue([.init(serverID: server, path: "/a")])
+        #expect(try queue.pending() == [.init(serverID: server, path: "/a")])
+        #expect(try queue.pending() == [.init(serverID: server, path: "/a")])
+    }
+
+    @Test
+    func removingTakesOnlyWhatWasReported() throws {
+        let queue = makeQueue()
+        try queue.enqueue([.init(serverID: server, path: "/a"), .init(serverID: server, path: "/b")])
+        let reported = try queue.pending()
+        // Queued after the read: not reported, so it must survive.
+        try queue.enqueue([.init(serverID: server, path: "/c")])
+        try queue.remove(reported)
+        #expect(try queue.pending() == [.init(serverID: server, path: "/c")])
+    }
+
+    @Test
+    func removingWhatIsNotQueuedIsHarmless() throws {
+        let queue = makeQueue()
+        try queue.remove([.init(serverID: server, path: "/a")])
+        #expect(try queue.pending().isEmpty)
+    }
+
+    /// The app and the extension enqueue at once. Without the lock each reads
+    /// the old set and the second write drops the first's entry.
+    @Test
+    func concurrentEnqueuesAreAllKept() async throws {
+        let queue = makeQueue()
+        let serverID = server
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<50 {
+                group.addTask {
+                    try? queue.enqueue([.init(serverID: serverID, path: "/d\(index)")])
+                }
+            }
+        }
+        #expect(try queue.pending().count == 50)
+    }
+
+    @Test
+    func anUnreadableQueueIsEmptyRatherThanStuck() throws {
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("refresh-\(UUID().uuidString).json")
+        try Data("not json".utf8).write(to: fileURL)
+        let queue = DirectoryRefreshQueue(fileURL: fileURL)
+        #expect(try queue.pending().isEmpty)
+        try queue.enqueue([.init(serverID: server, path: "/a")])
+        #expect(try queue.pending().count == 1)
+    }
 }

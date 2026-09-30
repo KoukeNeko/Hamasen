@@ -46,8 +46,8 @@ final class RemoteChangeWatcher {
         restart()
     }
 
-    /// Called when the interval setting changes, and when servers are mounted
-    /// or unmounted.
+    /// Called when the interval setting changes. Mounting and unmounting need
+    /// no restart: each round asks for the mounted servers again.
     func restart() {
         poll?.cancel()
         poll = nil
@@ -88,9 +88,11 @@ final class RemoteChangeWatcher {
 
         // Anything unmounted since the last round would otherwise be reported
         // as wholly deleted when it comes back.
-        var snapshot = store.load()
-        snapshot.keepOnly(serverIDs: Set(servers.map(\.id)))
-        try? store.save(snapshot)
+        do {
+            try store.keepOnly(serverIDs: Set(servers.map(\.id)))
+        } catch {
+            Self.log.error("Could not drop the record of unmounted servers: \(error.localizedDescription)")
+        }
 
         for server in servers {
             guard let paths = byServer[server.id] else { continue }
@@ -99,18 +101,30 @@ final class RemoteChangeWatcher {
             guard let summary = RemoteChangeSummary(serverName: server.name, changes: changes)
             else { continue }
             Self.log.notice("\(server.name): \(summary.message)")
-            await Self.notify(summary)
 
             // The system's own re-enumeration is what updates Finder; the
             // notification only tells the person. The changed directories
             // are queued for the extension to report, so the window does not
             // keep showing the old listing next to a notification naming a
-            // file it does not have.
+            // file it does not have — and that comes first, so a
+            // notification never announces a change Finder was not told of.
             let changed = changes.filter { !$0.isEmpty }.map {
                 DirectoryRefreshQueue.Entry(serverID: server.id, path: $0.directoryPath)
             }
-            try? DirectoryRefreshQueue().enqueue(changed)
-            try? await manager.signalEnumerator(for: .workingSet)
+            do {
+                try DirectoryRefreshQueue().enqueue(changed)
+            } catch {
+                Self.log.error("Could not queue the refresh for \(server.name): \(error.localizedDescription)")
+                continue
+            }
+            do {
+                try await manager.signalEnumerator(for: .workingSet)
+            } catch {
+                // The queue keeps the refresh for the next signal, so this
+                // delays Finder rather than losing the change.
+                Self.log.error("Could not signal the working set: \(error.localizedDescription)")
+            }
+            await Self.notify(summary)
         }
     }
 
@@ -150,15 +164,15 @@ final class RemoteChangeWatcher {
         // signal that follows makes it do; writing here first would leave the
         // extension nothing to report, and a deleted file would stay in
         // Finder. The one exception is a directory with no record yet, which
-        // gets its baseline so the next round has something to compare.
-        var snapshot = store.load()
+        // `observe` gives its baseline so the next round has something to
+        // compare.
         var changes: [RemoteDirectorySnapshot.Change] = []
         for path in directoryPaths.sorted() {
             guard let items = try? await service.listDirectory(at: path) else { continue }
-            let isFirstRecord = snapshot.entries(serverID: server.id, directoryPath: path) == nil
-            changes.append(snapshot.record(items, serverID: server.id, directoryPath: path))
-            if isFirstRecord {
-                store.record(items, serverID: server.id, directoryPath: path)
+            do {
+                changes.append(try store.observe(items, serverID: server.id, directoryPath: path))
+            } catch {
+                Self.log.error("Could not compare \(path) on \(server.name): \(error.localizedDescription)")
             }
         }
         return changes

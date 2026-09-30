@@ -20,15 +20,15 @@ import HamasenCore
 ///
 /// Only Finder's listings, not the background walk's: the poll re-checks the
 /// folders somebody has opened, and those are recorded when they are opened.
-/// Recording the walk as well would rewrite a file the size of every tree on
-/// every page — gigabytes per walk — and move the baseline forward daily, so a
+/// Recording the walk as well would move the baseline forward daily, so a
 /// change made between two openings of a folder would go unreported.
 ///
-/// Serialized on one queue: the extension lists several directories at once,
-/// and the record is one file. Off the calling task, because a listing should
-/// not wait on a disk write to hand Finder its results.
+/// Off the calling task, because a listing should not wait on a disk write to
+/// hand Finder its results, and on a concurrent queue because the store
+/// already serialises writers per server across both processes.
 enum RemoteDirectoryRecord {
-    private static let queue = DispatchQueue(label: "dev.hamasen.directory-record")
+    private static let log = HamasenLog(category: "directory-record")
+    private static let queue = DispatchQueue(label: "dev.hamasen.directory-record", attributes: .concurrent)
 
     static func record(_ items: [RemoteItem], serverID: UUID, directoryPath: String) {
         queue.async {
@@ -48,6 +48,19 @@ enum RemoteDirectoryRecord {
         }
     }
 
+    /// Names in the last recorded listing that `items` no longer has, without
+    /// recording anything. For the walk, which reports what it finds but
+    /// leaves the baseline where the last opening put it. Empty for a
+    /// directory with no record: nothing is known to have gone.
+    static func removedNames(from items: [RemoteItem], serverID: UUID, directoryPath: String) -> [String] {
+        guard let previous = try? RemoteDirectorySnapshotStore()
+            .snapshot(serverID: serverID, directoryPath: directoryPath)
+        else { return [] }
+        return RemoteDirectorySnapshot.change(
+            from: previous, to: RemoteDirectorySnapshot(path: directoryPath, items: items), serverID: serverID
+        ).removedNames
+    }
+
     private static func recordNow(
         _ items: [RemoteItem], serverID: UUID, directoryPath: String
     ) -> RemoteDirectorySnapshot.Change? {
@@ -55,6 +68,11 @@ enum RemoteDirectoryRecord {
         // reports on its own; a missed observation is not worth a second
         // error for the same cause.
         guard let store = try? RemoteDirectorySnapshotStore() else { return nil }
-        return store.record(items, serverID: serverID, directoryPath: directoryPath)
+        do {
+            return try store.record(items, serverID: serverID, directoryPath: directoryPath)
+        } catch {
+            log.error("Could not record \(directoryPath) on \(serverID): \(error.localizedDescription)")
+            return nil
+        }
     }
 }

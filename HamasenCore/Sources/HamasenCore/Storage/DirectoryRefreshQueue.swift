@@ -23,8 +23,10 @@ import Foundation
 /// writes the directory here and signals the working set; the working-set
 /// enumerator lists what is here and reports it.
 ///
-/// Both processes write the file, and a write can lose another's entry. That
-/// costs a refresh, not a change: whatever noticed it notices it again.
+/// Both processes write the file, so every change to it is a read-modify-write
+/// under a lock. An entry leaves the queue only once the caller says it was
+/// reported (`remove`); one taken off up front is lost with the process that
+/// took it, or with a server that was down at the time.
 public struct DirectoryRefreshQueue: Sendable {
     public struct Entry: Hashable, Codable, Sendable {
         public let serverID: UUID
@@ -37,6 +39,7 @@ public struct DirectoryRefreshQueue: Sendable {
     }
 
     private let fileURL: URL
+    private let lock: FileLock
 
     public init(appGroupIdentifier: String = SharedConstants.appGroupIdentifier) throws {
         guard let containerURL = FileManager.default.containerURL(
@@ -44,30 +47,65 @@ public struct DirectoryRefreshQueue: Sendable {
         ) else {
             throw ServerConfigStore.StoreError.appGroupContainerUnavailable(groupIdentifier: appGroupIdentifier)
         }
-        self.fileURL = containerURL.appendingPathComponent(SharedConstants.directoryRefreshQueueFileName)
+        self.init(fileURL: containerURL.appendingPathComponent(SharedConstants.directoryRefreshQueueFileName))
     }
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
+        self.lock = FileLock(lockURL: fileURL.appendingPathExtension("lock"))
     }
 
     public func enqueue(_ entries: some Sequence<Entry>) throws {
-        var queued = try load()
-        queued.formUnion(entries)
-        try JSONEncoder().encode(queued).write(to: fileURL, options: .atomic)
+        try lock.withLock {
+            var queued = try load()
+            queued.formUnion(entries)
+            try store(queued)
+        }
+    }
+
+    /// What is queued, leaving it there.
+    public func pending() throws -> Set<Entry> {
+        try lock.withLock { try load() }
+    }
+
+    /// Takes reported entries off the queue. Anything enqueued since
+    /// `pending()` was read stays.
+    public func remove(_ entries: some Sequence<Entry>) throws {
+        try lock.withLock {
+            var queued = try load()
+            queued.subtract(entries)
+            try store(queued)
+        }
     }
 
     /// Takes everything queued, leaving the queue empty.
     public func drain() throws -> Set<Entry> {
-        let queued = try load()
-        if !queued.isEmpty {
-            try FileManager.default.removeItem(at: fileURL)
+        try lock.withLock {
+            let queued = try load()
+            try store([])
+            return queued
         }
-        return queued
+    }
+
+    private func store(_ queued: Set<Entry>) throws {
+        if queued.isEmpty {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+        } else {
+            try JSONEncoder().encode(queued).write(to: fileURL, options: .atomic)
+        }
     }
 
     private func load() throws -> Set<Entry> {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
-        return try JSONDecoder().decode(Set<Entry>.self, from: Data(contentsOf: fileURL))
+        do {
+            return try JSONDecoder().decode(Set<Entry>.self, from: Data(contentsOf: fileURL))
+        } catch is DecodingError {
+            // A queue nobody can read would block every later refresh for
+            // good. What it held was a set of hints that whatever noticed
+            // them notices again.
+            return []
+        }
     }
 }

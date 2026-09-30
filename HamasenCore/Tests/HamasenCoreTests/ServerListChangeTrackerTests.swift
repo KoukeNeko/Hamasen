@@ -124,3 +124,78 @@ struct ServerListChangeTrackerStorageModeTests {
         #expect(ServerListChangeTracker.diff(previous: previous, current: [server]).isEmpty)
     }
 }
+
+@Suite("Server list sync anchor")
+struct ServerListSyncAnchorTests {
+    private func servers(_ count: Int) -> [ServerConfig] {
+        (0..<count).map {
+            ServerConfig(name: "很長很長的伺服器名稱 \($0) 用來把錨點撐大", host: "example.com", username: "user")
+        }
+    }
+
+    private func makeStore() -> ServerListSnapshotStore {
+        ServerListSnapshotStore(directoryURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("server-lists-\(UUID().uuidString)"))
+    }
+
+    @Test("摘要與順序無關，內容不同則不同")
+    func digestIsStableAndSensitive() {
+        let list = servers(3)
+        let forward = ServerListChangeTracker.digest(of: ServerListChangeTracker.snapshot(of: list))
+        let reversed = ServerListChangeTracker.digest(of: ServerListChangeTracker.snapshot(of: list.reversed()))
+        let fewer = ServerListChangeTracker.digest(of: ServerListChangeTracker.snapshot(of: Array(list.dropLast())))
+        #expect(forward == reversed)
+        #expect(forward != fewer)
+    }
+
+    /// The old anchor was the whole list, which passed 500 bytes at about
+    /// seven servers and made the system re-import on every signal.
+    @Test("錨點大小不隨伺服器數量增加")
+    func anchorStaysSmallWhateverTheListSize() throws {
+        let store = makeStore()
+        let walk = WorkingSetWalk(serverIDs: [UUID()]).token
+        for count in [0, 1, 7, 200] {
+            let digest = try store.save(ServerListChangeTracker.snapshot(of: servers(count)))
+            let anchor = WorkingSetAnchor(serverList: digest, walk: walk).encoded()
+            #expect(anchor.count < 200, "\(count) servers gave \(anchor.count) bytes")
+        }
+    }
+
+    @Test("錨點可以往返編碼，看不懂的錨點解不開")
+    func anchorRoundTrips() {
+        let anchor = WorkingSetAnchor(serverList: "abc", walk: WorkingSetWalk(serverIDs: []).token)
+        #expect(WorkingSetAnchor.decode(anchor.encoded()) == anchor)
+        #expect(WorkingSetAnchor.decode(WorkingSetAnchor(serverList: "abc", walk: nil).encoded())?.walk == nil)
+        // What the anchor used to be: the list itself.
+        #expect(WorkingSetAnchor.decode(ServerListChangeTracker.encode(["id": "name|mode"])) == nil)
+        #expect(WorkingSetAnchor.decode(Data()) == nil)
+    }
+
+    @Test("儲存的快照可用摘要取回，找不到就是 nil 而非空清單")
+    func snapshotIsFoundByDigest() throws {
+        let store = makeStore()
+        let snapshot = ServerListChangeTracker.snapshot(of: servers(3))
+        let digest = try store.save(snapshot)
+        #expect(store.load(digest: digest) == snapshot)
+        #expect(store.load(digest: "0000") == nil)
+        #expect(store.load(digest: "../../etc/passwd") == nil)
+
+        let empty = try store.save([:])
+        #expect(store.load(digest: empty) == [:], "an empty list is a list")
+    }
+
+    @Test("只保留最近幾份快照，最新的一份不會被丟掉")
+    func onlyTheLatestSnapshotsAreKept() throws {
+        let store = makeStore()
+        var digests: [String] = []
+        for count in 1...(ServerListSnapshotStore.keptCount + 3) {
+            digests.append(try store.save(ServerListChangeTracker.snapshot(of: servers(count))))
+            // File times are what age is judged by.
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        #expect(store.load(digest: digests.last!) != nil)
+        #expect(store.load(digest: digests.first!) == nil)
+        let stillThere = digests.filter { store.load(digest: $0) != nil }
+        #expect(stillThere.count == ServerListSnapshotStore.keptCount)
+    }
+}

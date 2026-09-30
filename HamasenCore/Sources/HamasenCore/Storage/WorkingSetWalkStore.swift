@@ -67,4 +67,20 @@ public struct WorkingSetWalkStore: Sendable {
         }
         return WorkingSetWalk(serverIDs: serverIDs, limits: limits)
     }
+
+    /// The walk the next change batch should take a step of: the one the
+    /// anchor's token names while it is unfinished, else a new one if a walk
+    /// is due, else none.
+    public func walkForChangeBatch(
+        after token: WorkingSetWalk.Token?,
+        serverIDs: [UUID],
+        limits: WorkingSetWalk.Limits,
+        at now: Date = Date()
+    ) -> WorkingSetWalk? {
+        if let token, let stored = load(), stored.belongs(to: token), stored.completedAt == nil, !stored.isFinished {
+            return stored
+        }
+        guard isWalkDue(at: now) else { return nil }
+        return WorkingSetWalk(serverIDs: serverIDs, limits: limits, startedAt: now)
+    }
 }

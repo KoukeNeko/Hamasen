@@ -23,6 +23,13 @@ import Foundation
 /// and the app share, and the page token carries only which step of which
 /// walk to resume. A token for a walk that no longer exists starts a new one.
 ///
+/// The walk reaches the system two ways. The first import pages through it
+/// (`enumerateItems`), which is all a system with no anchor can do. After
+/// that it goes out as change batches — one directory per `enumerateChanges`,
+/// the anchor carrying the token — because answering an expired anchor to
+/// start a walk makes the system drop its working set and import it again,
+/// and while a domain is importing it downloads nothing in the background.
+///
 /// Breadth-first, because what is near the top is what people look for first,
 /// and because a depth limit on a breadth-first walk cuts off uniformly
 /// rather than spending the whole budget down one branch.
@@ -172,6 +179,14 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
     /// fresh walk rather than resumed from the wrong place.
     public func matches(_ token: Token) -> Bool {
         token.walkIdentifier == identifier && token.directoriesListed == directoriesListed
+    }
+
+    /// Whether a token comes from this walk, at whatever step. For change
+    /// batches, where the extension may have saved a step the system never
+    /// recorded: resuming re-lists at most one directory, where refusing
+    /// would abandon the walk until the next day's.
+    public func belongs(to token: Token) -> Bool {
+        token.walkIdentifier == identifier
     }
 
     public static func encode(_ token: Token) -> Data {
