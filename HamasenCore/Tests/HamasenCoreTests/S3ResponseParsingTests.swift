@@ -215,9 +215,40 @@ struct S3ErrorResponseTests {
             == .itemNotFound(path: "/bucket/a.txt"))
     }
 
-    @Test(arguments: ["AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"])
+    @Test(arguments: ["InvalidAccessKeyId", "SignatureDoesNotMatch", "ExpiredToken", "InvalidToken"])
     func aRejectedKeyBecomesAuthenticationFailed(code: String) {
         #expect(mapped(body(code, "no"), status: 403) == .authenticationFailed)
+    }
+
+    /// A policy refusing one object says nothing about the key; reporting it
+    /// as bad credentials would put the whole domain into a sign-in state.
+    @Test(arguments: ["AccessDenied", "AllAccessDisabled", "AccountProblem"])
+    func aPolicyRefusalBecomesPermissionDenied(code: String) {
+        #expect(mapped(body(code, "no"), status: 403)
+            == .permissionDenied(operation: "讀取", path: "/bucket/a.txt"))
+    }
+
+    @Test
+    func aBare403IsAPermissionUnlessTheRequestMustSucceedForAnyKey() {
+        #expect(mapped(nil, status: 403)
+            == .permissionDenied(operation: "讀取", path: "/bucket/a.txt"))
+        #expect(S3ErrorResponse.remoteError(
+            status: 403, body: nil, operation: "連線", path: "/",
+            forbiddenMeansCredentials: true) == .authenticationFailed)
+    }
+
+    @Test
+    func readsEveryErrorEmbeddedInADeleteResult() {
+        let xml = """
+            <DeleteResult><Deleted><Key>a</Key></Deleted>
+            <Error><Key>b</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error>
+            <Error><Key>c</Key><Code>InternalError</Code><Message>oops</Message></Error>
+            </DeleteResult>
+            """
+        let errors = S3ErrorResponse.embeddedErrors(in: Data(xml.utf8))
+        #expect(errors.map(\.code) == ["AccessDenied", "InternalError"])
+        #expect(S3ErrorResponse.embeddedErrors(
+            in: Data("<CopyObjectResult><ETag>x</ETag></CopyObjectResult>".utf8)).isEmpty)
     }
 
     /// A skewed clock arrives as a 403. Reported as bad credentials it sends
@@ -239,7 +270,7 @@ struct S3ErrorResponseTests {
     @Test
     func fallsBackToTheStatusWhenThereIsNoBodyToRead() {
         #expect(mapped(nil, status: 404) == .itemNotFound(path: "/bucket/a.txt"))
-        #expect(mapped(nil, status: 403) == .authenticationFailed)
+        #expect(mapped(nil, status: 403) == .permissionDenied(operation: "讀取", path: "/bucket/a.txt"))
         #expect(mapped(nil, status: 401) == .authenticationFailed)
         #expect(mapped(nil, status: 500)
             == .operationFailed(operation: "讀取", path: "/bucket/a.txt", underlying: "HTTP 500"))

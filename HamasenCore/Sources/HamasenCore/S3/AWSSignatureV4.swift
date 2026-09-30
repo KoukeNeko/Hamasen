@@ -133,6 +133,22 @@ public enum AWSSignatureV4 {
         hexadecimal(SHA256.hash(data: data))
     }
 
+    /// The hash of a file, read in chunks so a large upload is never held in
+    /// memory to be signed. `@concurrent` keeps the read off the caller's
+    /// actor.
+    @concurrent
+    public static func payloadHash(ofFileAt url: URL) async throws -> String {
+        let chunkSize = 1024 * 1024
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty {
+            try Task.checkCancellation()
+            hasher.update(data: chunk)
+        }
+        return hexadecimal(hasher.finalize())
+    }
+
     // MARK: - Derivation steps
 
     static func credentialScope(day: String, region: String, service: String) -> String {

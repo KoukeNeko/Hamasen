@@ -42,7 +42,12 @@ public protocol RemoteFileService: Sendable {
     func itemInfo(at path: String) async throws -> RemoteItem
 
     /// Downloads a whole file to a local URL (overwriting any existing file).
-    func downloadFile(at path: String, to localURL: URL) async throws
+    ///
+    /// `progress` receives the running total of bytes written so far. The
+    /// File Provider system cancels a transfer that stops reporting progress,
+    /// so an implementation calls it as bytes arrive, not once at the end,
+    /// and stops promptly when its task is cancelled.
+    func downloadFile(at path: String, to localURL: URL, progress: TransferProgress?) async throws
 
     /// Downloads a byte range of a file.
     ///
@@ -51,7 +56,10 @@ public protocol RemoteFileService: Sendable {
     func downloadRange(at path: String, offset: Int64, length: Int) async throws -> Data
 
     /// Uploads a local file to the remote path (overwriting any existing file).
-    func uploadFile(from localURL: URL, to path: String) async throws
+    ///
+    /// `progress` receives the running total of bytes sent so far, under the
+    /// same rules as `downloadFile`.
+    func uploadFile(from localURL: URL, to path: String, progress: TransferProgress?) async throws
 
     func createDirectory(at path: String) async throws
 
@@ -80,7 +88,18 @@ public protocol RemoteFileService: Sendable {
     func searchItems(matching query: String, under path: String, limit: Int) async throws -> [RemoteItem]
 }
 
+/// Running total of bytes a transfer has moved so far.
+public typealias TransferProgress = @Sendable (_ bytesTransferred: Int64) -> Void
+
 extension RemoteFileService {
+    public func downloadFile(at path: String, to localURL: URL) async throws {
+        try await downloadFile(at: path, to: localURL, progress: nil)
+    }
+
+    public func uploadFile(from localURL: URL, to path: String) async throws {
+        try await uploadFile(from: localURL, to: path, progress: nil)
+    }
+
     /// Visits directories breadth-first, nearest first, until the limit is
     /// reached or there is nothing left.
     ///
@@ -135,6 +154,11 @@ public enum RemoteFileServiceError: Error, Equatable, Sendable {
     case authenticationFailed
     case itemNotFound(path: String)
     case operationFailed(operation: String, path: String, underlying: String)
+    /// The server refused the operation for this account. Retrying will not
+    /// help until something changes on the server.
+    case permissionDenied(operation: String, path: String)
+    /// Something already exists where the operation would have put an item.
+    case alreadyExists(path: String)
     case localFileUnreadable(url: URL)
     /// The stored private key is encrypted but no passphrase was supplied.
     case privateKeyPassphraseRequired
@@ -164,6 +188,10 @@ extension RemoteFileServiceError: LocalizedError {
             return String(localized: "找不到遠端項目：\(path)", bundle: .module)
         case .operationFailed(let operation, let path, let underlying):
             return String(localized: "\(operation) 失敗（\(path)）：\(underlying)", bundle: .module)
+        case .permissionDenied(let operation, let path):
+            return String(localized: "\(operation) 失敗（\(path)）：沒有權限", bundle: .module)
+        case .alreadyExists(let path):
+            return String(localized: "遠端已經有同名項目：\(path)", bundle: .module)
         case .localFileUnreadable(let url):
             return String(localized: "無法讀取本地檔案：\(url.path)", bundle: .module)
         case .privateKeyPassphraseRequired:

@@ -37,10 +37,14 @@ final class TestWebDAVServer {
         var ignoresRange = false
         /// Answer DELETE with 207, as a collection with a failed member does.
         var multiStatusOnDelete = false
+        /// The status the failed member of that 207 reports.
+        var multiStatusMemberCode = 423
         /// Answer writes with 403 while still accepting the credentials.
         var forbidsWrites = false
         /// Omit getcontentlength from PROPFIND responses.
         var omitsContentLength = false
+        /// Send no ETag anywhere, so a client can only go by Last-Modified.
+        var omitsETag = false
 
         static let wellBehaved = Behaviour()
     }
@@ -204,6 +208,8 @@ private final class WebDAVHandler: ChannelInboundHandler {
         switch head.method.rawValue {
         case "PROPFIND":
             handlePropfind(path: path, target: target, head: head, context: context)
+        case "HEAD":
+            handleHead(target: target, context: context)
         case "GET":
             handleGet(target: target, head: head, context: context)
         case "PUT":
@@ -295,11 +301,42 @@ private final class WebDAVHandler: ChannelInboundHandler {
                 <D:resourcetype>\(resourceType)</D:resourcetype>
                 \(behaviour.omitsContentLength ? "" : "<D:getcontentlength>\(size)</D:getcontentlength>")
                 <D:getlastmodified>\(modified)</D:getlastmodified>
+                \(entityTag(attributes: attributes, isDirectory: isDirectory).map { "<D:getetag>\"\($0)\"</D:getetag>" } ?? "")
               </D:prop>
               <D:status>HTTP/1.1 200 OK</D:status>
             </D:propstat>
           </D:response>
         """
+    }
+
+    /// Derived from the content, so an edit changes it the way a real
+    /// server's does. Nil for a directory and when the behaviour omits it.
+    private func entityTag(attributes: [FileAttributeKey: Any], isDirectory: Bool) -> String? {
+        guard !behaviour.omitsETag, !isDirectory else { return nil }
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        return "\(size)-\(Int64(modified * 1000))"
+    }
+
+    private func headers(for target: URL, contents: Data) -> [String: String] {
+        let attributes = (try? FileManager.default.attributesOfItem(atPath: target.path)) ?? [:]
+        var headers = [
+            "Last-Modified": Self.httpDateFormatter.string(
+                from: attributes[.modificationDate] as? Date ?? Date())
+        ]
+        if let tag = entityTag(attributes: attributes, isDirectory: false) {
+            headers["ETag"] = "\"\(tag)\""
+        }
+        return headers
+    }
+
+    private func handleHead(target: URL, context: ChannelHandlerContext) {
+        guard let contents = FileManager.default.contents(atPath: target.path) else {
+            send(status: .notFound, context: context)
+            return
+        }
+        send(status: .ok, contentLength: contents.count,
+             extraHeaders: headers(for: target, contents: contents), context: context)
     }
 
     private func handleGet(target: URL, head: HTTPRequestHead, context: ChannelHandlerContext) {
@@ -313,7 +350,7 @@ private final class WebDAVHandler: ChannelInboundHandler {
             send(
                 status: .ok,
                 body: contents,
-                extraHeaders: ["ETag": "\"test-\(contents.count)\""],
+                extraHeaders: headers(for: target, contents: contents),
                 context: context
             )
             return
@@ -362,7 +399,7 @@ private final class WebDAVHandler: ChannelInboundHandler {
             <D:multistatus xmlns:D="DAV:">
               <D:response>
                 <D:href>/locked-child</D:href>
-                <D:status>HTTP/1.1 423 Locked</D:status>
+                <D:status>HTTP/1.1 \(behaviour.multiStatusMemberCode) Member</D:status>
               </D:response>
             </D:multistatus>
             """
@@ -439,11 +476,12 @@ private final class WebDAVHandler: ChannelInboundHandler {
     private func send(
         status: HTTPResponseStatus,
         body: Data = Data(),
+        contentLength: Int? = nil,
         extraHeaders: [String: String] = [:],
         context: ChannelHandlerContext
     ) {
         var headers = HTTPHeaders()
-        headers.add(name: "Content-Length", value: String(body.count))
+        headers.add(name: "Content-Length", value: String(contentLength ?? body.count))
         for (name, value) in extraHeaders {
             headers.add(name: name, value: value)
         }

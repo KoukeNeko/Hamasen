@@ -24,41 +24,90 @@ import NIOSSL
 /// connection has closed and the control channel has sent its completion
 /// reply. Waiting for either alone reports success on a truncated file.
 enum FTPDataConnection {
-    /// Opens the connection the server asked for and reads until it closes.
+    /// Connects to the address the server named, and does nothing else yet.
+    ///
+    /// The connection is made *before* the transfer command is sent, because
+    /// some servers (vsftpd) accept the data connection first and send their
+    /// 1xx reply only after; waiting for that reply before connecting stalls
+    /// both sides. TLS therefore waits too: servers start it on the data
+    /// socket once the transfer has begun. Reading is held off in the
+    /// meantime so nothing the server sends right after its reply is lost
+    /// before the handlers are in place.
+    static func connect(
+        to address: FTPPassiveAddress,
+        fallbackHost: String,
+        group: EventLoopGroup,
+        timeoutSeconds: Int
+    ) async throws -> Channel {
+        // EPSV names only a port: the data connection goes to the host the
+        // commands already go to, which is also the answer that survives NAT
+        // when PASV reports an address the server cannot know is wrong.
+        let host = address.host ?? fallbackHost
+        return try await ClientBootstrap(group: group)
+            .connectTimeout(.seconds(Int64(timeoutSeconds)))
+            .channelOption(ChannelOptions.autoRead, value: false)
+            .connect(host: host, port: address.port)
+            .get()
+    }
+
+    /// Starts TLS on the connection when the session is protected, then lets
+    /// reading begin. `extra` handlers go behind it, so they see plaintext.
+    private static func activate(
+        _ channel: Channel,
+        protection: FTPDataProtection,
+        handlers extra: [ChannelHandler]
+    ) async throws {
+        var handlers: [ChannelHandler] = []
+        if case .tls(let context, let hostname) = protection {
+            handlers.append(try FTPTLS.makeHandler(context: context, host: hostname))
+        }
+        try await channel.pipeline.addHandlers(handlers + extra).get()
+        try await channel.setOption(ChannelOptions.autoRead, value: true).get()
+    }
+
+    /// Reads from a connected data channel until the server closes it.
     ///
     /// - Parameter receive: called with each chunk as it arrives, on the
     ///   channel's event loop, so a large file need never be held whole.
+    ///
+    /// Gives up when nothing arrives for `timeoutSeconds`, and when the
+    /// calling task is cancelled.
     static func receive(
-        at address: FTPPassiveAddress,
-        fallbackHost: String,
-        group: EventLoopGroup,
+        on channel: Channel,
         timeoutSeconds: Int,
         protection: FTPDataProtection,
         stoppingAfter limit: Int? = nil,
         into receive: @escaping @Sendable (ByteBuffer) throws -> Void
     ) async throws {
-        let handler = FTPDataReceiver(receive: receive, limit: limit)
-        let channel = try await open(address, fallbackHost, group, timeoutSeconds, protection) { channel in
-            try channel.pipeline.syncOperations.addHandler(handler)
+        try Task.checkCancellation()
+        let handler = FTPDataReceiver(
+            receive: receive,
+            limit: limit,
+            idleTimeout: .seconds(Int64(timeoutSeconds))
+        )
+        // Closing the channel is what ends the wait, and it ends it the same
+        // way a finished transfer does, so the cancellation is checked again
+        // afterwards rather than trusting the outcome.
+        try await withTaskCancellationHandler {
+            try await activate(channel, protection: protection, handlers: [handler])
+            try await handler.finished(on: channel.eventLoop).get()
+        } onCancel: {
+            channel.close(promise: nil)
         }
-        try await handler.finished(on: channel.eventLoop).get()
+        try Task.checkCancellation()
     }
 
     /// Everything the server sends, for the transfers that are small by
     /// nature: directory listings and byte ranges.
     static func receiveAll(
-        at address: FTPPassiveAddress,
-        fallbackHost: String,
-        group: EventLoopGroup,
+        on channel: Channel,
         timeoutSeconds: Int,
         protection: FTPDataProtection,
         stoppingAfter limit: Int? = nil
     ) async throws -> Data {
         let collected = CollectedBytes()
         try await receive(
-            at: address,
-            fallbackHost: fallbackHost,
-            group: group,
+            on: channel,
             timeoutSeconds: timeoutSeconds,
             protection: protection,
             stoppingAfter: limit
@@ -68,61 +117,57 @@ enum FTPDataConnection {
         return collected.data
     }
 
-    /// Sends a local file and closes, which is how the server knows the
-    /// upload has ended.
+    /// Sends a local file over a connected data channel and closes it, which
+    /// is how the server knows the upload has ended.
+    ///
+    /// - Parameter progress: told the running total after each chunk.
     static func send(
         contentsOf fileURL: URL,
-        at address: FTPPassiveAddress,
-        fallbackHost: String,
-        group: EventLoopGroup,
+        on channel: Channel,
         timeoutSeconds: Int,
-        protection: FTPDataProtection
+        protection: FTPDataProtection,
+        progress: TransferProgress? = nil
     ) async throws {
-        let channel = try await open(address, fallbackHost, group, timeoutSeconds, protection) { _ in }
-
+        try Task.checkCancellation()
         let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
-        while let chunk = try handle.read(upToCount: uploadChunkSize), !chunk.isEmpty {
-            var buffer = channel.allocator.buffer(capacity: chunk.count)
-            buffer.writeBytes(chunk)
-            try await channel.writeAndFlush(buffer)
+        try await withTaskCancellationHandler {
+            try await activate(channel, protection: protection, handlers: [])
+            var sent: Int64 = 0
+            while let chunk = try handle.read(upToCount: uploadChunkSize), !chunk.isEmpty {
+                try Task.checkCancellation()
+                var buffer = channel.allocator.buffer(capacity: chunk.count)
+                buffer.writeBytes(chunk)
+                try await write(buffer, to: channel, timeoutSeconds: timeoutSeconds)
+                sent += Int64(chunk.count)
+                progress?(sent)
+            }
+            try Task.checkCancellation()
+            try await channel.close()
+        } onCancel: {
+            channel.close(promise: nil)
         }
-        try await channel.close()
+    }
+
+    /// A write only completes when the peer takes the bytes, so a server that
+    /// stops reading stalls it for good; closing the channel is what ends it.
+    private static func write(_ buffer: ByteBuffer, to channel: Channel, timeoutSeconds: Int) async throws {
+        let expiry = WriteExpiry()
+        let timer = channel.eventLoop.scheduleTask(in: .seconds(Int64(timeoutSeconds))) {
+            expiry.mark()
+            channel.close(promise: nil)
+        }
+        defer { timer.cancel() }
+        do {
+            try await channel.writeAndFlush(buffer)
+        } catch {
+            throw expiry.hasExpired ? FTPError.timedOut : error
+        }
     }
 
     /// Read and written in pieces so an upload's memory use does not follow
     /// the file's size.
     private static let uploadChunkSize = 64 * 1024
-
-    private static func open(
-        _ address: FTPPassiveAddress,
-        _ fallbackHost: String,
-        _ group: EventLoopGroup,
-        _ timeoutSeconds: Int,
-        _ protection: FTPDataProtection,
-        _ configure: @escaping @Sendable (Channel) throws -> Void
-    ) async throws -> Channel {
-        // EPSV names only a port: the data connection goes to the host the
-        // commands already go to, which is also the answer that survives NAT
-        // when PASV reports an address the server cannot know is wrong.
-        let host = address.host ?? fallbackHost
-        return try await ClientBootstrap(group: group)
-            .connectTimeout(.seconds(Int64(timeoutSeconds)))
-            .channelInitializer { channel in
-                channel.eventLoop.makeCompletedFuture {
-                    // Ahead of everything else, so what the handlers see is
-                    // already decrypted.
-                    if case .tls(let context, let hostname) = protection {
-                        try channel.pipeline.syncOperations.addHandler(
-                            FTPTLS.makeHandler(context: context, host: hostname)
-                        )
-                    }
-                    try configure(channel)
-                }
-            }
-            .connect(host: host, port: address.port)
-            .get()
-    }
 }
 
 /// Whether a transfer's bytes are protected, which follows what `PROT`
@@ -130,6 +175,18 @@ enum FTPDataConnection {
 enum FTPDataProtection: Sendable {
     case clear
     case tls(context: NIOSSLContext, hostname: String)
+}
+
+/// Whether a write's timer went off, read from the task that wrote.
+private final class WriteExpiry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var expired = false
+
+    var hasExpired: Bool { lock.withLock { expired } }
+
+    func mark() {
+        lock.withLock { expired = true }
+    }
 }
 
 /// Gathers a whole small transfer.
@@ -157,16 +214,35 @@ private final class FTPDataReceiver: ChannelInboundHandler, @unchecked Sendable 
     /// server is about to send. FTP has no way to ask it to stop, so the
     /// connection is closed once enough has arrived.
     private let limit: Int?
+    /// How long the connection may stay silent. A server that stalls
+    /// mid-transfer neither sends nor closes, so nothing else would end it.
+    private let idleTimeout: TimeAmount
+    private var idleTimer: Scheduled<Void>?
     private var received = 0
     private var completion: EventLoopPromise<Void>?
     private var outcome: Result<Void, Error>?
 
-    init(receive: @escaping @Sendable (ByteBuffer) throws -> Void, limit: Int?) {
+    init(receive: @escaping @Sendable (ByteBuffer) throws -> Void, limit: Int?, idleTimeout: TimeAmount) {
         self.receive = receive
         self.limit = limit
+        self.idleTimeout = idleTimeout
+    }
+
+    func handlerAdded(context: ChannelHandlerContext) {
+        armIdleTimer(context)
+    }
+
+    private func armIdleTimer(_ context: ChannelHandlerContext) {
+        idleTimer?.cancel()
+        let channel = context.channel
+        idleTimer = context.eventLoop.scheduleTask(in: idleTimeout) { [self] in
+            finish(.failure(FTPError.timedOut))
+            channel.close(promise: nil)
+        }
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        armIdleTimer(context)
         var buffer = unwrapInboundIn(data)
         if let limit {
             let remaining = limit - received
@@ -207,6 +283,7 @@ private final class FTPDataReceiver: ChannelInboundHandler, @unchecked Sendable 
 
     private func finish(_ result: Result<Void, Error>) {
         guard outcome == nil else { return }
+        idleTimer?.cancel()
         outcome = result
         completion?.completeWith(result)
     }

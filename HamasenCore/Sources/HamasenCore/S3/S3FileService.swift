@@ -68,6 +68,16 @@ public actor S3FileService: RemoteFileService {
         public static let maximumParts = 10_000
     }
 
+    public enum Copy {
+        /// CopyObject refuses a source larger than this; the object has to be
+        /// copied in ranges instead.
+        public static let singleRequestLimitBytes: Int64 = 5 * 1024 * 1024 * 1024
+        /// Server-side, so no bytes cross this machine and a part can be far
+        /// larger than an upload's. Raised when the object would otherwise
+        /// need more than `Upload.maximumParts`.
+        public static let defaultPartSizeBytes: Int64 = 512 * 1024 * 1024
+    }
+
     private enum Batch {
         /// DeleteObjects takes at most this many keys per request.
         static let deleteLimit = 1_000
@@ -81,6 +91,8 @@ public actor S3FileService: RemoteFileService {
     private let connectTimeoutSeconds: Int
     private let multipartThresholdBytes: Int
     private let partSizeBytes: Int
+    private let singleCopyLimitBytes: Int64
+    private let copyPartSizeBytes: Int64
 
     private var session: URLSession?
     /// Requests handed a session but not finished. The session must not be
@@ -99,13 +111,17 @@ public actor S3FileService: RemoteFileService {
         endpoint: S3Endpoint,
         connectTimeoutSeconds: Int = AppSettings.defaultConnectTimeoutSeconds,
         multipartThresholdBytes: Int = Upload.defaultMultipartThresholdBytes,
-        partSizeBytes: Int = Upload.defaultPartSizeBytes
+        partSizeBytes: Int = Upload.defaultPartSizeBytes,
+        singleCopyLimitBytes: Int64 = Copy.singleRequestLimitBytes,
+        copyPartSizeBytes: Int64 = Copy.defaultPartSizeBytes
     ) {
         self.config = config
         self.endpoint = endpoint
         self.connectTimeoutSeconds = connectTimeoutSeconds
         self.multipartThresholdBytes = multipartThresholdBytes
         self.partSizeBytes = partSizeBytes
+        self.singleCopyLimitBytes = singleCopyLimitBytes
+        self.copyPartSizeBytes = copyPartSizeBytes
         if case .password(let secret) = credentials {
             self.awsCredentials = AWSCredentials(
                 accessKeyID: config.username, secretAccessKey: secret)
@@ -137,6 +153,9 @@ public actor S3FileService: RemoteFileService {
                 object: S3ObjectKey(bucket: object.bucket, key: ""),
                 operation: Self.checkOperation,
                 path: RemotePath.root,
+                // Any working key can make this request, so a 403 that names
+                // no cause is the key.
+                forbiddenMeansCredentials: true,
                 using: candidate)
         } catch {
             candidate.invalidateAndCancel()
@@ -183,7 +202,8 @@ public actor S3FileService: RemoteFileService {
                     name: name,
                     kind: .file,
                     size: entry.size,
-                    modificationDate: entry.lastModified)
+                    modificationDate: entry.lastModified,
+                    contentTag: entry.contentTag)
             }
             for common in listing.commonPrefixes {
                 let name = RemotePath.withoutTrailingSeparator(
@@ -240,7 +260,8 @@ public actor S3FileService: RemoteFileService {
                 name: RemotePath.name(of: path),
                 kind: .file,
                 size: Self.contentLength(of: response.http),
-                modificationDate: Self.lastModified(from: response.http))
+                modificationDate: Self.lastModified(from: response.http),
+                contentTag: HTTPTransfer.normalizedETag(response.http.value(forHTTPHeaderField: "ETag")))
         } catch RemoteFileServiceError.itemNotFound {
             // No object under that key. It may still be a folder, which
             // exists only as the shared start of other keys.
@@ -252,13 +273,21 @@ public actor S3FileService: RemoteFileService {
         }
     }
 
-    public func downloadFile(at path: String, to localURL: URL) async throws {
+    public func downloadFile(at path: String, to localURL: URL, progress: TransferProgress?) async throws {
         let object = try object(for: path)
         try await withSession { session in
             let request = try self.signedRequest(
                 method: Method.get, object: object, path: path)
-            let (temporary, response) = try await session.download(for: request)
-            let http = try Self.httpResponse(response, operation: Self.downloadOperation, path: path)
+            let temporary: URL
+            let http: HTTPURLResponse
+            do {
+                let (url, response) = try await session.download(
+                    for: request, delegate: Self.progressDelegate(progress))
+                temporary = url
+                http = try Self.httpResponse(response, operation: Self.downloadOperation, path: path)
+            } catch {
+                throw Self.mapTransportError(error, operation: Self.downloadOperation, path: path)
+            }
             guard Status.successRange.contains(http.statusCode) else {
                 // A failed download still has a body, and it is the error
                 // document; reading it is what turns a 403 into a reason.
@@ -277,13 +306,23 @@ public actor S3FileService: RemoteFileService {
         guard length > 0 else { return Data() }
         let object = try object(for: path)
         let lastByte = offset + Int64(length) - 1
-        let response = try await send(
-            method: Method.get, object: object,
-            headers: ["Range": "bytes=\(offset)-\(lastByte)"],
-            operation: Self.downloadOperation, path: path,
-            acceptableStatuses: [Status.ok, Status.partialContent, Status.rangeNotSatisfiable])
 
-        switch response.http.statusCode {
+        // Streamed to disk: a server that ignores Range answers with the whole
+        // object, which must not be buffered in memory to take a slice of it.
+        let (bodyURL, http) = try await withSession { session in
+            let request = try self.signedRequest(
+                method: Method.get, object: object,
+                headers: ["Range": "bytes=\(offset)-\(lastByte)"], path: path)
+            do {
+                let (url, response) = try await session.download(for: request)
+                return (url, try Self.httpResponse(response, operation: Self.downloadOperation, path: path))
+            } catch {
+                throw Self.mapTransportError(error, operation: Self.downloadOperation, path: path)
+            }
+        }
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+
+        switch http.statusCode {
         case Status.rangeNotSatisfiable:
             // The range began past the end. Fewer bytes than asked for is the
             // documented answer, and none is how many are there.
@@ -291,29 +330,41 @@ public actor S3FileService: RemoteFileService {
         case Status.ok:
             // The server ignored Range and sent the whole object; take the
             // slice the caller asked for rather than handing back everything.
-            let start = min(Int(offset), response.data.count)
-            let end = min(start + length, response.data.count)
-            return response.data.subdata(in: start..<end)
+            return try Self.readSlice(from: bodyURL, offset: offset, length: length, path: path)
+        case Status.partialContent:
+            return try Self.readSlice(from: bodyURL, offset: 0, length: length, path: path)
         default:
-            return response.data
+            throw S3ErrorResponse.remoteError(
+                status: http.statusCode, body: try? Data(contentsOf: bodyURL),
+                operation: Self.downloadOperation, path: path)
         }
     }
 
     // MARK: - Writing
 
-    public func uploadFile(from localURL: URL, to path: String) async throws {
+    public func uploadFile(from localURL: URL, to path: String, progress: TransferProgress?) async throws {
         let object = try object(for: path)
         let size = try Self.fileSize(of: localURL)
         if size <= Int64(multipartThresholdBytes) {
-            guard let body = try? Data(contentsOf: localURL) else {
+            // The file goes out from disk, not from memory. Its hash is taken
+            // in a first pass over it so the signature can still cover the
+            // body, which every S3-compatible service accepts.
+            let payloadHash: String
+            do {
+                payloadHash = try await AWSSignatureV4.payloadHash(ofFileAt: localURL)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
                 throw RemoteFileServiceError.localFileUnreadable(url: localURL)
             }
             _ = try await send(
-                method: Method.put, object: object, body: body,
+                method: Method.put, object: object,
+                upload: FileUpload(url: localURL, payloadHash: payloadHash), progress: progress,
                 operation: Self.uploadOperation, path: path)
             return
         }
-        try await uploadInParts(from: localURL, to: object, size: size, path: path)
+        try await uploadInParts(
+            from: localURL, to: object, size: size, path: path, progress: progress)
     }
 
     /// An empty object whose key ends in a separator. That marker is the only
@@ -335,7 +386,8 @@ public actor S3FileService: RemoteFileService {
 
     public func deleteDirectory(at path: String) async throws {
         let object = try object(for: path)
-        let keys = try await keysUnder(object, path: path, operation: Self.deleteOperation)
+        let keys = try await objectsUnder(object, path: path, operation: Self.deleteOperation)
+            .map(\.key)
         // The marker is not returned by a prefix listing when the prefix is
         // the marker's own key, so it is removed by name as well.
         try await delete(keys: keys + [object.folderMarkerKey],
@@ -347,38 +399,53 @@ public actor S3FileService: RemoteFileService {
     /// Everything is copied before anything is deleted. A failure partway
     /// through then leaves the source intact and some duplicates behind,
     /// which is recoverable; deleting as it went would lose whatever had not
-    /// been copied yet.
+    /// been copied yet. A copy that reports failure — including one that
+    /// answers 200 and says so in the body — throws before the delete.
     public func moveItem(from oldPath: String, to newPath: String) async throws {
         let source = try object(for: oldPath)
         let destination = try object(for: newPath)
 
-        if try await objectExists(source, path: oldPath) {
-            try await copy(from: source, to: destination, path: oldPath)
+        // A copy overwrites silently, unlike the rename every other protocol
+        // here performs. The name is taken if either an object or a folder
+        // holds it, since listing shows only one of the two.
+        let destinationTaken: Bool
+        if try await objectSize(destination, path: newPath) != nil {
+            destinationTaken = true
+        } else {
+            destinationTaken = try await prefixExists(destination, path: newPath)
+        }
+        if destinationTaken {
+            throw RemoteFileServiceError.alreadyExists(path: newPath)
+        }
+
+        if let size = try await objectSize(source, path: oldPath) {
+            try await copy(from: source, to: destination, size: size, path: oldPath)
             _ = try await send(
                 method: Method.delete, object: source,
                 operation: Self.moveOperation, path: oldPath)
             return
         }
 
-        let keys = try await keysUnder(source, path: oldPath, operation: Self.moveOperation)
-        guard !keys.isEmpty else { throw RemoteFileServiceError.itemNotFound(path: oldPath) }
+        let objects = try await objectsUnder(source, path: oldPath, operation: Self.moveOperation)
+        guard !objects.isEmpty else { throw RemoteFileServiceError.itemNotFound(path: oldPath) }
 
         let sourcePrefix = source.directoryPrefix
-        for key in keys {
-            let suffix = String(key.dropFirst(sourcePrefix.count))
+        for entry in objects {
+            let suffix = String(entry.key.dropFirst(sourcePrefix.count))
             try await copy(
-                from: S3ObjectKey(bucket: source.bucket, key: key),
+                from: S3ObjectKey(bucket: source.bucket, key: entry.key),
                 to: S3ObjectKey(bucket: destination.bucket,
                                 key: destination.directoryPrefix + suffix),
-                path: oldPath)
+                size: entry.size, path: oldPath)
         }
-        try await delete(keys: keys, bucket: source.bucket, path: oldPath)
+        try await delete(keys: objects.map(\.key), bucket: source.bucket, path: oldPath)
     }
 
     // MARK: - Writing helpers
 
     private func uploadInParts(
-        from localURL: URL, to object: S3ObjectKey, size: Int64, path: String
+        from localURL: URL, to object: S3ObjectKey, size: Int64, path: String,
+        progress: TransferProgress?
     ) async throws {
         let parts = Int((size + Int64(partSizeBytes) - 1) / Int64(partSizeBytes))
         guard parts <= Upload.maximumParts else {
@@ -393,94 +460,169 @@ public actor S3FileService: RemoteFileService {
 
         let uploadID = try await beginUpload(object, path: path)
         do {
-            var numbers: [Int] = []
+            var uploaded: [UploadedPart] = []
             for number in 1...parts {
                 let chunk = try handle.read(upToCount: partSizeBytes) ?? Data()
                 guard !chunk.isEmpty else { break }
-                _ = try await send(
+                let sentBefore = Int64(number - 1) * Int64(partSizeBytes)
+                let response = try await send(
                     method: Method.put, object: object,
                     queryItems: [
                         URLQueryItem(name: "partNumber", value: String(number)),
                         URLQueryItem(name: "uploadId", value: uploadID),
                     ],
-                    body: chunk, operation: Self.uploadOperation, path: path)
-                numbers.append(number)
+                    body: chunk, progress: progress.map { report in { @Sendable bytes in report(sentBefore + bytes) } },
+                    operation: Self.uploadOperation, path: path)
+                // CompleteMultipartUpload must name every part by the ETag
+                // this response gave it; without them S3 refuses to assemble.
+                guard let tag = response.http.value(forHTTPHeaderField: "ETag"), !tag.isEmpty else {
+                    throw RemoteFileServiceError.operationFailed(
+                        operation: Self.uploadOperation, path: path,
+                        underlying: "伺服器沒有回傳分段的 ETag")
+                }
+                uploaded.append(UploadedPart(number: number, tag: tag))
             }
-            try await completeUpload(uploadID, parts: numbers, object: object, path: path)
+            try await completeUpload(uploadID, parts: uploaded, object: object,
+                                     operation: Self.uploadOperation, path: path)
         } catch {
-            // An upload left open keeps its parts, and the account is billed
-            // for them until somebody notices. Abandoning it is not optional.
-            await abortUpload(uploadID, object: object, path: path)
+            await abandonUpload(uploadID, object: object, path: path)
             throw error
         }
     }
 
-    private func beginUpload(_ object: S3ObjectKey, path: String) async throws -> String {
+    private struct UploadedPart {
+        let number: Int
+        let tag: String
+    }
+
+    private func beginUpload(_ object: S3ObjectKey, path: String,
+                             operation: String? = nil) async throws -> String {
+        let operation = operation ?? Self.uploadOperation
         let response = try await send(
             method: Method.post, object: object,
             queryItems: [URLQueryItem(name: "uploads", value: "")],
-            operation: Self.uploadOperation, path: path)
+            operation: operation, path: path)
         guard let uploadID = Self.firstValue(ofElement: "uploadid", in: response.data) else {
             throw RemoteFileServiceError.operationFailed(
-                operation: Self.uploadOperation, path: path,
+                operation: operation, path: path,
                 underlying: "伺服器沒有回傳分段上傳的識別碼")
         }
         return uploadID
     }
 
     private func completeUpload(
-        _ uploadID: String, parts: [Int], object: S3ObjectKey, path: String
+        _ uploadID: String, parts: [UploadedPart], object: S3ObjectKey,
+        operation: String, path: String
     ) async throws {
         let body = "<CompleteMultipartUpload>"
-            + parts.map { "<Part><PartNumber>\($0)</PartNumber></Part>" }.joined()
+            + parts.map {
+                "<Part><PartNumber>\($0.number)</PartNumber><ETag>\(Self.escaped($0.tag))</ETag></Part>"
+            }.joined()
             + "</CompleteMultipartUpload>"
         _ = try await send(
             method: Method.post, object: object,
             queryItems: [URLQueryItem(name: "uploadId", value: uploadID)],
-            body: Data(body.utf8), operation: Self.uploadOperation, path: path)
+            body: Data(body.utf8), operation: operation, path: path,
+            // Assembling a large object can outlast the response headers, so
+            // the service sends 200 first and reports a failure in the body.
+            failsOnEmbeddedError: true)
     }
 
-    private func abortUpload(_ uploadID: String, object: S3ObjectKey, path: String) async {
-        _ = try? await send(
-            method: Method.delete, object: object,
-            queryItems: [URLQueryItem(name: "uploadId", value: uploadID)],
-            operation: Self.uploadOperation, path: path)
+    /// Runs in its own task because the usual reason to abandon an upload is
+    /// that this one was cancelled, and a cancelled task cannot send the
+    /// request that stops the parts from being billed.
+    private func abandonUpload(_ uploadID: String, object: S3ObjectKey, path: String) async {
+        await Task {
+            _ = try? await self.send(
+                method: Method.delete, object: object,
+                queryItems: [URLQueryItem(name: "uploadId", value: uploadID)],
+                operation: Self.uploadOperation, path: path)
+        }.value
     }
 
     private func copy(from source: S3ObjectKey, to destination: S3ObjectKey,
-                      path: String) async throws {
+                      size: Int64, path: String) async throws {
         // The header names the source the way a URL path would, so the same
         // encoder the signature uses produces it.
         let reference = AWSSignatureV4.canonicalURI(for: source.absolutePath)
-        _ = try await send(
-            method: Method.put, object: destination,
-            headers: ["x-amz-copy-source": reference],
-            operation: Self.moveOperation, path: path)
+        guard size > singleCopyLimitBytes else {
+            _ = try await send(
+                method: Method.put, object: destination,
+                headers: ["x-amz-copy-source": reference],
+                operation: Self.moveOperation, path: path,
+                // Large copies are answered 200 before they finish, and a
+                // failure after that arrives as an <Error> document.
+                failsOnEmbeddedError: true)
+            return
+        }
+        try await copyInParts(reference: reference, to: destination, size: size, path: path)
     }
 
-    private func objectExists(_ object: S3ObjectKey, path: String) async throws -> Bool {
+    /// UploadPartCopy, for a source too large for a single CopyObject.
+    private func copyInParts(
+        reference: String, to destination: S3ObjectKey, size: Int64, path: String
+    ) async throws {
+        let partSize = max(
+            copyPartSizeBytes, (size + Int64(Upload.maximumParts) - 1) / Int64(Upload.maximumParts))
+        let uploadID = try await beginUpload(destination, path: path, operation: Self.moveOperation)
         do {
-            _ = try await send(
+            var copied: [UploadedPart] = []
+            var start: Int64 = 0
+            while start < size {
+                let end = min(start + partSize, size) - 1
+                let number = copied.count + 1
+                let response = try await send(
+                    method: Method.put, object: destination,
+                    queryItems: [
+                        URLQueryItem(name: "partNumber", value: String(number)),
+                        URLQueryItem(name: "uploadId", value: uploadID),
+                    ],
+                    headers: [
+                        "x-amz-copy-source": reference,
+                        "x-amz-copy-source-range": "bytes=\(start)-\(end)",
+                    ],
+                    operation: Self.moveOperation, path: path,
+                    failsOnEmbeddedError: true)
+                guard let tag = Self.firstValue(ofElement: "etag", in: response.data) else {
+                    throw RemoteFileServiceError.operationFailed(
+                        operation: Self.moveOperation, path: path,
+                        underlying: "伺服器沒有回傳分段的 ETag")
+                }
+                copied.append(UploadedPart(number: number, tag: tag))
+                start = end + 1
+            }
+            try await completeUpload(uploadID, parts: copied, object: destination,
+                                     operation: Self.moveOperation, path: path)
+        } catch {
+            await abandonUpload(uploadID, object: destination, path: path)
+            throw error
+        }
+    }
+
+    /// The object's size, or nil when there is no object under that key.
+    private func objectSize(_ object: S3ObjectKey, path: String) async throws -> Int64? {
+        do {
+            let response = try await send(
                 method: Method.head, object: object,
                 operation: Self.infoOperation, path: path)
-            return true
+            return Self.contentLength(of: response.http)
         } catch RemoteFileServiceError.itemNotFound {
-            return false
+            return nil
         }
     }
 
     /// Every key beginning with this prefix, across as many pages as it takes.
     /// No delimiter, because a recursive delete or move wants the whole
     /// subtree rather than one level of it.
-    private func keysUnder(
+    private func objectsUnder(
         _ object: S3ObjectKey, path: String, operation: String
-    ) async throws -> [String] {
-        var keys: [String] = []
+    ) async throws -> [S3ListResponseParser.Object] {
+        var objects: [S3ListResponseParser.Object] = []
         try await forEachObject(under: object, path: path, operation: operation) { entry in
-            keys.append(entry.key)
+            objects.append(entry)
             return .continue
         }
-        return keys
+        return objects
     }
 
     private enum PageWalk {
@@ -557,7 +699,8 @@ public actor S3FileService: RemoteFileService {
                 name: name,
                 kind: .file,
                 size: entry.size,
-                modificationDate: entry.lastModified))
+                modificationDate: entry.lastModified,
+                contentTag: entry.contentTag))
             return found.count >= limit ? .stop : .continue
         }
         return found
@@ -569,12 +712,23 @@ public actor S3FileService: RemoteFileService {
             let body = Data(("<Delete>"
                 + slice.map { "<Object><Key>\(Self.escaped($0))</Key></Object>" }.joined()
                 + "</Delete>").utf8)
-            _ = try await send(
+            let response = try await send(
                 method: Method.post, object: S3ObjectKey(bucket: bucket, key: ""),
                 queryItems: [URLQueryItem(name: "delete", value: "")],
                 // S3 rejects a DeleteObjects request that does not carry it.
                 headers: ["Content-MD5": Self.contentMD5(of: body)],
                 body: body, operation: Self.deleteOperation, path: path)
+            // The request as a whole succeeds with 200 even when individual
+            // keys were refused, and reporting that as a delete would let a
+            // move drop a source it never finished copying. A key that was
+            // already gone is the outcome that was asked for.
+            let refused = S3ErrorResponse.embeddedErrors(in: response.data)
+                .first { $0.code != "NoSuchKey" }
+            if let refused {
+                throw S3ErrorResponse.remoteError(
+                    status: Status.ok, parsed: refused,
+                    operation: Self.deleteOperation, path: path)
+            }
         }
     }
 
@@ -583,6 +737,19 @@ public actor S3FileService: RemoteFileService {
             .attributesOfItem(atPath: url.path)[.size] as? NSNumber
         else { throw RemoteFileServiceError.localFileUnreadable(url: url) }
         return size.int64Value
+    }
+
+    /// Reads a byte range back out of a downloaded body file.
+    private static func readSlice(from url: URL, offset: Int64, length: Int, path: String) throws -> Data {
+        do {
+            let file = try FileHandle(forReadingFrom: url)
+            defer { try? file.close() }
+            try file.seek(toOffset: UInt64(max(offset, 0)))
+            return try file.read(upToCount: length) ?? Data()
+        } catch {
+            throw RemoteFileServiceError.operationFailed(
+                operation: downloadOperation, path: path, underlying: error.localizedDescription)
+        }
     }
 
     private static func contentMD5(of data: Data) -> String {
@@ -672,28 +839,65 @@ public actor S3FileService: RemoteFileService {
         let http: HTTPURLResponse
     }
 
+    /// A local file sent as the request body, straight from disk.
+    private struct FileUpload {
+        let url: URL
+        let payloadHash: String
+    }
+
+    /// - Parameters:
+    ///   - upload: the body, when it is a file too large to hold in memory.
+    ///   - progress: receives the bytes of the body sent so far.
+    ///   - failsOnEmbeddedError: for the calls that can answer 200 and report
+    ///     the failure in the body.
+    ///   - forbiddenMeansCredentials: see `S3ErrorResponse.remoteError`.
     private func send(
         method: String,
         object: S3ObjectKey,
         queryItems: [URLQueryItem] = [],
         headers: [String: String] = [:],
         body: Data = Data(),
+        upload: FileUpload? = nil,
+        progress: TransferProgress? = nil,
         operation: String,
         path: String,
         acceptableStatuses: Set<Int>? = nil,
+        failsOnEmbeddedError: Bool = false,
+        forbiddenMeansCredentials: Bool = false,
         using explicitSession: URLSession? = nil
     ) async throws -> Response {
         let work: (URLSession) async throws -> Response = { session in
-            let request = try self.signedRequest(
+            var request = try self.signedRequest(
                 method: method, object: object, queryItems: queryItems,
-                headers: headers, body: body, path: path)
-            let (data, response) = try await session.data(for: request)
+                headers: headers, body: body, payloadHash: upload?.payloadHash, path: path)
+            let data: Data
+            let response: URLResponse
+            do {
+                if let upload {
+                    (data, response) = try await session.upload(
+                        for: request, fromFile: upload.url,
+                        delegate: Self.progressDelegate(progress))
+                } else if let progress, !body.isEmpty {
+                    (data, response) = try await session.upload(
+                        for: request, from: body, delegate: Self.progressDelegate(progress))
+                } else {
+                    if !body.isEmpty { request.httpBody = body }
+                    (data, response) = try await session.data(for: request)
+                }
+            } catch {
+                throw Self.mapTransportError(error, operation: operation, path: path)
+            }
             let http = try Self.httpResponse(response, operation: operation, path: path)
             let accepted = acceptableStatuses?.contains(http.statusCode)
                 ?? Status.successRange.contains(http.statusCode)
             guard accepted else {
                 throw S3ErrorResponse.remoteError(
-                    status: http.statusCode, body: data, operation: operation, path: path)
+                    status: http.statusCode, body: data, operation: operation, path: path,
+                    forbiddenMeansCredentials: forbiddenMeansCredentials)
+            }
+            if failsOnEmbeddedError, let failure = S3ErrorResponse.embeddedErrors(in: data).first {
+                throw S3ErrorResponse.remoteError(
+                    status: http.statusCode, parsed: failure, operation: operation, path: path)
             }
             return Response(data: data, http: http)
         }
@@ -701,12 +905,15 @@ public actor S3FileService: RemoteFileService {
         return try await withSession(work)
     }
 
+    /// Returns the request without its body: how the body travels depends on
+    /// whether it is uploaded from a file, from memory, or sent inline.
     private func signedRequest(
         method: String,
         object: S3ObjectKey,
         queryItems: [URLQueryItem] = [],
         headers: [String: String] = [:],
         body: Data = Data(),
+        payloadHash: String? = nil,
         path: String
     ) throws -> URLRequest {
         guard let awsCredentials else { throw RemoteFileServiceError.notConnected }
@@ -720,7 +927,8 @@ public actor S3FileService: RemoteFileService {
         let signed = AWSSignatureV4.signedHeaders(
             for: AWSSignatureV4.Request(
                 method: method, path: address.signingPath, queryItems: queryItems,
-                headers: signable, payloadHash: AWSSignatureV4.payloadHash(of: body)),
+                headers: signable,
+                payloadHash: payloadHash ?? AWSSignatureV4.payloadHash(of: body)),
             credentials: awsCredentials,
             region: endpoint.region,
             signedAt: Date())
@@ -732,8 +940,25 @@ public actor S3FileService: RemoteFileService {
         for (name, value) in signed where name.lowercased() != "host" {
             request.setValue(value, forHTTPHeaderField: name)
         }
-        if !body.isEmpty { request.httpBody = body }
         return request
+    }
+
+    private static func progressDelegate(_ progress: TransferProgress?) -> TransferProgressDelegate? {
+        progress.map { TransferProgressDelegate(progress: $0) }
+    }
+
+    /// Transport failures are the server being unreachable, which is not the
+    /// same thing to the user as the server refusing the request.
+    private static func mapTransportError(_ error: Error, operation: String, path: String) -> Error {
+        guard let urlError = error as? URLError else { return error }
+        if HTTPTransfer.isTransportFailure(urlError.code) {
+            log.error("\(operation) at \(path) unreachable: \(String(describing: error))")
+            return RemoteFileServiceError.connectionFailed(underlying: urlError.localizedDescription)
+        }
+        if urlError.code == .cancelled { return CancellationError() }
+        log.error("\(operation) at \(path) failed: \(String(describing: error))")
+        return RemoteFileServiceError.operationFailed(
+            operation: operation, path: path, underlying: urlError.localizedDescription)
     }
 
     private static func httpResponse(

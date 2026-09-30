@@ -95,6 +95,7 @@ public actor WebDAVFileService: RemoteFileService {
     private enum Method: String {
         case propfind = "PROPFIND"
         case get = "GET"
+        case head = "HEAD"
         case put = "PUT"
         case mkcol = "MKCOL"
         case delete = "DELETE"
@@ -117,6 +118,7 @@ public actor WebDAVFileService: RemoteFileService {
         static let unauthorized = 401
         static let forbidden = 403
         static let notFound = 404
+        static let preconditionFailed = 412
         static let rangeNotSatisfiable = 416
     }
 
@@ -132,6 +134,7 @@ public actor WebDAVFileService: RemoteFileService {
         <D:resourcetype/>
         <D:getcontentlength/>
         <D:getlastmodified/>
+        <D:getetag/>
       </D:prop>
     </D:propfind>
     """.utf8)
@@ -142,6 +145,8 @@ public actor WebDAVFileService: RemoteFileService {
     /// kept so the remaining chunks of one file do not re-download it.
     private struct CachedBody {
         let path: String
+        /// What the server said identified this content when it was sent; the
+        /// copy is served only while the server still says the same.
         let validator: String
         let url: URL
     }
@@ -281,11 +286,12 @@ public actor WebDAVFileService: RemoteFileService {
         return Self.makeRemoteItem(path: path, entry: entry)
     }
 
-    public func downloadFile(at path: String, to localURL: URL) async throws {
+    public func downloadFile(at path: String, to localURL: URL, progress: TransferProgress?) async throws {
         let request = try makeRequest(method: .get, path: path)
         let (temporaryURL, response) = try await withSession { session in
             do {
-                return try await session.download(for: request)
+                return try await session.download(
+                    for: request, delegate: Self.progressDelegate(progress, session: session))
             } catch {
                 throw Self.mapTransportError(error, operation: String(localized: "下載", bundle: .module), path: path)
             }
@@ -309,7 +315,12 @@ public actor WebDAVFileService: RemoteFileService {
         // answering whole entities; serving later chunks from the copy on
         // disk avoids re-downloading the file once per chunk.
         if let cached = cachedBody, cached.path == path {
-            return try Self.readSlice(from: cached.url, offset: offset, length: length, path: path)
+            if await currentValidator(at: path) == cached.validator {
+                return try Self.readSlice(from: cached.url, offset: offset, length: length, path: path)
+            }
+            // The file changed on the server, or cannot be checked: slices of
+            // the old copy would be served as if they were the new content.
+            discardCachedBody(forPath: path)
         }
 
         var request = try makeRequest(method: .get, path: path)
@@ -376,16 +387,18 @@ public actor WebDAVFileService: RemoteFileService {
         }
     }
 
-    public func uploadFile(from localURL: URL, to path: String) async throws {
+    public func uploadFile(from localURL: URL, to path: String, progress: TransferProgress?) async throws {
         let request = try makeRequest(method: .put, path: path)
-        let (_, response) = try await withSession { session in
+        let (body, response) = try await withSession { session in
             do {
-                return try await session.upload(for: request, fromFile: localURL)
+                return try await session.upload(
+                    for: request, fromFile: localURL,
+                    delegate: Self.progressDelegate(progress, session: session))
             } catch {
                 throw Self.mapTransportError(error, operation: String(localized: "上傳", bundle: .module), path: path)
             }
         }
-        try Self.validate(response, method: .put, operation: String(localized: "上傳", bundle: .module), path: path)
+        try Self.validate(response, body: body, method: .put, operation: String(localized: "上傳", bundle: .module), path: path)
         discardCachedBody(forPath: path)
     }
 
@@ -407,14 +420,14 @@ public actor WebDAVFileService: RemoteFileService {
         request.setValue(try absoluteURL(for: newPath).absoluteString, forHTTPHeaderField: "Destination")
         request.setValue(Self.refuseOverwrite, forHTTPHeaderField: "Overwrite")
 
-        let (_, response) = try await withSession { session in
+        let (body, response) = try await withSession { session in
             do {
                 return try await session.data(for: request)
             } catch {
                 throw Self.mapTransportError(error, operation: String(localized: "移動", bundle: .module), path: oldPath)
             }
         }
-        try Self.validate(response, method: .move, operation: String(localized: "移動", bundle: .module), path: oldPath)
+        try Self.validate(response, body: body, method: .move, operation: String(localized: "移動", bundle: .module), path: oldPath)
         discardCachedBody(forPath: oldPath)
     }
 
@@ -459,14 +472,14 @@ public actor WebDAVFileService: RemoteFileService {
 
     private func perform(method: Method, path: String, operation: String) async throws {
         let request = try makeRequest(method: method, path: path)
-        let (_, response) = try await withSession { session in
+        let (body, response) = try await withSession { session in
             do {
                 return try await session.data(for: request)
             } catch {
                 throw Self.mapTransportError(error, operation: operation, path: path)
             }
         }
-        try Self.validate(response, method: method, operation: operation, path: path)
+        try Self.validate(response, body: body, method: method, operation: operation, path: path)
     }
 
     private func makeRequest(method: Method, path: String) throws -> URLRequest {
@@ -531,9 +544,7 @@ public actor WebDAVFileService: RemoteFileService {
     private func retainCachedBody(at url: URL, path: String, response: HTTPURLResponse) {
         // Without a validator there is no way to tell a stale copy from a
         // fresh one, so nothing is kept.
-        let validator = response.value(forHTTPHeaderField: "ETag")
-            ?? response.value(forHTTPHeaderField: "Last-Modified")
-        guard let validator else {
+        guard let validator = Self.validator(of: response) else {
             try? FileManager.default.removeItem(at: url)
             return
         }
@@ -548,7 +559,42 @@ public actor WebDAVFileService: RemoteFileService {
         cachedBody = nil
     }
 
+    /// The server's current validator for the file, or nil when it cannot be
+    /// had. A HEAD rather than a PROPFIND, so it is spelled by the same
+    /// headers the cached body's was and the two compare exactly.
+    private func currentValidator(at path: String) async -> String? {
+        // Every failure here means "cannot confirm the copy is current", and
+        // the caller then fetches again, where the real error is reported.
+        guard let request = try? makeRequest(method: .head, path: path),
+              let (_, response) = try? await withSession({ try await $0.data(for: request) }),
+              let http = response as? HTTPURLResponse,
+              Status.successRange.contains(http.statusCode)
+        else { return nil }
+        return Self.validator(of: http)
+    }
+
+    /// An ETag when the server sends one, otherwise the modification time
+    /// with the length, since a time alone cannot tell two edits within a
+    /// second apart.
+    private static func validator(of response: HTTPURLResponse) -> String? {
+        if let tag = HTTPTransfer.normalizedETag(response.value(forHTTPHeaderField: "ETag")) {
+            return "etag:\(tag)"
+        }
+        guard let modified = response.value(forHTTPHeaderField: "Last-Modified") else { return nil }
+        let length = response.value(forHTTPHeaderField: "Content-Length") ?? ""
+        return "modified:\(modified)|\(length)"
+    }
+
     // MARK: - Responses
+
+    private static func progressDelegate(
+        _ progress: TransferProgress?, session: URLSession
+    ) -> TransferProgressDelegate? {
+        progress.map {
+            TransferProgressDelegate(
+                redirectHandler: session.delegate as? URLSessionTaskDelegate, progress: $0)
+        }
+    }
 
     private static func makeRemoteItem(path: String, entry: PropfindResponseParser.Entry) -> RemoteItem {
         RemoteItem(
@@ -556,7 +602,10 @@ public actor WebDAVFileService: RemoteFileService {
             name: RemotePath.name(of: path),
             kind: entry.isCollection ? .directory : .file,
             size: entry.contentLength ?? 0,
-            modificationDate: entry.lastModified
+            modificationDate: entry.lastModified,
+            // A collection's tag changes with its contents on some servers,
+            // and a directory has no content of its own to version.
+            contentTag: entry.isCollection ? nil : entry.contentTag
         )
     }
 
@@ -597,6 +646,7 @@ public actor WebDAVFileService: RemoteFileService {
 
     private static func validate(
         _ response: URLResponse,
+        body: Data? = nil,
         method: Method,
         operation: String,
         path: String
@@ -611,9 +661,14 @@ public actor WebDAVFileService: RemoteFileService {
         // failures surface there; for anything else the operation may have
         // partially failed and reporting success would lose data.
         if httpResponse.statusCode == Status.multiStatus, method != .propfind {
+            let failures = body.map(PropfindResponseParser.failureStatuses) ?? []
             log.error("\(operation) at \(path) returned 207; treating partial result as failure")
+            if failures.contains(where: { $0 == Status.unauthorized || $0 == Status.forbidden }) {
+                throw RemoteFileServiceError.permissionDenied(operation: operation, path: path)
+            }
+            let detail = failures.isEmpty ? "" : "：" + failures.map { "HTTP \($0)" }.joined(separator: "、")
             throw RemoteFileServiceError.operationFailed(
-                operation: operation, path: path, underlying: "伺服器回報部分項目未完成（207）"
+                operation: operation, path: path, underlying: "伺服器回報部分項目未完成（207）\(detail)"
             )
         }
 
@@ -627,12 +682,13 @@ public actor WebDAVFileService: RemoteFileService {
             // Authenticated but not permitted here — a per-item condition, not
             // a reason to put the whole domain into a re-authentication state.
             log.error("\(operation) at \(path) forbidden: HTTP 403")
-            throw RemoteFileServiceError.operationFailed(
-                operation: operation, path: path, underlying: "沒有權限（HTTP 403）"
-            )
+            throw RemoteFileServiceError.permissionDenied(operation: operation, path: path)
         case Status.notFound:
             log.debug("\(operation) at \(path): not found")
             throw RemoteFileServiceError.itemNotFound(path: path)
+        case Status.preconditionFailed where method == .move:
+            // Overwrite: F met an existing destination.
+            throw RemoteFileServiceError.alreadyExists(path: path)
         default:
             log.error("\(operation) at \(path) failed: HTTP \(httpResponse.statusCode)")
             throw RemoteFileServiceError.operationFailed(
@@ -647,10 +703,14 @@ public actor WebDAVFileService: RemoteFileService {
         if let domainError = error as? RemoteFileServiceError { return domainError }
 
         let urlError = error as? URLError
-        switch urlError?.code {
-        case .cannotConnectToHost, .cannotFindHost, .timedOut, .networkConnectionLost, .notConnectedToInternet:
+        if let code = urlError?.code, HTTPTransfer.isTransportFailure(code) {
             log.error("\(operation) at \(path) unreachable: \(String(describing: error))")
             return RemoteFileServiceError.connectionFailed(underlying: error.localizedDescription)
+        }
+        switch urlError?.code {
+        case .cancelled:
+            // The caller's task was cancelled; that is not a server failure.
+            return CancellationError()
         case .userAuthenticationRequired:
             return RemoteFileServiceError.authenticationFailed
         case .appTransportSecurityRequiresSecureConnection:

@@ -43,12 +43,27 @@ public final class TestSFTPServer {
     /// The client key the server accepts, in OpenSSH private key format.
     public let authorizedClientKey: String
     private let server: SSHServer
+    private let stall: ReadStall
 
-    private init(port: Int, rootDirectory: URL, authorizedClientKey: String, server: SSHServer) {
+    /// While set, reads are accepted and never answered — a connection that
+    /// has gone half-open, for testing timeouts.
+    public var stallsReads: Bool {
+        get { stall.isStalled }
+        set { stall.isStalled = newValue }
+    }
+
+    private init(
+        port: Int,
+        rootDirectory: URL,
+        authorizedClientKey: String,
+        server: SSHServer,
+        stall: ReadStall
+    ) {
         self.port = port
         self.rootDirectory = rootDirectory
         self.authorizedClientKey = authorizedClientKey
         self.server = server
+        self.stall = stall
     }
 
     /// Starts the server; its root is a freshly created temp directory.
@@ -70,6 +85,7 @@ public final class TestSFTPServer {
             openSSHPublicKey: makeOpenSSHPublicKey(clientKey.publicKey)
         )
 
+        let stall = ReadStall()
         var lastError: Error?
         for _ in 0..<maxBindAttempts {
             let candidatePort = preferredPort > 0 ? preferredPort : Int.random(in: portRange)
@@ -80,12 +96,13 @@ public final class TestSFTPServer {
                     hostKeys: [hostKey],
                     authenticationDelegate: FixedCredentialAuthDelegate(authorizedKey: authorizedKey)
                 )
-                server.enableSFTP(withDelegate: DirectoryBackedSFTPDelegate(root: rootDirectory))
+                server.enableSFTP(withDelegate: DirectoryBackedSFTPDelegate(root: rootDirectory, stall: stall))
                 return TestSFTPServer(
                     port: candidatePort,
                     rootDirectory: rootDirectory,
                     authorizedClientKey: clientKey.makeSSHRepresentation(),
-                    server: server
+                    server: server,
+                    stall: stall
                 )
             } catch {
                 lastError = error
@@ -148,9 +165,11 @@ private final class FixedCredentialAuthDelegate: NIOSSHServerUserAuthenticationD
 
 private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
     private let root: URL
+    private let stall: ReadStall
 
-    init(root: URL) {
+    init(root: URL, stall: ReadStall) {
         self.root = root
+        self.stall = stall
     }
 
     // MARK: Path handling
@@ -179,14 +198,16 @@ private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
 
     // MARK: Attributes
 
-    private func makeAttributes(forLocalURL url: URL) -> SFTPFileAttributes {
-        makeSFTPAttributes(forLocalURL: url)
+    private func makeAttributes(forLocalURL url: URL, followingLinks: Bool = false) -> SFTPFileAttributes {
+        makeSFTPAttributes(forLocalURL: url, followingLinks: followingLinks)
     }
 
     // MARK: SFTPDelegate
 
     func fileAttributes(atPath path: String, context: SSHContext) async throws -> SFTPFileAttributes {
-        makeAttributes(forLocalURL: localURL(for: path))
+        // stat follows a symlink, as a real server's does; only directory
+        // listings describe the link itself.
+        makeAttributes(forLocalURL: localURL(for: path), followingLinks: true)
     }
 
     func openFile(
@@ -210,7 +231,7 @@ private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
         } else {
             fileHandle = try FileHandle(forReadingFrom: url)
         }
-        return LocalSFTPFileHandle(url: url, fileHandle: fileHandle)
+        return LocalSFTPFileHandle(url: url, fileHandle: fileHandle, stall: stall)
     }
 
     func removeFile(_ filePath: String, context: SSHContext) async throws -> SFTPStatusCode {
@@ -245,7 +266,7 @@ private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
             SFTPPathComponent(
                 filename: path,
                 longname: path,
-                attributes: makeAttributes(forLocalURL: localURL(for: path))
+                attributes: makeAttributes(forLocalURL: localURL(for: path), followingLinks: true)
             )
         ]
     }
@@ -282,6 +303,9 @@ private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
     func rename(oldPath: String, newPath: String, flags: UInt32, context: SSHContext) async throws -> SFTPStatusCode {
         let sourceURL = localURL(for: oldPath)
         guard FileManager.default.fileExists(atPath: sourceURL.path) else { return .noSuchFile }
+        // A plain SFTP rename refuses an existing destination, with the same
+        // generic failure OpenSSH gives.
+        guard !FileManager.default.fileExists(atPath: localURL(for: newPath).path) else { return .failure }
         try FileManager.default.moveItem(at: sourceURL, to: localURL(for: newPath))
         return .ok
     }
@@ -291,7 +315,8 @@ private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
 
 /// Reads SFTP attributes from the local file system, adding the S_IFMT bits
 /// the client needs to derive the item kind.
-private func makeSFTPAttributes(forLocalURL url: URL) -> SFTPFileAttributes {
+private func makeSFTPAttributes(forLocalURL url: URL, followingLinks: Bool = false) -> SFTPFileAttributes {
+    let url = followingLinks ? url.resolvingSymlinksInPath() : url
     guard let fileAttributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
         return SFTPFileAttributes(size: 0)
     }
@@ -303,22 +328,46 @@ private func makeSFTPAttributes(forLocalURL url: URL) -> SFTPFileAttributes {
     )
 
     let posixPermissions = (fileAttributes[.posixPermissions] as? NSNumber)?.uint32Value ?? 0o644
-    let isDirectory = (fileAttributes[.type] as? FileAttributeType) == .typeDirectory
-    let fileTypeBits: UInt32 = isDirectory ? 0o040000 : 0o100000
+    let fileTypeBits: UInt32
+    switch fileAttributes[.type] as? FileAttributeType {
+    case .typeDirectory: fileTypeBits = 0o040000
+    case .typeSymbolicLink: fileTypeBits = 0o120000
+    default: fileTypeBits = 0o100000
+    }
     attributes.permissions = fileTypeBits | posixPermissions
     return attributes
+}
+
+/// A switch that holds reads unanswered while it is on.
+private final class ReadStall: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stalled = false
+
+    var isStalled: Bool {
+        get { lock.withLock { stalled } }
+        set { lock.withLock { stalled = newValue } }
+    }
+
+    func waitWhileStalled() async throws {
+        while isStalled {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
 }
 
 private final class LocalSFTPFileHandle: SFTPFileHandle {
     private let url: URL
     private let fileHandle: FileHandle
+    private let stall: ReadStall
 
-    init(url: URL, fileHandle: FileHandle) {
+    init(url: URL, fileHandle: FileHandle, stall: ReadStall) {
         self.url = url
         self.fileHandle = fileHandle
+        self.stall = stall
     }
 
     func read(at offset: UInt64, length: UInt32) async throws -> ByteBuffer {
+        try await stall.waitWhileStalled()
         try fileHandle.seek(toOffset: offset)
         let data = try fileHandle.read(upToCount: Int(length)) ?? Data()
         return ByteBuffer(bytes: data)

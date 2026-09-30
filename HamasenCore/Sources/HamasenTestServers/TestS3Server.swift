@@ -52,6 +52,18 @@ public final class TestS3Server {
         /// find out whether the parts already sent are abandoned — an upload
         /// left open keeps billing for them.
         public var failWritesAfter: Int?
+        /// Refuse a CopyObject whose source is larger than this, as S3 does
+        /// above 5 GB. Lets a test reach that limit without 5 GB of data.
+        public var maxCopySourceBytes: Int?
+        /// Answer CopyObject with 200 and an `<Error>` document, which is how
+        /// a copy that fails after the response has started is reported.
+        public var copyFailsWithStatusOK = false
+        /// Same, for CompleteMultipartUpload.
+        public var completeFailsWithStatusOK = false
+        /// Keys DeleteObjects reports as `<Error>` entries inside a 200.
+        public var deleteRefusedKeys: Set<String> = []
+        /// Answer a ranged GET with the whole object and status 200.
+        public var ignoresRange = false
 
         public static let wellBehaved = Behaviour()
 
@@ -59,12 +71,22 @@ public final class TestS3Server {
             maxKeysPerPage: Int = 1_000,
             ignoresEncodingType: Bool = false,
             forbidsWrites: Bool = false,
-            failWritesAfter: Int? = nil
+            failWritesAfter: Int? = nil,
+            maxCopySourceBytes: Int? = nil,
+            copyFailsWithStatusOK: Bool = false,
+            completeFailsWithStatusOK: Bool = false,
+            deleteRefusedKeys: Set<String> = [],
+            ignoresRange: Bool = false
         ) {
             self.maxKeysPerPage = maxKeysPerPage
             self.ignoresEncodingType = ignoresEncodingType
             self.forbidsWrites = forbidsWrites
             self.failWritesAfter = failWritesAfter
+            self.maxCopySourceBytes = maxCopySourceBytes
+            self.copyFailsWithStatusOK = copyFailsWithStatusOK
+            self.completeFailsWithStatusOK = completeFailsWithStatusOK
+            self.deleteRefusedKeys = deleteRefusedKeys
+            self.ignoresRange = ignoresRange
         }
     }
 
@@ -142,9 +164,23 @@ public final class TestS3ObjectStore: @unchecked Sendable {
         public var lastModified: Date
     }
 
+    struct StoredPart {
+        let data: Data
+        let entityTag: String
+    }
+
+    /// How a CompleteMultipartUpload can be refused, each with the error
+    /// code S3 gives it.
+    public enum CompletionFailure: String, Error, Sendable {
+        case noSuchUpload = "NoSuchUpload"
+        /// A part was left out of the request, or named with the wrong ETag.
+        case invalidPart = "InvalidPart"
+        case invalidPartOrder = "InvalidPartOrder"
+    }
+
     private let lock = NSLock()
     private var objects: [String: StoredObject] = [:]
-    private var uploads: [String: [Int: Data]] = [:]
+    private var uploads: [String: [Int: StoredPart]] = [:]
     private var writes = 0
     private var listings = 0
 
@@ -217,28 +253,35 @@ public final class TestS3ObjectStore: @unchecked Sendable {
         return id
     }
 
-    public func addPart(_ data: Data, number: Int, toUpload id: String) -> Bool {
+    public func addPart(_ data: Data, number: Int, entityTag: String, toUpload id: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard uploads[id] != nil else { return false }
-        uploads[id]?[number] = data
+        uploads[id]?[number] = StoredPart(data: data, entityTag: entityTag)
         return true
     }
 
-    /// Assembles the parts in the order the client listed them, which is what
-    /// makes a wrongly ordered CompleteMultipartUpload produce a wrong file
-    /// here as it would anywhere else.
-    public func completeUpload(_ id: String, partNumbers: [Int]) -> Data? {
+    /// Assembles the parts the way S3 does: every part must be named with the
+    /// ETag its upload returned, in ascending order. A client that leaves the
+    /// ETags out is refused here exactly as it is by the real service.
+    public func completeUpload(
+        _ id: String, parts requested: [(number: Int, entityTag: String?)]
+    ) -> Result<Data, CompletionFailure> {
         lock.lock()
         defer { lock.unlock() }
-        guard let parts = uploads[id] else { return nil }
+        guard let parts = uploads[id] else { return .failure(.noSuchUpload) }
+        guard requested.map(\.number) == requested.map(\.number).sorted() else {
+            return .failure(.invalidPartOrder)
+        }
         var assembled = Data()
-        for number in partNumbers {
-            guard let part = parts[number] else { return nil }
-            assembled.append(part)
+        for (number, entityTag) in requested {
+            guard let part = parts[number], let entityTag,
+                  entityTag.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) == part.entityTag
+            else { return .failure(.invalidPart) }
+            assembled.append(part.data)
         }
         uploads.removeValue(forKey: id)
-        return assembled
+        return .success(assembled)
     }
 
     public func abortUpload(_ id: String) -> Bool {

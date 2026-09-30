@@ -29,6 +29,7 @@ struct TestS3ServerTests {
     private struct Response {
         let status: Int
         let data: Data
+        var etag: String?
         var text: String { String(decoding: data, as: UTF8.self) }
     }
 
@@ -63,7 +64,10 @@ struct TestS3ServerTests {
         if !body.isEmpty { request.httpBody = body }
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        return Response(status: (response as? HTTPURLResponse)?.statusCode ?? -1, data: data)
+        let http = response as? HTTPURLResponse
+        return Response(
+            status: http?.statusCode ?? -1, data: data,
+            etag: http?.value(forHTTPHeaderField: "ETag"))
     }
 
     private func withServer(
@@ -332,38 +336,91 @@ struct TestS3ServerTests {
         }
     }
 
+    /// Starts an upload and sends three parts, returning what CompleteMultipartUpload
+    /// needs to name them.
+    private func uploadThreeParts(
+        on server: TestS3Server
+    ) async throws -> (uploadID: String, tags: [String]) {
+        let initiated = try await send(
+            "POST", key: "big.bin", query: [URLQueryItem(name: "uploads", value: "")],
+            on: server)
+        let uploadID = try #require(
+            TestS3Server.value(ofElement: "uploadid", in: initiated.data))
+
+        var tags: [String] = []
+        for (index, chunk) in ["alpha", "beta", "gamma"].enumerated() {
+            let response = try await send(
+                "PUT", key: "big.bin",
+                query: [URLQueryItem(name: "partNumber", value: String(index + 1)),
+                        URLQueryItem(name: "uploadId", value: uploadID)],
+                body: Data(chunk.utf8), on: server)
+            #expect(response.status == 200)
+            tags.append(try #require(response.etag))
+        }
+        return (uploadID, tags)
+    }
+
+    private func complete(
+        _ manifest: String, uploadID: String, on server: TestS3Server
+    ) async throws -> Response {
+        try await send(
+            "POST", key: "big.bin",
+            query: [URLQueryItem(name: "uploadId", value: uploadID)],
+            body: Data("<CompleteMultipartUpload>\(manifest)</CompleteMultipartUpload>".utf8),
+            on: server)
+    }
+
     @Test
     func assemblesAMultipartUpload() async throws {
         try await withServer { server in
-            let initiated = try await send(
-                "POST", key: "big.bin", query: [URLQueryItem(name: "uploads", value: "")],
-                on: server)
-            let uploadID = try #require(
-                TestS3Server.value(ofElement: "uploadid", in: initiated.data))
-
-            for (index, chunk) in ["alpha", "beta", "gamma"].enumerated() {
-                let response = try await send(
-                    "PUT", key: "big.bin",
-                    query: [URLQueryItem(name: "partNumber", value: String(index + 1)),
-                            URLQueryItem(name: "uploadId", value: uploadID)],
-                    body: Data(chunk.utf8), on: server)
-                #expect(response.status == 200)
-            }
-
-            let manifest = Data("""
-                <CompleteMultipartUpload>\
-                <Part><PartNumber>1</PartNumber></Part>\
-                <Part><PartNumber>2</PartNumber></Part>\
-                <Part><PartNumber>3</PartNumber></Part>\
-                </CompleteMultipartUpload>
-                """.utf8)
-            let completed = try await send(
-                "POST", key: "big.bin",
-                query: [URLQueryItem(name: "uploadId", value: uploadID)],
-                body: manifest, on: server)
+            let (uploadID, tags) = try await uploadThreeParts(on: server)
+            let manifest = tags.enumerated()
+                .map { "<Part><PartNumber>\($0.offset + 1)</PartNumber><ETag>\($0.element)</ETag></Part>" }
+                .joined()
+            let completed = try await complete(manifest, uploadID: uploadID, on: server)
             #expect(completed.status == 200)
             #expect(server.store.object(forKey: "big.bin")?.data == Data("alphabetagamma".utf8))
             #expect(server.store.openUploadCount == 0)
+        }
+    }
+
+    /// AWS refuses a CompleteMultipartUpload that does not carry each part's
+    /// ETag, so a fake that assembled the parts anyway would hide a client
+    /// that can never finish an upload against the real service.
+    @Test
+    func refusesToAssembleParts_withoutTheirETags() async throws {
+        try await withServer { server in
+            let (uploadID, _) = try await uploadThreeParts(on: server)
+            let manifest = (1...3).map { "<Part><PartNumber>\($0)</PartNumber></Part>" }.joined()
+            let completed = try await complete(manifest, uploadID: uploadID, on: server)
+            #expect(completed.status == 400)
+            #expect(completed.text.contains("InvalidPart"))
+            #expect(server.store.object(forKey: "big.bin") == nil)
+        }
+    }
+
+    @Test
+    func refusesToAssembleParts_namedWithAnotherPartsETag() async throws {
+        try await withServer { server in
+            let (uploadID, tags) = try await uploadThreeParts(on: server)
+            let manifest = [(1, tags[0]), (2, tags[2]), (3, tags[1])]
+                .map { "<Part><PartNumber>\($0.0)</PartNumber><ETag>\($0.1)</ETag></Part>" }
+                .joined()
+            let completed = try await complete(manifest, uploadID: uploadID, on: server)
+            #expect(completed.status == 400)
+        }
+    }
+
+    @Test
+    func refusesToAssembleParts_listedOutOfOrder() async throws {
+        try await withServer { server in
+            let (uploadID, tags) = try await uploadThreeParts(on: server)
+            let manifest = [(2, tags[1]), (1, tags[0]), (3, tags[2])]
+                .map { "<Part><PartNumber>\($0.0)</PartNumber><ETag>\($0.1)</ETag></Part>" }
+                .joined()
+            let completed = try await complete(manifest, uploadID: uploadID, on: server)
+            #expect(completed.status == 400)
+            #expect(completed.text.contains("InvalidPartOrder"))
         }
     }
 

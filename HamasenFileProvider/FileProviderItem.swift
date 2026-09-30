@@ -179,14 +179,12 @@ final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDeco
     }
 
     var itemVersion: NSFileProviderItemVersion {
-        // Version derived from size + mtime: enough for the system to detect
-        // remote content changes between enumerations.
-        let modificationEpoch = remoteItem.modificationDate?.timeIntervalSince1970 ?? 0
-        let contentToken = Data("\(remoteItem.size)-\(modificationEpoch)".utf8)
+        let contentVersion = remoteItem.contentVersionToken
+        let contentToken = Data(contentVersion.utf8)
         // The pin travels in the metadata version, or the system keeps the
         // old policy and the old menu entry after the user pins an item.
         let metadataToken = Data(
-            "\(remoteItem.size)-\(modificationEpoch)-\(Self.metadataRevision)-\(isPinned)".utf8
+            "\(contentVersion)-\(Self.metadataRevision)-\(isPinned)".utf8
         )
         return NSFileProviderItemVersion(contentVersion: contentToken, metadataVersion: metadataToken)
     }

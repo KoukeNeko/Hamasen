@@ -254,7 +254,7 @@ final class S3Handler: ChannelInboundHandler {
                  status: .notFound, context: context)
             return
         }
-        guard let range = head.headers.first(name: "Range") else {
+        guard let range = head.headers.first(name: "Range"), !behaviour.ignoresRange else {
             send(status: .ok, body: stored.data, contentType: "application/octet-stream",
                  extraHeaders: objectHeaders(for: stored), context: context)
             return
@@ -275,7 +275,13 @@ final class S3Handler: ChannelInboundHandler {
                            context: ChannelHandlerContext) {
         if let uploadID = target.query["uploadId"],
            let number = target.query["partNumber"].flatMap(Int.init) {
-            guard store.addPart(body, number: number, toUpload: uploadID) else {
+            if let source = head.headers.first(name: "x-amz-copy-source") {
+                copyPart(from: source, range: head.headers.first(name: "x-amz-copy-source-range"),
+                         number: number, uploadID: uploadID, context: context)
+                return
+            }
+            guard store.addPart(body, number: number, entityTag: Self.entityTag(for: body),
+                                toUpload: uploadID) else {
                 send(error: "NoSuchUpload", message: uploadID, status: .notFound, context: context)
                 return
             }
@@ -294,20 +300,64 @@ final class S3Handler: ChannelInboundHandler {
              extraHeaders: ["ETag": "\"\(Self.entityTag(for: body))\""], context: context)
     }
 
-    private func copyObject(from source: String, to key: String,
-                            context: ChannelHandlerContext) {
-        // The header names the source as /bucket/key, percent-encoded.
+    /// The header names the source as /bucket/key, percent-encoded. Sends the
+    /// error itself and returns nil when it cannot be resolved.
+    private func copySource(_ source: String, context: ChannelHandlerContext)
+        -> TestS3ObjectStore.StoredObject? {
         let decoded = source.removingPercentEncoding ?? source
         let trimmed = decoded.hasPrefix("/") ? String(decoded.dropFirst()) : decoded
         guard let slash = trimmed.firstIndex(of: "/") else {
             send(error: "InvalidArgument", message: "x-amz-copy-source: \(source)",
                  status: .badRequest, context: context)
-            return
+            return nil
         }
         let sourceKey = String(trimmed[trimmed.index(after: slash)...])
         guard let stored = store.object(forKey: sourceKey) else {
             send(error: "NoSuchKey", message: "no such key: \(sourceKey)",
                  status: .notFound, context: context)
+            return nil
+        }
+        return stored
+    }
+
+    private func copyPart(from source: String, range: String?, number: Int, uploadID: String,
+                          context: ChannelHandlerContext) {
+        guard let stored = copySource(source, context: context) else { return }
+        var part = stored.data
+        if let range {
+            guard let bounds = Self.byteRange(range.replacingOccurrences(of: "bytes ", with: "bytes="),
+                                              count: stored.data.count) else {
+                send(error: "InvalidArgument", message: "x-amz-copy-source-range: \(range)",
+                     status: .badRequest, context: context)
+                return
+            }
+            part = stored.data.subdata(in: bounds)
+        }
+        let tag = Self.entityTag(for: part)
+        guard store.addPart(part, number: number, entityTag: tag, toUpload: uploadID) else {
+            send(error: "NoSuchUpload", message: uploadID, status: .notFound, context: context)
+            return
+        }
+        let xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <CopyPartResult><LastModified>\(Self.timestamp(Date()))</LastModified>\
+            <ETag>&quot;\(tag)&quot;</ETag></CopyPartResult>
+            """
+        send(status: .ok, body: Data(xml.utf8), contentType: "application/xml", context: context)
+    }
+
+    private func copyObject(from source: String, to key: String,
+                            context: ChannelHandlerContext) {
+        guard let stored = copySource(source, context: context) else { return }
+        if let limit = behaviour.maxCopySourceBytes, stored.data.count > limit {
+            send(error: "InvalidRequest",
+                 message: "The specified copy source is larger than the maximum allowable size for a copy source: \(limit)",
+                 status: .badRequest, context: context)
+            return
+        }
+        if behaviour.copyFailsWithStatusOK {
+            send(errorWithStatusOK: "InternalError", message: "copy did not complete",
+                 context: context)
             return
         }
         store.put(stored.data, forKey: key)
@@ -333,14 +383,19 @@ final class S3Handler: ChannelInboundHandler {
 
     private func deleteObjects(context: ChannelHandlerContext) {
         let keys = Self.values(ofElement: "key", in: body)
-        for key in keys { store.remove(key: key) }
-        let deleted = keys
+        let refused = keys.filter(behaviour.deleteRefusedKeys.contains)
+        for key in keys where !refused.contains(key) { store.remove(key: key) }
+        let deleted = keys.filter { !refused.contains($0) }
             .map { "<Deleted><Key>\(escaped($0))</Key></Deleted>" }
+            .joined(separator: "\n")
+        let errors = refused
+            .map { "<Error><Key>\(escaped($0))</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error>" }
             .joined(separator: "\n")
         let xml = """
             <?xml version="1.0" encoding="UTF-8"?>
             <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
             \(deleted)
+            \(errors)
             </DeleteResult>
             """
         send(status: .ok, body: Data(xml.utf8), contentType: "application/xml", context: context)
@@ -366,9 +421,25 @@ final class S3Handler: ChannelInboundHandler {
                  status: .badRequest, context: context)
             return
         }
+        if behaviour.completeFailsWithStatusOK {
+            send(errorWithStatusOK: "InternalError", message: "assembly did not complete",
+                 context: context)
+            return
+        }
         let numbers = Self.values(ofElement: "partnumber", in: body).compactMap(Int.init)
-        guard let assembled = store.completeUpload(uploadID, partNumbers: numbers) else {
-            send(error: "NoSuchUpload", message: uploadID, status: .notFound, context: context)
+        let tags = Self.values(ofElement: "etag", in: body)
+        // ETags are read positionally, so one left off a part shifts the rest
+        // out of line; a request naming fewer tags than parts is refused.
+        let requested = numbers.enumerated().map {
+            (number: $0.element, entityTag: $0.offset < tags.count && tags.count == numbers.count ? tags[$0.offset] : nil)
+        }
+        let assembled: Data
+        switch store.completeUpload(uploadID, parts: requested) {
+        case .success(let data):
+            assembled = data
+        case .failure(let failure):
+            send(error: failure.rawValue, message: "CompleteMultipartUpload refused: \(failure)",
+                 status: failure == .noSuchUpload ? .notFound : .badRequest, context: context)
             return
         }
         store.put(assembled, forKey: target.key)
@@ -428,6 +499,13 @@ final class S3Handler: ChannelInboundHandler {
             context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
         }
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+    }
+
+    /// A failure reported after the service had already committed to 200,
+    /// which is where CopyObject and CompleteMultipartUpload put one.
+    private func send(errorWithStatusOK code: String, message: String,
+                      context: ChannelHandlerContext) {
+        send(error: code, message: message, status: .ok, context: context)
     }
 
     private func send(

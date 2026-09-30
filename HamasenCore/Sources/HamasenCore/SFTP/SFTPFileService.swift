@@ -16,6 +16,7 @@ import Citadel
 import Crypto
 import Foundation
 import NIOCore
+import NIOSSH
 
 /// SFTP implementation of RemoteFileService, built on Citadel (SwiftNIO SSH).
 ///
@@ -32,14 +33,27 @@ public actor SFTPFileService: RemoteFileService {
     /// has to fit in one SSH channel packet; larger requests stall.
     private static let transferChunkSize = 32 * 1024
 
+    /// Bytes per SFTP write. Citadel splits anything larger at 32,000 bytes
+    /// (NIOSSH issue 99), so a bigger chunk would just become two round
+    /// trips in a row.
+    private static let uploadChunkSize = 32_000
+
+    /// Requests kept in flight during a transfer. One request per round trip
+    /// caps a transfer at chunk size / RTT (about 640 KB/s at 50 ms); a
+    /// window of them fills the pipe instead.
+    private static let transferWindow = 32
+
+    /// A directory listing is many round trips inside one call, so its idle
+    /// budget is a multiple of the single-request one.
+    private static let listingTimeoutFactor = 4
+
     private static let log = HamasenLog(category: "sftp")
 
     private let config: ServerConfig
     private let credentials: ServerCredentials
     private let connectTimeoutSeconds: Int
     private let hostKeyPolicy: HostKeyPolicy
-    private var sshClient: SSHClient?
-    private var sftpClient: SFTPClient?
+    private var session: Session?
 
     public init(
         config: ServerConfig,
@@ -56,7 +70,7 @@ public actor SFTPFileService: RemoteFileService {
     // MARK: - Connection lifecycle
 
     public func connect() async throws {
-        guard sftpClient == nil else { return }
+        guard session == nil else { return }
 
         Self.log.debug("Connecting to \(config.host):\(config.port) as \(config.username)")
         // Built before the do/catch so an unusable key reports its own
@@ -87,8 +101,11 @@ public actor SFTPFileService: RemoteFileService {
         }
 
         do {
-            sftpClient = try await client.openSFTP()
-            sshClient = client
+            session = Session(
+                ssh: client,
+                sftp: try await client.openSFTP(),
+                requestTimeoutSeconds: connectTimeoutSeconds
+            )
             Self.log.debug("SFTP session established with \(config.host)")
         } catch {
             Self.log.error("Opening SFTP subsystem on \(config.host) failed: \(String(describing: error))")
@@ -99,15 +116,16 @@ public actor SFTPFileService: RemoteFileService {
 
     /// The SSH channel's own view of itself: the server closing the session
     /// takes the channel down, which is visible here without a round trip.
+    /// A request that timed out has also written the session off, since a
+    /// half-open connection still looks active to the channel.
     public var isConnected: Bool {
-        sftpClient?.isActive ?? false
+        session?.isUsable ?? false
     }
 
     public func disconnect() async throws {
-        let sftp = sftpClient
-        let ssh = sshClient
-        sftpClient = nil
-        sshClient = nil
+        let sftp = session?.sftp
+        let ssh = session?.ssh
+        session = nil
         // Started rather than awaited. A peer that has gone away never
         // answers the close handshake, and this service already considers
         // itself disconnected, so there is nothing left for the caller to
@@ -124,25 +142,36 @@ public actor SFTPFileService: RemoteFileService {
     // MARK: - RemoteFileService
 
     public func listDirectory(at path: String) async throws -> [RemoteItem] {
-        let sftp = try activeSFTPClient()
+        try await listEntries(at: path, resolvingLinks: true)
+    }
+
+    /// Lists a directory, with each symlink either reported as what it points
+    /// at (`resolvingLinks`, the view everything but deletion wants) or left
+    /// as the link it is.
+    private func listEntries(at path: String, resolvingLinks: Bool) async throws -> [RemoteItem] {
+        let session = try activeSession()
         let remoteDirectory = remoteAbsolutePath(for: path)
+        let sftp = session.sftp
 
         let nameBatches: [SFTPMessage.Name]
         do {
-            nameBatches = try await sftp.listDirectory(atPath: remoteDirectory)
+            nameBatches = try await session.run(timeoutSeconds: session.requestTimeoutSeconds * Self.listingTimeoutFactor) {
+                try await sftp.listDirectory(atPath: remoteDirectory)
+            }
         } catch {
-            throw Self.mapError(error, operation: String(localized: "列出目錄", bundle: .module), path: path)
+            throw session.mapError(error, operation: String(localized: "列出目錄", bundle: .module), path: path)
         }
 
         var items: [RemoteItem] = []
         for component in nameBatches.flatMap(\.components)
-        where component.filename != "." && component.filename != ".." {
+        where component.filename != "." && component.filename != ".."
+            && !RemotePath.isTemporaryUpload(name: component.filename) {
             let item = Self.makeRemoteItem(
                 path: RemotePath.join(path, component.filename),
                 name: component.filename,
                 attributes: component.attributes
             )
-            items.append(item.kind == .symlink ? await resolvingLink(item, sftp: sftp) : item)
+            items.append(resolvingLinks && item.kind == .symlink ? await resolvingLink(item, session: session) : item)
         }
         return items
     }
@@ -161,25 +190,29 @@ public actor SFTPFileService: RemoteFileService {
     /// folder opens, a link to a file downloads. One extra request per
     /// symlink, and only for symlinks. A link that points nowhere stays a
     /// symlink, which is what it is.
-    private func resolvingLink(_ item: RemoteItem, sftp: SFTPClient) async -> RemoteItem {
-        guard let target = try? await sftp.getAttributes(at: remoteAbsolutePath(for: item.path)) else {
+    private func resolvingLink(_ item: RemoteItem, session: Session) async -> RemoteItem {
+        let sftp = session.sftp
+        let linkPath = remoteAbsolutePath(for: item.path)
+        guard let target = try? await session.run({ try await sftp.getAttributes(at: linkPath) }) else {
             return item
         }
         return Self.makeRemoteItem(path: item.path, name: item.name, attributes: target)
     }
 
     public func itemInfo(at path: String) async throws -> RemoteItem {
-        let sftp = try activeSFTPClient()
+        let session = try activeSession()
+        let sftp = session.sftp
+        let remotePath = remoteAbsolutePath(for: path)
         do {
-            let attributes = try await sftp.getAttributes(at: remoteAbsolutePath(for: path))
+            let attributes = try await session.run { try await sftp.getAttributes(at: remotePath) }
             return Self.makeRemoteItem(path: path, name: RemotePath.name(of: path), attributes: attributes)
         } catch {
-            throw Self.mapError(error, operation: String(localized: "讀取屬性", bundle: .module), path: path)
+            throw session.mapError(error, operation: String(localized: "讀取屬性", bundle: .module), path: path)
         }
     }
 
-    public func downloadFile(at path: String, to localURL: URL) async throws {
-        let sftp = try activeSFTPClient()
+    public func downloadFile(at path: String, to localURL: URL, progress: TransferProgress?) async throws {
+        let session = try activeSession()
 
         // Streamed in chunks straight to disk: a whole file never has to fit
         // in memory.
@@ -193,134 +226,509 @@ public actor SFTPFileService: RemoteFileService {
         defer { try? localFile.close() }
 
         do {
-            try await sftp.withFile(
-                filePath: remoteAbsolutePath(for: path),
-                flags: .read
-            ) { file in
-                var offset: UInt64 = 0
-                while true {
-                    let chunk = try await file.read(from: offset, length: UInt32(Self.transferChunkSize))
-                    let byteCount = chunk.readableBytes
-                    guard byteCount > 0 else { break }
-                    let bytes = chunk.getBytes(at: chunk.readerIndex, length: byteCount) ?? []
-                    try localFile.write(contentsOf: Data(bytes))
-                    offset += UInt64(byteCount)
+            try await withOpenFile(session: session, path: remoteAbsolutePath(for: path), flags: .read) { file in
+                var written: Int64 = 0
+                try await Self.readPipelined(file: file, session: session, from: 0, upTo: nil) { chunk in
+                    try localFile.write(contentsOf: chunk)
+                    written += Int64(chunk.count)
+                    progress?(written)
                 }
             }
         } catch {
-            throw Self.mapError(error, operation: String(localized: "下載", bundle: .module), path: path)
+            throw session.mapError(error, operation: String(localized: "下載", bundle: .module), path: path)
         }
     }
 
     public func downloadRange(at path: String, offset: Int64, length: Int) async throws -> Data {
-        let sftp = try activeSFTPClient()
+        let session = try activeSession()
         guard length > 0 else { return Data() }
 
         do {
-            return try await sftp.withFile(
-                filePath: remoteAbsolutePath(for: path),
-                flags: .read
-            ) { file in
+            return try await withOpenFile(session: session, path: remoteAbsolutePath(for: path), flags: .read) { file in
                 var collected = Data()
                 collected.reserveCapacity(length)
-
-                // A single SFTP read returns at most what the server allows,
-                // so keep asking until the range is filled or the file ends.
-                while collected.count < length {
-                    let remaining = length - collected.count
-                    let chunk = try await file.read(
-                        from: UInt64(offset) + UInt64(collected.count),
-                        length: UInt32(min(remaining, Self.transferChunkSize))
-                    )
-                    let byteCount = chunk.readableBytes
-                    guard byteCount > 0 else { break }
-                    collected.append(contentsOf: chunk.getBytes(at: chunk.readerIndex, length: byteCount) ?? [])
-                }
+                try await Self.readPipelined(
+                    file: file,
+                    session: session,
+                    from: UInt64(offset),
+                    upTo: UInt64(offset) + UInt64(length)
+                ) { collected.append($0) }
                 return collected
             }
         } catch {
-            throw Self.mapError(error, operation: String(localized: "下載區間", bundle: .module), path: path)
+            throw session.mapError(error, operation: String(localized: "下載區間", bundle: .module), path: path)
         }
     }
 
-    public func uploadFile(from localURL: URL, to path: String) async throws {
-        let sftp = try activeSFTPClient()
+    public func uploadFile(from localURL: URL, to path: String, progress: TransferProgress?) async throws {
+        let session = try activeSession()
 
-        let localData: Data
+        let localFile: FileHandle
         do {
-            localData = try Data(contentsOf: localURL)
+            localFile = try FileHandle(forReadingFrom: localURL)
         } catch {
             throw RemoteFileServiceError.localFileUnreadable(url: localURL)
         }
+        defer { try? localFile.close() }
+
+        // Written beside the destination and renamed over it, so a
+        // connection lost halfway leaves the old file (or nothing) under the
+        // real name instead of half a new one.
+        let destination = remoteAbsolutePath(for: path)
+        let temporary = RemotePath.temporaryUploadPath(for: destination)
+        let operation = String(localized: "上傳", bundle: .module)
 
         do {
-            try await sftp.withFile(
-                filePath: remoteAbsolutePath(for: path),
-                flags: [.write, .create, .truncate]
-            ) { file in
-                try await file.write(ByteBuffer(bytes: localData))
+            try await withOpenFile(session: session, path: temporary, flags: [.write, .create, .truncate]) { file in
+                try await Self.writePipelined(
+                    file: file,
+                    session: session,
+                    from: localFile,
+                    localURL: localURL,
+                    progress: progress
+                )
             }
+            try await replace(destination, with: temporary, session: session)
         } catch {
-            throw Self.mapError(error, operation: String(localized: "上傳", bundle: .module), path: path)
+            await removeTemporaryUpload(temporary, session: session)
+            throw session.mapError(error, operation: operation, path: path)
         }
     }
 
-    public func createDirectory(at path: String) async throws {
-        let sftp = try activeSFTPClient()
+    /// Moves a finished upload over the destination.
+    ///
+    /// Citadel offers no `posix-rename@openssh.com`, which would overwrite
+    /// atomically, and a plain SFTP rename refuses an existing destination.
+    /// So the old file is removed first, leaving a brief window with no file
+    /// at all; the upload itself is already complete on the server by then.
+    private func replace(_ destination: String, with temporary: String, session: Session) async throws {
+        let sftp = session.sftp
         do {
-            try await sftp.createDirectory(atPath: remoteAbsolutePath(for: path))
+            try await session.run { try await sftp.rename(at: temporary, to: destination) }
         } catch {
-            throw Self.mapError(error, operation: String(localized: "建立目錄", bundle: .module), path: path)
+            guard await itemExists(destination, session: session) else { throw error }
+            try await session.run { try await sftp.remove(at: destination) }
+            try await session.run { try await sftp.rename(at: temporary, to: destination) }
+        }
+    }
+
+    private func removeTemporaryUpload(_ temporary: String, session: Session) async {
+        let sftp = session.sftp
+        do {
+            try await session.run { try await sftp.remove(at: temporary) }
+        } catch let status as SFTPMessage.Status where status.errorCode == .noSuchFile {
+            // Never created, or already renamed into place.
+        } catch {
+            Self.log.error("Removing unfinished upload \(temporary) failed: \(String(describing: error))")
+        }
+    }
+
+    /// Whether a path exists, as far as the server says. Citadel's test
+    /// server answers a stat of a missing path with empty attributes rather
+    /// than an error, and a real server always includes the mode, so a
+    /// missing mode counts as missing.
+    private func itemExists(_ remotePath: String, session: Session) async -> Bool {
+        let sftp = session.sftp
+        guard let attributes = try? await session.run({ try await sftp.getAttributes(at: remotePath) }) else {
+            return false
+        }
+        return attributes.permissions != nil
+    }
+
+    public func createDirectory(at path: String) async throws {
+        let session = try activeSession()
+        let sftp = session.sftp
+        let remotePath = remoteAbsolutePath(for: path)
+        do {
+            try await session.run { try await sftp.createDirectory(atPath: remotePath) }
+        } catch {
+            throw session.mapError(error, operation: String(localized: "建立目錄", bundle: .module), path: path)
         }
     }
 
     public func deleteFile(at path: String) async throws {
-        let sftp = try activeSFTPClient()
+        let session = try activeSession()
+        let sftp = session.sftp
+        let remotePath = remoteAbsolutePath(for: path)
         do {
-            try await sftp.remove(at: remoteAbsolutePath(for: path))
+            try await session.run { try await sftp.remove(at: remotePath) }
         } catch {
-            throw Self.mapError(error, operation: String(localized: "刪除檔案", bundle: .module), path: path)
+            throw session.mapError(error, operation: String(localized: "刪除檔案", bundle: .module), path: path)
         }
     }
 
     public func deleteDirectory(at path: String) async throws {
+        // Listings and stat report a symlink as its target, so a link to a
+        // directory arrives here looking like a directory. Walking into it
+        // would delete the target's contents; the link alone is what was
+        // asked for.
+        if try await isSymlink(at: path) {
+            try await deleteFile(at: path)
+            return
+        }
+        try await deleteTree(at: path)
+    }
+
+    /// Whether the path itself is a symlink. Citadel has no lstat, but a
+    /// directory listing describes each entry without following it.
+    private func isSymlink(at path: String) async throws -> Bool {
+        let parent = RemotePath.parent(of: path)
+        guard parent != path else { return false }
+        let name = RemotePath.name(of: path)
+        return try await listEntries(at: parent, resolvingLinks: false)
+            .contains { $0.name == name && $0.kind == .symlink }
+    }
+
+    private func deleteTree(at path: String) async throws {
         // SFTP's RMDIR only removes an empty directory, so the tree is
-        // emptied depth-first first.
-        for child in try await listDirectory(at: path) {
-            if child.isDirectory {
-                try await deleteDirectory(at: child.path)
+        // emptied depth-first first. Only a real directory is entered: a
+        // link, whatever it points at, is removed as a link.
+        for child in try await listEntries(at: path, resolvingLinks: false) {
+            if child.kind == .directory {
+                try await deleteTree(at: child.path)
             } else {
                 try await deleteFile(at: child.path)
             }
         }
 
-        let sftp = try activeSFTPClient()
+        let session = try activeSession()
+        let sftp = session.sftp
+        let remotePath = remoteAbsolutePath(for: path)
         do {
-            try await sftp.rmdir(at: remoteAbsolutePath(for: path))
+            try await session.run { try await sftp.rmdir(at: remotePath) }
         } catch {
-            throw Self.mapError(error, operation: String(localized: "刪除目錄", bundle: .module), path: path)
+            throw session.mapError(error, operation: String(localized: "刪除目錄", bundle: .module), path: path)
         }
     }
 
     public func moveItem(from oldPath: String, to newPath: String) async throws {
-        let sftp = try activeSFTPClient()
+        let session = try activeSession()
+        let sftp = session.sftp
+        let source = remoteAbsolutePath(for: oldPath)
+        let destination = remoteAbsolutePath(for: newPath)
         do {
-            try await sftp.rename(
-                at: remoteAbsolutePath(for: oldPath),
-                to: remoteAbsolutePath(for: newPath)
-            )
+            try await session.run { try await sftp.rename(at: source, to: destination) }
         } catch {
-            throw Self.mapError(error, operation: String(localized: "移動", bundle: .module), path: oldPath)
+            // A plain rename refuses an existing destination with the same
+            // generic failure as anything else; only asking tells them apart.
+            if let status = error as? SFTPMessage.Status, status.errorCode == .failure,
+               await itemExists(destination, session: session) {
+                throw RemoteFileServiceError.alreadyExists(path: newPath)
+            }
+            throw session.mapError(error, operation: String(localized: "移動", bundle: .module), path: oldPath)
+        }
+    }
+
+    // MARK: - Transfers
+
+    /// An open remote file, passed between the tasks of one transfer. Citadel's
+    /// class is not marked Sendable; every request on it is already
+    /// serialized through the channel's event loop.
+    private struct OpenFile: @unchecked Sendable {
+        let file: SFTPFile
+    }
+
+    private func withOpenFile<T>(
+        session: Session,
+        path: String,
+        flags: SFTPOpenFileFlags,
+        _ body: (OpenFile) async throws -> T
+    ) async throws -> T {
+        let sftp = session.sftp
+        let file = try await session.run {
+            OpenFile(file: try await sftp.openFile(filePath: path, flags: flags))
+        }
+
+        let result: T
+        do {
+            result = try await body(file)
+        } catch {
+            // The failure that matters is the body's; a close that also
+            // fails on a broken connection adds nothing.
+            _ = try? await session.run { try await file.file.close() }
+            throw error
+        }
+        // A failed close on a written file can mean the data was not kept.
+        try await session.run { try await file.file.close() }
+        return result
+    }
+
+    /// Reads `[start, end)` (to end of file when `end` is nil) with a window
+    /// of requests in flight, handing the bytes to `consume` in order.
+    ///
+    /// Requests are issued at fixed offsets ahead of time, so a server that
+    /// answers a read with fewer bytes than asked leaves a hole; the gap is
+    /// re-requested before anything after it is used.
+    private static func readPipelined(
+        file: OpenFile,
+        session: Session,
+        from start: UInt64,
+        upTo end: UInt64?,
+        consume: (Data) throws -> Void
+    ) async throws {
+        let chunkSize = UInt64(transferChunkSize)
+
+        func requestLength(at offset: UInt64) -> UInt64 {
+            guard let end else { return chunkSize }
+            return offset >= end ? 0 : min(chunkSize, end - offset)
+        }
+
+        func read(at offset: UInt64, length: UInt64) async throws -> Data {
+            let buffer = try await session.run { try await file.file.read(from: offset, length: UInt32(length)) }
+            return Data(buffer.getBytes(at: buffer.readerIndex, length: buffer.readableBytes) ?? [])
+        }
+
+        try await withThrowingTaskGroup(of: (index: UInt64, data: Data).self) { group in
+            var nextToLaunch: UInt64 = 0
+            var nextToConsume: UInt64 = 0
+            var arrived: [UInt64: Data] = [:]
+            var reachedEnd = false
+
+            func launchWhileRoom() {
+                while !reachedEnd, nextToLaunch - nextToConsume < UInt64(transferWindow) {
+                    let index = nextToLaunch
+                    let offset = start + index * chunkSize
+                    let length = requestLength(at: offset)
+                    guard length > 0 else { return }
+                    nextToLaunch += 1
+                    group.addTask { (index, try await read(at: offset, length: length)) }
+                }
+            }
+
+            launchWhileRoom()
+            while let (index, data) = try await group.next() {
+                try Task.checkCancellation()
+                // Past the end of the file: only draining what was in flight.
+                if reachedEnd { continue }
+                arrived[index] = data
+
+                while var chunk = arrived.removeValue(forKey: nextToConsume) {
+                    let offset = start + nextToConsume * chunkSize
+                    let wanted = Int(requestLength(at: offset))
+                    while !chunk.isEmpty, chunk.count < wanted {
+                        let more = try await read(
+                            at: offset + UInt64(chunk.count),
+                            length: UInt64(wanted - chunk.count)
+                        )
+                        if more.isEmpty { break }
+                        chunk.append(more)
+                    }
+                    if !chunk.isEmpty { try consume(chunk) }
+                    nextToConsume += 1
+                    // A chunk that is still short after re-asking is the end
+                    // of the file; whatever was requested beyond it is empty.
+                    if chunk.count < wanted { reachedEnd = true }
+                }
+                launchWhileRoom()
+                if reachedEnd { group.cancelAll() }
+            }
+        }
+    }
+
+    /// Streams a local file to the remote one with a window of writes in
+    /// flight. Progress counts bytes the server has acknowledged.
+    private static func writePipelined(
+        file: OpenFile,
+        session: Session,
+        from localFile: FileHandle,
+        localURL: URL,
+        progress: TransferProgress?
+    ) async throws {
+        try await withThrowingTaskGroup(of: Int.self) { group in
+            var offset: UInt64 = 0
+            var inFlight = 0
+            var acknowledged: Int64 = 0
+
+            func settleOne() async throws {
+                guard let count = try await group.next() else { return }
+                inFlight -= 1
+                acknowledged += Int64(count)
+                progress?(acknowledged)
+            }
+
+            while true {
+                try Task.checkCancellation()
+                let chunk: Data
+                do {
+                    guard let read = try localFile.read(upToCount: uploadChunkSize), !read.isEmpty else { break }
+                    chunk = read
+                } catch {
+                    throw RemoteFileServiceError.localFileUnreadable(url: localURL)
+                }
+
+                if inFlight >= transferWindow { try await settleOne() }
+                let chunkOffset = offset
+                offset += UInt64(chunk.count)
+                inFlight += 1
+                group.addTask {
+                    try await session.run {
+                        try await file.file.write(ByteBuffer(data: chunk), at: chunkOffset)
+                    }
+                    return chunk.count
+                }
+            }
+            while inFlight > 0 { try await settleOne() }
+        }
+    }
+
+    // MARK: - Session
+
+    /// One SSH connection and its SFTP channel, plus what it takes to notice
+    /// that the connection has died without saying so.
+    ///
+    /// Apart from the SFTP setup, Citadel puts no timeout on anything: over a
+    /// half-open TCP connection a request waits forever and the channel still
+    /// reports itself active, which would hang every caller behind a session
+    /// the registry believes is healthy.
+    private final class Session: @unchecked Sendable {
+        let ssh: SSHClient
+        let sftp: SFTPClient
+        /// How long a single round trip may go unanswered. A transfer is many
+        /// round trips, so a large file is never cut off for being large.
+        let requestTimeoutSeconds: Int
+
+        private let lock = NSLock()
+        private var isDead = false
+
+        init(ssh: SSHClient, sftp: SFTPClient, requestTimeoutSeconds: Int) {
+            self.ssh = ssh
+            self.sftp = sftp
+            self.requestTimeoutSeconds = requestTimeoutSeconds
+        }
+
+        var isUsable: Bool {
+            lock.withLock { !isDead } && sftp.isActive
+        }
+
+        /// Writes the session off and tears the channel down, which also
+        /// fails every request still waiting on it. Not awaited, for the
+        /// reason `disconnect` gives.
+        func markDead() {
+            let wasAlive = lock.withLock {
+                defer { isDead = true }
+                return !isDead
+            }
+            guard wasAlive else { return }
+            let (sftp, ssh) = (sftp, ssh)
+            Task {
+                try? await sftp.close()
+                try? await ssh.close()
+            }
+        }
+
+        /// Runs one request, failing with a connection error (and writing
+        /// the session off) if it is not answered in time.
+        ///
+        /// The request itself is not cancelled: a NIO future cannot be
+        /// abandoned. Closing the channel is what releases it.
+        func run<T>(
+            timeoutSeconds: Int? = nil,
+            _ operation: @escaping @Sendable () async throws -> T
+        ) async throws -> T {
+            let seconds = timeoutSeconds ?? requestTimeoutSeconds
+            let settled = SettleOnce()
+
+            return try await withCheckedThrowingContinuation { continuation in
+                let timer = Task {
+                    do {
+                        try await Task.sleep(for: .seconds(seconds))
+                    } catch {
+                        return
+                    }
+                    guard settled.claim() else { return }
+                    SFTPFileService.log.error("SFTP request unanswered for \(seconds)s; dropping the session")
+                    self.markDead()
+                    continuation.resume(throwing: RemoteFileServiceError.connectionFailed(
+                        underlying: "no response from server within \(seconds) seconds"
+                    ))
+                }
+                Task {
+                    do {
+                        let value = try await operation()
+                        if settled.claim() { continuation.resume(returning: value) }
+                    } catch {
+                        if settled.claim() { continuation.resume(throwing: error) }
+                    }
+                    timer.cancel()
+                }
+            }
+        }
+
+        /// Classifies a failure for the layers above, which treat a lost
+        /// connection (pause and recover) differently from a refused
+        /// operation (retry that one item).
+        func mapError(_ error: Error, operation: String, path: String) -> Error {
+            if error is CancellationError || error is RemoteFileServiceError { return error }
+
+            var status = error as? SFTPMessage.Status
+            if case .errorStatus(let wrapped)? = error as? SFTPError { status = wrapped }
+
+            if let status {
+                switch status.errorCode {
+                case .noSuchFile:
+                    SFTPFileService.log.debug("\(operation) at \(path): no such file")
+                    return RemoteFileServiceError.itemNotFound(path: path)
+                case .permissionDenied:
+                    SFTPFileService.log.debug("\(operation) at \(path): permission denied")
+                    return RemoteFileServiceError.permissionDenied(operation: operation, path: path)
+                case .noConnection, .connectionLost:
+                    return connectionLost(error, operation: operation, path: path)
+                default:
+                    break
+                }
+            } else if Self.isConnectionLevel(error) || !sftp.isActive {
+                return connectionLost(error, operation: operation, path: path)
+            }
+
+            SFTPFileService.log.error("\(operation) at \(path) failed: \(String(describing: error))")
+            return RemoteFileServiceError.operationFailed(
+                operation: operation,
+                path: path,
+                underlying: String(describing: error)
+            )
+        }
+
+        private func connectionLost(_ error: Error, operation: String, path: String) -> Error {
+            SFTPFileService.log.error("\(operation) at \(path) lost the connection: \(String(describing: error))")
+            markDead()
+            return RemoteFileServiceError.connectionFailed(underlying: String(describing: error))
+        }
+
+        private static func isConnectionLevel(_ error: Error) -> Bool {
+            switch error {
+            case let sftpError as SFTPError:
+                switch sftpError {
+                case .connectionClosed, .missingResponse: return true
+                default: return false
+                }
+            case is ChannelError, is IOError, is NIOSSHError:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    /// Lets exactly one of a request's answer and its timeout win.
+    private final class SettleOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var settled = false
+
+        func claim() -> Bool {
+            lock.withLock {
+                defer { settled = true }
+                return !settled
+            }
         }
     }
 
     // MARK: - Helpers
 
-    private func activeSFTPClient() throws -> SFTPClient {
-        guard let sftpClient else {
+    private func activeSession() throws -> Session {
+        guard let session else {
             throw RemoteFileServiceError.notConnected
         }
-        return sftpClient
+        return session
     }
 
     private func makeAuthenticationMethod() throws -> SSHAuthenticationMethod {
@@ -403,18 +811,5 @@ public actor SFTPFileService: RemoteFileService {
         case symlinkTypeBits: return .symlink
         default: return .file
         }
-    }
-
-    private static func mapError(_ error: Error, operation: String, path: String) -> Error {
-        if let status = error as? SFTPMessage.Status, status.errorCode == .noSuchFile {
-            log.debug("\(operation) at \(path): no such file")
-            return RemoteFileServiceError.itemNotFound(path: path)
-        }
-        log.error("\(operation) at \(path) failed: \(String(describing: error))")
-        return RemoteFileServiceError.operationFailed(
-            operation: operation,
-            path: path,
-            underlying: String(describing: error)
-        )
     }
 }

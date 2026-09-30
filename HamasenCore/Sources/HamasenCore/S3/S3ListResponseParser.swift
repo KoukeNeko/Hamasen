@@ -28,6 +28,8 @@ public enum S3ListResponseParser {
         public let key: String
         public let size: Int64
         public let lastModified: Date?
+        /// The ETag with its quotes removed; see `HTTPTransfer.normalizedETag`.
+        public let contentTag: String?
     }
 
     public struct Listing: Equatable, Sendable {
@@ -77,12 +79,13 @@ private final class ListBucketResultDelegate: NSObject, XMLParserDelegate {
     private var isTruncated = false
     private var nextContinuationToken: String?
 
-    private var rawObjects: [(key: String, size: Int64, lastModified: Date?)] = []
+    private var rawObjects: [(key: String, size: Int64, lastModified: Date?, contentTag: String?)] = []
     private var rawPrefixes: [String] = []
 
     private var key: String?
     private var size: Int64 = 0
     private var lastModified: Date?
+    private var contentTag: String?
     private var insideContents = false
     private var insideCommonPrefixes = false
 
@@ -112,7 +115,8 @@ private final class ListBucketResultDelegate: NSObject, XMLParserDelegate {
         S3ListResponseParser.Listing(
             objects: rawObjects.map {
                 S3ListResponseParser.Object(
-                    key: decoded($0.key), size: $0.size, lastModified: $0.lastModified)
+                    key: decoded($0.key), size: $0.size, lastModified: $0.lastModified,
+                    contentTag: $0.contentTag)
             },
             commonPrefixes: rawPrefixes.map(decoded),
             isTruncated: isTruncated,
@@ -143,6 +147,7 @@ private final class ListBucketResultDelegate: NSObject, XMLParserDelegate {
             key = nil
             size = 0
             lastModified = nil
+            contentTag = nil
         case "commonprefixes":
             insideCommonPrefixes = true
         default:
@@ -174,11 +179,13 @@ private final class ListBucketResultDelegate: NSObject, XMLParserDelegate {
             size = Int64(value) ?? 0
         case "lastmodified" where insideContents:
             lastModified = Self.timestamp(from: value)
+        case "etag" where insideContents:
+            contentTag = HTTPTransfer.normalizedETag(value)
         case "contents":
             // A Contents entry with no Key is not an object anybody can ask
             // for, so it is dropped rather than turned into a nameless item.
             if let key, !key.isEmpty {
-                rawObjects.append((key, size, lastModified))
+                rawObjects.append((key, size, lastModified, contentTag))
             }
             insideContents = false
         case "prefix" where insideCommonPrefixes:

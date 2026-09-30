@@ -33,9 +33,43 @@ public enum FTPListing {
     }
 
     private static func machineEntry(_ line: String, directory: String) -> RemoteItem? {
+        guard let (facts, name) = machineFacts(in: line) else { return nil }
+        guard !name.isEmpty, name != ".", name != ".." else { return nil }
+
+        // "cdir" and "pdir" describe the directory itself and its parent.
+        let type = facts["type"]?.lowercased() ?? "file"
+        guard type != "cdir", type != "pdir" else { return nil }
+
+        return machineItem(facts, path: RemotePath.join(directory, name), name: name)
+    }
+
+    /// Parses the reply to `MLST`, which describes one item in the same
+    /// facts an `MLSD` line carries. The reply's first and last lines are its
+    /// own text and the facts sit between them, so the item's name is taken
+    /// from `path`: the server echoes it back in whatever form it likes.
+    public static func parseMachineStatus(_ response: FTPResponse, path: String) -> RemoteItem? {
+        for line in response.lines.dropFirst().dropLast() {
+            // MLST indents its facts line by a space.
+            guard let (facts, _) = machineFacts(in: String(line.drop(while: { $0 == " " }))) else {
+                continue
+            }
+            var item = machineItem(facts, path: path, name: RemotePath.name(of: path))
+            // MLST of a directory may name it "cdir": it is the item itself.
+            if ["cdir", "pdir"].contains(facts["type"]?.lowercased() ?? "") {
+                item = RemoteItem(
+                    path: item.path, name: item.name, kind: .directory,
+                    size: item.size, modificationDate: item.modificationDate
+                )
+            }
+            return item
+        }
+        return nil
+    }
+
+    /// Splits `fact=value;fact=value; name`. Facts are lower-cased by name.
+    private static func machineFacts(in line: String) -> (facts: [String: String], name: String)? {
         guard let separator = line.firstIndex(of: " ") else { return nil }
         let name = String(line[line.index(after: separator)...])
-        guard !name.isEmpty, name != ".", name != ".." else { return nil }
 
         var facts: [String: String] = [:]
         for fact in line[..<separator].split(separator: ";") {
@@ -43,15 +77,23 @@ public enum FTPListing {
             guard parts.count == 2 else { continue }
             facts[parts[0].lowercased()] = String(parts[1])
         }
+        return (facts, name)
+    }
 
-        // "cdir" and "pdir" describe the directory itself and its parent.
+    private static func machineItem(_ facts: [String: String], path: String, name: String) -> RemoteItem {
         let type = facts["type"]?.lowercased() ?? "file"
-        guard type != "cdir", type != "pdir" else { return nil }
-
+        let kind: RemoteItem.Kind
+        if type == "dir" {
+            kind = .directory
+        } else if type.hasPrefix("os.unix=slink") || type.hasPrefix("os.unix=symlink") {
+            kind = .symlink
+        } else {
+            kind = .file
+        }
         return RemoteItem(
-            path: RemotePath.join(directory, name),
+            path: path,
             name: name,
-            kind: type == "dir" ? .directory : (type.hasPrefix("os.unix=slink") ? .symlink : .file),
+            kind: kind,
             size: facts["size"].flatMap(Int64.init) ?? 0,
             modificationDate: facts["modify"].flatMap(parseTimeval)
         )
