@@ -294,6 +294,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         // the system creates their children one by one.
         let isDirectory = contentType.conforms(to: .directory)
         let mayAlreadyExist = options.contains(.mayAlreadyExist)
+        let attempt = WriteAttempt()
 
         if contentType.conforms(to: .symbolicLink) {
             // No protocol here can create a link, and an empty file in its
@@ -317,9 +318,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
             if let existing = try await Self.remoteItem(at: newItemPath, using: service) {
                 let isSameKind = isDirectory ? existing.kind == .directory : existing.kind == .file
-                // A repeat after a dropped session finds what its own first
-                // attempt uploaded, which is not a collision.
-                guard isSameKind, mayAlreadyExist || context.isRetry else {
+                // A repeat after a dropped session may find what its own
+                // first attempt uploaded, which is not a collision.
+                guard isSameKind, mayAlreadyExist || (context.isRetry && attempt.began) else {
                     throw Self.collision(with: existing, serverID: serverID)
                 }
                 let existingItem = RemoteFileItem(serverID: serverID, remoteItem: existing)
@@ -360,6 +361,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
             if isDirectory {
                 do {
+                    attempt.begin()
                     try await service.createDirectory(at: newItemPath)
                 } catch RemoteFileServiceError.alreadyExists {
                     // Created between the lookup and now, by whoever else
@@ -367,6 +369,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 }
             } else if let url {
                 context.progress.beginTransfer(byteCount: Self.fileSize(of: url), operation: .uploading)
+                attempt.begin()
                 try await service.uploadFile(from: url, to: newItemPath, progress: context.progress.byteReporter)
             } else if mayAlreadyExist {
                 // Nothing on the server to match and no contents to create
@@ -378,6 +381,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 let emptyFileURL = try Self.makeTemporaryFileURL(for: domain)
                 try Data().write(to: emptyFileURL)
                 defer { try? FileManager.default.removeItem(at: emptyFileURL) }
+                attempt.begin()
                 try await service.uploadFile(from: emptyFileURL, to: newItemPath)
             }
             return CreatedItem(
@@ -461,10 +465,18 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                     // delete the item from disk, so the move is done as a
                     // copy to the other server followed by a delete.
                     let name = isRenamed ? item.filename : RemotePath.name(of: location.path)
-                    let moved = try await Self.moveAcrossServers(
-                        from: location, using: service, to: parent, named: name,
-                        registry: registry, domain: domain, progress: context.progress)
-                    return ModifiedItem(item: moved, shouldFetchContent: false)
+                    do {
+                        let moved = try await Self.moveAcrossServers(
+                            from: location, using: service, to: parent, named: name,
+                            registry: registry, domain: domain, progress: context.progress)
+                        return ModifiedItem(item: moved, shouldFetchContent: false)
+                    } catch is DestinationUnreachable {
+                        // The server that could not be reached is the
+                        // destination; the operation runs under the source's
+                        // name, and a probe for that one would find it fine.
+                        await registry.reportUnreachable(parent.serverID)
+                        throw NSFileProviderError(.serverUnreachable)
+                    }
                 }
                 newParentPath = parent.path
             }
@@ -873,6 +885,21 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         var createdDestination = false
     }
 
+    /// Whether a creation got as far as writing to the server. A repeat
+    /// after a dropped session may find what its first attempt wrote, which
+    /// is not a collision — but only if that attempt wrote anything; a file
+    /// someone else created meanwhile is.
+    private final class WriteAttempt: @unchecked Sendable {
+        private let lock = NSLock()
+        private var hasBegun = false
+
+        var began: Bool { lock.withLock { hasBegun } }
+
+        func begin() {
+            lock.withLock { hasBegun = true }
+        }
+    }
+
     /// The source changed while it was being copied. Deleting it would lose
     /// the change, so the move is undone and left for the system to retry.
     private struct SourceChangedDuringMove: Error {}
@@ -891,10 +918,18 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         domain: NSFileProviderDomain,
         progress: Progress
     ) async throws -> RemoteFileItem {
-        let destinationService = try await registry.service(for: parent.serverID)
+        let destinationService = try await onDestination { try await registry.service(for: parent.serverID) }
         let sourceInfo = try await sourceService.itemInfo(at: source.path)
+        // The lookup follows links; whether the item itself is one only its
+        // directory's own listing says.
+        let sourceEntry = try await sourceService
+            .listDirectoryWithoutFollowingLinks(at: RemotePath.parent(of: source.path))
+            .first { $0.name == RemotePath.name(of: source.path) }
+        if sourceEntry?.kind == .symlink { throw CocoaError(.featureUnsupported) }
         let destinationPath = RemotePath.join(parent.path, name)
-        if let existing = try await remoteItem(at: destinationPath, using: destinationService) {
+        if let existing = try await onDestination({
+            try await remoteItem(at: destinationPath, using: destinationService)
+        }) {
             throw collision(with: existing, serverID: parent.serverID)
         }
 
@@ -947,7 +982,21 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         }
         return RemoteFileItem(
             serverID: parent.serverID,
-            remoteItem: try await destinationService.itemInfo(at: destinationPath))
+            remoteItem: try await onDestination { try await destinationService.itemInfo(at: destinationPath) })
+    }
+
+    /// A connection failure on the destination side of a move, kept apart
+    /// from the source's so the right server is probed.
+    private struct DestinationUnreachable: Error {
+        let underlying: Error
+    }
+
+    private static func onDestination<T>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch where FileProviderErrorMapper.isConnectionFailure(error) {
+            throw DestinationUnreachable(underlying: error)
+        }
     }
 
     /// Whether the source still holds exactly what was copied from it: the
@@ -961,7 +1010,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             return try await service.itemInfo(at: path).contentVersionToken == token
         }
         for (path, names) in copied.directories {
-            let listing = try await service.listDirectory(at: path)
+            let listing = try await service.listDirectoryWithoutFollowingLinks(at: path)
             guard Set(listing.map(\.name)) == names else { return false }
             for item in listing where item.kind == .file {
                 guard copied.files[item.path] == item.contentVersionToken else { return false }
@@ -991,7 +1040,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             { @Sendable bytes in progress.completedUnitCount = min(size + bytes, progress.totalUnitCount) }
         }
         try await sourceService.downloadFile(at: item.path, to: temporaryURL, progress: downloaded)
-        try await destinationService.uploadFile(from: temporaryURL, to: destinationPath, progress: uploaded)
+        try await onDestination {
+            try await destinationService.uploadFile(from: temporaryURL, to: destinationPath, progress: uploaded)
+        }
     }
 
     /// Copies a tree. Units are entries, added as directories are listed,
@@ -1005,9 +1056,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         progress: Progress,
         copied: inout CopiedTree
     ) async throws {
-        try await destinationService.createDirectory(at: destinationPath)
+        try await onDestination { try await destinationService.createDirectory(at: destinationPath) }
         copied.createdDestination = true
-        let children = try await sourceService.listDirectory(at: sourcePath)
+        // Links as links: followed, a link to a directory would be copied as
+        // the directory, and one to an ancestor would never end.
+        let children = try await sourceService.listDirectoryWithoutFollowingLinks(at: sourcePath)
         copied.directories[sourcePath] = Set(children.map(\.name))
         progress.totalUnitCount += Int64(children.count)
         progress.completedUnitCount += 1

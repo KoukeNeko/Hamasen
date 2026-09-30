@@ -77,7 +77,11 @@ public struct WorkingSetWalkStore: Sendable {
         limits: WorkingSetWalk.Limits,
         at now: Date = Date()
     ) -> WorkingSetWalk? {
-        if let token, let stored = load(), stored.belongs(to: token), stored.completedAt == nil, !stored.isFinished {
+        // Resumed only under the settings it was started with. A walk saved
+        // by a step still running when the settings changed would otherwise
+        // come back and keep listing a server that opted out.
+        if let token, let stored = load(), stored.belongs(to: token), stored.completedAt == nil, !stored.isFinished,
+           stored.limits == limits, Set(stored.serverIDs) == Set(serverIDs) {
             return stored
         }
         guard isWalkDue(at: now) else { return nil }

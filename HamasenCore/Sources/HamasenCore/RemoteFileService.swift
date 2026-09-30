@@ -38,6 +38,12 @@ public protocol RemoteFileService: Sendable {
     /// Lists directory contents (excluding "." and "..").
     func listDirectory(at path: String) async throws -> [RemoteItem]
 
+    /// Lists directory contents with links reported as links, not as what
+    /// they point at. For callers that must not follow them — a copy that
+    /// would otherwise turn a link into a duplicate of its target, or loop
+    /// on a link to an ancestor.
+    func listDirectoryWithoutFollowingLinks(at path: String) async throws -> [RemoteItem]
+
     /// Fetches attributes for a single item.
     func itemInfo(at path: String) async throws -> RemoteItem
 
@@ -92,6 +98,11 @@ public protocol RemoteFileService: Sendable {
 public typealias TransferProgress = @Sendable (_ bytesTransferred: Int64) -> Void
 
 extension RemoteFileService {
+    /// Protocols without links list the same either way.
+    public func listDirectoryWithoutFollowingLinks(at path: String) async throws -> [RemoteItem] {
+        try await listDirectory(at: path)
+    }
+
     public func downloadFile(at path: String, to localURL: URL) async throws {
         try await downloadFile(at: path, to: localURL, progress: nil)
     }

@@ -183,6 +183,7 @@ public final class TestS3ObjectStore: @unchecked Sendable {
     private var uploads: [String: [Int: StoredPart]] = [:]
     private var writes = 0
     private var listings = 0
+    private var completedUploads = 0
 
     /// How many times a bucket listing was served, so a test can tell one
     /// request covering a subtree from one request per directory.
@@ -281,6 +282,7 @@ public final class TestS3ObjectStore: @unchecked Sendable {
             assembled.append(part.data)
         }
         uploads.removeValue(forKey: id)
+        completedUploads += 1
         return .success(assembled)
     }
 
@@ -294,5 +296,13 @@ public final class TestS3ObjectStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return uploads.count
+    }
+
+    /// How many multipart uploads were assembled, so a test can tell which
+    /// way a file was sent.
+    public var completedMultipartUploadCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return completedUploads
     }
 }

@@ -68,6 +68,9 @@ public actor S3FileService: RemoteFileService {
         public static let maximumParts = 10_000
     }
 
+    /// The multipart threshold and part size an upload should use.
+    public typealias UploadSizes = @Sendable () -> (multipartThresholdBytes: Int, partSizeBytes: Int)
+
     public enum Copy {
         /// CopyObject refuses a source larger than this; the object has to be
         /// copied in ranges instead.
@@ -89,8 +92,10 @@ public actor S3FileService: RemoteFileService {
     private let endpoint: S3Endpoint
     private let awsCredentials: AWSCredentials?
     private let connectTimeoutSeconds: Int
-    private let multipartThresholdBytes: Int
-    private let partSizeBytes: Int
+    /// Read when each upload starts rather than once: the service lives as
+    /// long as its connection, and a change in Settings has to reach the
+    /// next upload, not the next reconnect.
+    private let uploadSizes: UploadSizes
     private let singleCopyLimitBytes: Int64
     private let copyPartSizeBytes: Int64
 
@@ -113,13 +118,13 @@ public actor S3FileService: RemoteFileService {
         multipartThresholdBytes: Int = Upload.defaultMultipartThresholdBytes,
         partSizeBytes: Int = Upload.defaultPartSizeBytes,
         singleCopyLimitBytes: Int64 = Copy.singleRequestLimitBytes,
-        copyPartSizeBytes: Int64 = Copy.defaultPartSizeBytes
+        copyPartSizeBytes: Int64 = Copy.defaultPartSizeBytes,
+        uploadSizes: UploadSizes? = nil
     ) {
         self.config = config
         self.endpoint = endpoint
         self.connectTimeoutSeconds = connectTimeoutSeconds
-        self.multipartThresholdBytes = multipartThresholdBytes
-        self.partSizeBytes = partSizeBytes
+        self.uploadSizes = uploadSizes ?? { (multipartThresholdBytes, partSizeBytes) }
         self.singleCopyLimitBytes = singleCopyLimitBytes
         self.copyPartSizeBytes = copyPartSizeBytes
         if case .password(let secret) = credentials {
@@ -351,7 +356,8 @@ public actor S3FileService: RemoteFileService {
     public func uploadFile(from localURL: URL, to path: String, progress: TransferProgress?) async throws {
         let object = try object(for: path)
         let size = try Self.fileSize(of: localURL)
-        if size <= Int64(multipartThresholdBytes) {
+        let sizes = uploadSizes()
+        if size <= Int64(sizes.multipartThresholdBytes) {
             // The file goes out from disk, not from memory. Its hash is taken
             // in a first pass over it so the signature can still cover the
             // body, which every S3-compatible service accepts.
@@ -369,7 +375,8 @@ public actor S3FileService: RemoteFileService {
                 operation: Self.uploadOperation, path: path)
         } else {
             try await uploadInParts(
-                from: localURL, to: object, size: size, path: path, progress: progress)
+                from: localURL, to: object, size: size, partSizeBytes: sizes.partSizeBytes,
+                path: path, progress: progress)
         }
         // The delegate reports bytes as they go, but not reliably the last
         // of them: the call can return before its final callback.
@@ -427,8 +434,14 @@ public actor S3FileService: RemoteFileService {
             throw RemoteFileServiceError.alreadyExists(path: newPath)
         }
 
-        if let size = try await objectSize(source, path: oldPath) {
-            try await copy(from: source, to: destination, size: size, path: oldPath)
+        if let state = try await objectState(source, path: oldPath) {
+            try await copy(from: source, to: destination, size: state.size, tag: state.tag, path: oldPath)
+            // A write to the source after the copy would be lost with it.
+            guard try await objectState(source, path: oldPath) == state else {
+                _ = try? await send(
+                    method: Method.delete, object: destination, operation: Self.moveOperation, path: newPath)
+                throw Self.sourceChanged(path: oldPath)
+            }
             _ = try await send(
                 method: Method.delete, object: source,
                 operation: Self.moveOperation, path: oldPath)
@@ -445,7 +458,15 @@ public actor S3FileService: RemoteFileService {
                 from: S3ObjectKey(bucket: source.bucket, key: entry.key),
                 to: S3ObjectKey(bucket: destination.bucket,
                                 key: destination.directoryPrefix + suffix),
-                size: entry.size, path: oldPath)
+                size: entry.size, tag: entry.contentTag, path: oldPath)
+        }
+        // Anything written under the source after it was listed — a changed
+        // object, a new one — would be lost with it.
+        let current = try await objectsUnder(source, path: oldPath, operation: Self.moveOperation)
+        guard Self.versions(of: current) == Self.versions(of: objects) else {
+            let copiedKeys = objects.map { destination.directoryPrefix + String($0.key.dropFirst(sourcePrefix.count)) }
+            try? await delete(keys: copiedKeys, bucket: destination.bucket, path: newPath)
+            throw Self.sourceChanged(path: oldPath)
         }
         try await delete(keys: objects.map(\.key), bucket: source.bucket, path: oldPath)
     }
@@ -453,7 +474,7 @@ public actor S3FileService: RemoteFileService {
     // MARK: - Writing helpers
 
     private func uploadInParts(
-        from localURL: URL, to object: S3ObjectKey, size: Int64, path: String,
+        from localURL: URL, to object: S3ObjectKey, size: Int64, partSizeBytes: Int, path: String,
         progress: TransferProgress?
     ) async throws {
         let parts = Int((size + Int64(partSizeBytes) - 1) / Int64(partSizeBytes))
@@ -550,26 +571,62 @@ public actor S3FileService: RemoteFileService {
     }
 
     private func copy(from source: S3ObjectKey, to destination: S3ObjectKey,
-                      size: Int64, path: String) async throws {
+                      size: Int64, tag: String?, path: String) async throws {
         // The header names the source the way a URL path would, so the same
         // encoder the signature uses produces it.
         let reference = AWSSignatureV4.canonicalURI(for: source.absolutePath)
+        // Pinned to the version that was looked at, so a write in between
+        // fails the copy instead of copying something else — and every part
+        // of a multipart copy comes from the same version.
+        var sourceHeaders = ["x-amz-copy-source": reference]
+        if let tag { sourceHeaders["x-amz-copy-source-if-match"] = "\"\(tag)\"" }
         guard size > singleCopyLimitBytes else {
             _ = try await send(
                 method: Method.put, object: destination,
-                headers: ["x-amz-copy-source": reference],
+                headers: sourceHeaders,
                 operation: Self.moveOperation, path: path,
                 // Large copies are answered 200 before they finish, and a
                 // failure after that arrives as an <Error> document.
                 failsOnEmbeddedError: true)
             return
         }
-        try await copyInParts(reference: reference, to: destination, size: size, path: path)
+        try await copyInParts(sourceHeaders: sourceHeaders, to: destination, size: size, path: path)
+    }
+
+    /// What identifies one version of an object: its size and, when the
+    /// server gives one, its ETag.
+    private struct ObjectState: Equatable {
+        let size: Int64
+        let tag: String?
+    }
+
+    private func objectState(_ object: S3ObjectKey, path: String) async throws -> ObjectState? {
+        do {
+            let response = try await send(
+                method: Method.head, object: object,
+                operation: Self.infoOperation, path: path)
+            return ObjectState(
+                size: Self.contentLength(of: response.http),
+                tag: HTTPTransfer.normalizedETag(response.http.value(forHTTPHeaderField: "ETag")))
+        } catch RemoteFileServiceError.itemNotFound {
+            return nil
+        }
+    }
+
+    private static func versions(of objects: [S3ListResponseParser.Object]) -> [String: ObjectState] {
+        Dictionary(
+            objects.map { ($0.key, ObjectState(size: $0.size, tag: $0.contentTag)) },
+            uniquingKeysWith: { first, _ in first })
+    }
+
+    private static func sourceChanged(path: String) -> Error {
+        RemoteFileServiceError.operationFailed(
+            operation: moveOperation, path: path, underlying: "來源在移動期間被修改")
     }
 
     /// UploadPartCopy, for a source too large for a single CopyObject.
     private func copyInParts(
-        reference: String, to destination: S3ObjectKey, size: Int64, path: String
+        sourceHeaders: [String: String], to destination: S3ObjectKey, size: Int64, path: String
     ) async throws {
         let partSize = max(
             copyPartSizeBytes, (size + Int64(Upload.maximumParts) - 1) / Int64(Upload.maximumParts))
@@ -586,10 +643,8 @@ public actor S3FileService: RemoteFileService {
                         URLQueryItem(name: "partNumber", value: String(number)),
                         URLQueryItem(name: "uploadId", value: uploadID),
                     ],
-                    headers: [
-                        "x-amz-copy-source": reference,
-                        "x-amz-copy-source-range": "bytes=\(start)-\(end)",
-                    ],
+                    headers: sourceHeaders.merging(
+                        ["x-amz-copy-source-range": "bytes=\(start)-\(end)"], uniquingKeysWith: { $1 }),
                     operation: Self.moveOperation, path: path,
                     failsOnEmbeddedError: true)
                 guard let tag = Self.firstValue(ofElement: "etag", in: response.data) else {

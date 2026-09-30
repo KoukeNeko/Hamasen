@@ -75,6 +75,9 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
     /// outlived its walk is recognised rather than applied to the wrong queue.
     public let identifier: UUID
     public let limits: Limits
+    /// The servers the walk was started over, so a walk from before a
+    /// server opted out is not resumed for it.
+    public let serverIDs: [UUID]
     public let startedAt: Date
     public private(set) var completedAt: Date?
     public private(set) var queue: [Pending]
@@ -90,6 +93,7 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
     public init(serverIDs: [UUID], limits: Limits = .default, startedAt: Date = Date()) {
         identifier = UUID()
         self.limits = limits
+        self.serverIDs = serverIDs
         self.startedAt = startedAt
         queue = serverIDs.map { Pending(serverID: $0, path: RemotePath.root, depth: 0) }
         directoriesListed = 0

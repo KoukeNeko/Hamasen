@@ -49,8 +49,9 @@ public enum RemoteFileServiceFactory {
                 credentials: credentials,
                 endpoint: s3Endpoint(for: config),
                 connectTimeoutSeconds: connectTimeoutSeconds,
-                multipartThresholdBytes: AppSettings.s3MultipartThresholdBytes(),
-                partSizeBytes: AppSettings.s3PartSizeBytes()
+                uploadSizes: {
+                    (AppSettings.s3MultipartThresholdBytes(), AppSettings.s3PartSizeBytes())
+                }
             )
         }
     }

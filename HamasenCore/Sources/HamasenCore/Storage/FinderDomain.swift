@@ -67,7 +67,14 @@ public enum FinderDomain {
     ///
     /// 1: the original domain.
     /// 2: search, so Spotlight can ask the extension for results (macOS 26+).
-    private static let capabilityGeneration = 2
+    ///
+    /// What this system can declare, not what the code knows about: search
+    /// needs macOS 26, and a domain added before that records generation 1,
+    /// so it is replaced — and gains search — once the Mac is upgraded.
+    private static var capabilityGeneration: Int {
+        if #available(macOS 26, *) { return 2 }
+        return 1
+    }
 
     /// Whether a registered domain predates what `domain` now declares.
     ///

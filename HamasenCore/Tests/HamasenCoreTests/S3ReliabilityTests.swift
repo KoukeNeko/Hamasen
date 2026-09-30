@@ -114,6 +114,40 @@ struct S3ReliabilityTests {
         }
     }
 
+    // MARK: - Settings
+
+    /// The service outlives a change in Settings, since the extension keeps
+    /// it for as long as the connection lasts; the next upload has to use
+    /// the new sizes, not the ones the service was made with.
+    @Test
+    func uploadSizesAreReadWhenEachUploadStarts() async throws {
+        let server = try await TestS3Server.start()
+        let sizes = UploadSizesBox(threshold: 1_000, partSize: 1_000)
+        let service = S3FileService(
+            config: ServerConfig(
+                name: "測試 S3", transferProtocol: .s3, host: "127.0.0.1", port: 443,
+                username: TestS3Server.credentials.accessKeyID,
+                remotePath: "/\(TestS3Server.bucket)"),
+            credentials: .password(TestS3Server.credentials.secretAccessKey),
+            endpoint: server.endpoint,
+            uploadSizes: { sizes.current })
+        defer { Task { try? await server.stop() } }
+        try await service.connect()
+
+        let payload = Data(repeating: 7, count: 250)
+        let source = try temporaryFile(payload)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        try await service.uploadFile(from: source, to: "/single.bin")
+        #expect(server.store.completedMultipartUploadCount == 0)
+
+        sizes.set(threshold: 100, partSize: 100)
+        try await service.uploadFile(from: source, to: "/parts.bin")
+        #expect(server.store.completedMultipartUploadCount == 1)
+        #expect(server.store.object(forKey: "parts.bin")?.data == payload)
+        try await service.disconnect()
+    }
+
     // MARK: - Reconnecting
 
     @Test("中斷連線後可以重新連線")
@@ -364,5 +398,20 @@ struct S3ReliabilityTests {
             }
             #expect(server.store.object(forKey: "huge.bin") != nil)
         }
+    }
+}
+
+private final class UploadSizesBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sizes: (multipartThresholdBytes: Int, partSizeBytes: Int)
+
+    init(threshold: Int, partSize: Int) {
+        sizes = (threshold, partSize)
+    }
+
+    var current: (multipartThresholdBytes: Int, partSizeBytes: Int) { lock.withLock { sizes } }
+
+    func set(threshold: Int, partSize: Int) {
+        lock.withLock { sizes = (threshold, partSize) }
     }
 }

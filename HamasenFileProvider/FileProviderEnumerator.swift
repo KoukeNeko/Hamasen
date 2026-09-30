@@ -124,6 +124,12 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     }
 
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
+        currentSyncAnchor(walk: nil, completionHandler: completionHandler)
+    }
+
+    func currentSyncAnchor(
+        walk: WorkingSetWalk.Token?, completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void
+    ) {
         // No anchor rather than one built from an empty list. The system
         // reads nil as "no common ground, enumerate from scratch", where an
         // anchor claiming the mount was empty would make the next diff read
@@ -133,7 +139,7 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
             completionHandler(nil)
             return
         }
-        completionHandler(try? Self.anchor(for: configs))
+        completionHandler(try? Self.anchor(for: configs, walk: walk))
     }
 }
 

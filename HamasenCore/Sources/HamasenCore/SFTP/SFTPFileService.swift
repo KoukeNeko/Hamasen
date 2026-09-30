@@ -148,6 +148,10 @@ public actor SFTPFileService: RemoteFileService {
     /// Lists a directory, with each symlink either reported as what it points
     /// at (`resolvingLinks`, the view everything but deletion wants) or left
     /// as the link it is.
+    public func listDirectoryWithoutFollowingLinks(at path: String) async throws -> [RemoteItem] {
+        try await listEntries(at: path, resolvingLinks: false)
+    }
+
     private func listEntries(at path: String, resolvingLinks: Bool) async throws -> [RemoteItem] {
         let session = try activeSession()
         let remoteDirectory = remoteAbsolutePath(for: path)
@@ -335,6 +339,18 @@ public actor SFTPFileService: RemoteFileService {
 
         let backup = RemotePath.temporaryUploadPath(for: destination)
         try await session.run { try await sftp.rename(at: destination, to: backup) }
+        // Checked on what was moved, not before the move, so nothing can
+        // change it in between. A directory put there by someone else during
+        // the upload is not a file to replace — and SFTP could not remove it
+        // afterwards — so it goes back and the upload fails.
+        guard await entryKind(at: backup, session: session) == .file else {
+            do {
+                try await session.run { try await sftp.rename(at: backup, to: destination) }
+            } catch {
+                throw ReplaceIncomplete(underlying: error, oldFileAt: backup)
+            }
+            throw RemoteFileServiceError.alreadyExists(path: destination)
+        }
         do {
             try await session.run { try await sftp.rename(at: temporary, to: destination) }
         } catch {
@@ -363,6 +379,23 @@ public actor SFTPFileService: RemoteFileService {
     /// server answers a stat of a missing path with empty attributes rather
     /// than an error, and a real server always includes the mode, so a
     /// missing mode counts as missing.
+    /// The kind of the entry at a path, links not followed; nil when it
+    /// cannot be told.
+    private func entryKind(at remotePath: String, session: Session) async -> RemoteItem.Kind? {
+        let parent = RemotePath.parent(of: remotePath)
+        let name = RemotePath.name(of: remotePath)
+        let sftp = session.sftp
+        guard let batches = try? await session.run({ try await sftp.listDirectory(atPath: parent) }) else {
+            return nil
+        }
+        for batch in batches {
+            for component in batch.components where component.filename == name {
+                return Self.kind(fromPermissions: component.attributes.permissions)
+            }
+        }
+        return nil
+    }
+
     private func itemExists(_ remotePath: String, session: Session) async -> Bool {
         let sftp = session.sftp
         guard let attributes = try? await session.run({ try await sftp.getAttributes(at: remotePath) }) else {
@@ -657,6 +690,14 @@ public actor SFTPFileService: RemoteFileService {
         ///
         /// The request itself is not cancelled: a NIO future cannot be
         /// abandoned. Closing the channel is what releases it.
+        /// Runs one request with an idle timeout.
+        ///
+        /// Cancellation does not answer the caller early: the request is
+        /// already on the channel, and abandoning it lets its reply arrive
+        /// after the session may have been closed, which NIOSSH treats as a
+        /// fatal error. The transfer loops check cancellation between
+        /// requests instead, so a cancelled transfer stops within one round
+        /// trip — or the timeout, when the server has stopped answering.
         func run<T>(
             timeoutSeconds: Int? = nil,
             _ operation: @escaping @Sendable () async throws -> T

@@ -80,6 +80,10 @@ public actor FTPFileService: RemoteFileService {
     ) async throws -> Result {
         await acquireOperationLock()
         defer { releaseOperationLock() }
+        // Waiting behind another transfer can take long enough for the
+        // caller to give up; a delete or rename it abandoned must not run
+        // once its turn comes.
+        try Task.checkCancellation()
 
         let connection = try requireConnection()
         do {
@@ -242,15 +246,22 @@ public actor FTPFileService: RemoteFileService {
     /// links. Deleting has to see them that way, and the item lookup compares
     /// against them.
     private func rawEntries(in path: String, on connection: FTPControlConnection) async throws -> [RemoteItem] {
-        let remotePath = resolve(path)
+        try await rawEntries(inServerDirectory: resolve(path), reportedAs: path, on: connection)
+    }
+
+    /// A listing of a directory named by its path on the server rather than
+    /// in the mount, with entries reported under `directory`.
+    private func rawEntries(
+        inServerDirectory remotePath: String, reportedAs directory: String, on connection: FTPControlConnection
+    ) async throws -> [RemoteItem] {
         // MLSD states what each entry is; LIST leaves it to be guessed from
         // whatever the server's directory tool prints.
         if supportsMachineListing {
             let body = try await transferIn(command: "MLSD \(remotePath)", on: connection)
-            return FTPListing.parseMachineListing(body, directory: path)
+            return FTPListing.parseMachineListing(body, directory: directory)
         }
         let body = try await transferIn(command: "LIST \(remotePath)", on: connection)
-        return FTPListing.parseUnixListing(body, directory: path)
+        return FTPListing.parseUnixListing(body, directory: directory)
     }
 
     /// Reports each symlink as whatever it points at.
@@ -502,6 +513,22 @@ public actor FTPFileService: RemoteFileService {
             // started this is the one the caller should hear about.
             throw FTPError.commandFailed(command: "RNTO", response: refusal)
         }
+        // Checked on what was moved, so nothing can change it in between. A
+        // directory put there by someone else during the upload is not a
+        // file to replace — and DELE could not remove it afterwards — so it
+        // goes back and the upload fails.
+        let backupDirectory = RemotePath.parent(of: backup)
+        let movedKind = try? await rawEntries(
+            inServerDirectory: backupDirectory, reportedAs: backupDirectory, on: connection
+        ).first { $0.name == RemotePath.name(of: backup) }?.kind
+        guard movedKind == .file else {
+            do {
+                try await rename(from: backup, to: remotePath, on: connection)
+            } catch {
+                throw PromotionIncomplete(underlying: error, oldFileAt: backup)
+            }
+            throw RemoteFileServiceError.alreadyExists(path: remotePath)
+        }
         do {
             try await rename(from: temporaryPath, to: remotePath, on: connection)
         } catch {
@@ -552,6 +579,13 @@ public actor FTPFileService: RemoteFileService {
     /// points at, so a link to a folder looks like a folder — and walking it
     /// deletes the target's files. This works from the raw entries, where a
     /// link is still a link, and removes it as the file it is.
+    public func listDirectoryWithoutFollowingLinks(at path: String) async throws -> [RemoteItem] {
+        try await perform(operation: Self.listOperation, path: path) { connection in
+            try await rawEntries(in: path, on: connection)
+                .filter { !RemotePath.isTemporaryUpload(name: $0.name) }
+        }
+    }
+
     public func deleteDirectory(at path: String) async throws {
         try await perform(operation: Self.deleteOperation, path: path) { connection in
             if try await lookup(path, on: connection).kind == .symlink {

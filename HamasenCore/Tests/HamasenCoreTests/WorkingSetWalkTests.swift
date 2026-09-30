@@ -259,6 +259,22 @@ struct WorkingSetWalkTests {
         #expect(resumed == walk)
     }
 
+    /// A step still running when the settings changed saves the old walk
+    /// back after they cleared it. Resumed, it would go on listing a server
+    /// that opted out, under limits nobody set any more.
+    @Test
+    func aWalkStartedUnderOtherSettingsIsNotResumed() throws {
+        let store = makeStore()
+        var walk = WorkingSetWalk(serverIDs: [a, b], startedAt: start)
+        walk.advance(itemCount: 0, subdirectories: ["x"])
+        try store.save(walk)
+        let optedOut = store.walkForChangeBatch(after: walk.token, serverIDs: [a], limits: .default, at: start)
+        #expect(optedOut != walk)
+        let narrower = WorkingSetWalk.Limits(maximumDepth: 1, maximumDirectories: 10, maximumItems: 10)
+        let relimited = store.walkForChangeBatch(after: walk.token, serverIDs: [a, b], limits: narrower, at: start)
+        #expect(relimited != walk)
+    }
+
     /// A saved step the system never recorded leaves the anchor one behind.
     /// Refusing it would strand the walk until it goes stale.
     @Test

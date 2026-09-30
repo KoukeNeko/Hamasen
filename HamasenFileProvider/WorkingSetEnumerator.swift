@@ -284,7 +284,13 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         }
     }
 
+    /// Carries the walk under way, as the anchors `enumerateChanges` returns
+    /// do. Without it the next change batch could not resume the walk, and
+    /// since a walk started less than a day ago is not due, the rest of the
+    /// tree would wait a day.
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        serverList.currentSyncAnchor(completionHandler: completionHandler)
+        let walk = (try? WorkingSetWalkStore())?.load()
+        let ongoing = walk.flatMap { $0.completedAt == nil && !$0.isFinished ? $0.token : nil }
+        serverList.currentSyncAnchor(walk: ongoing, completionHandler: completionHandler)
     }
 }

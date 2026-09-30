@@ -277,6 +277,7 @@ final class S3Handler: ChannelInboundHandler {
            let number = target.query["partNumber"].flatMap(Int.init) {
             if let source = head.headers.first(name: "x-amz-copy-source") {
                 copyPart(from: source, range: head.headers.first(name: "x-amz-copy-source-range"),
+                         ifMatch: head.headers.first(name: "x-amz-copy-source-if-match"),
                          number: number, uploadID: uploadID, context: context)
                 return
             }
@@ -291,7 +292,8 @@ final class S3Handler: ChannelInboundHandler {
         }
 
         if let source = head.headers.first(name: "x-amz-copy-source") {
-            copyObject(from: source, to: target.key, context: context)
+            copyObject(from: source, to: target.key,
+                       ifMatch: head.headers.first(name: "x-amz-copy-source-if-match"), context: context)
             return
         }
 
@@ -302,7 +304,7 @@ final class S3Handler: ChannelInboundHandler {
 
     /// The header names the source as /bucket/key, percent-encoded. Sends the
     /// error itself and returns nil when it cannot be resolved.
-    private func copySource(_ source: String, context: ChannelHandlerContext)
+    private func copySource(_ source: String, ifMatch: String?, context: ChannelHandlerContext)
         -> TestS3ObjectStore.StoredObject? {
         let decoded = source.removingPercentEncoding ?? source
         let trimmed = decoded.hasPrefix("/") ? String(decoded.dropFirst()) : decoded
@@ -317,12 +319,19 @@ final class S3Handler: ChannelInboundHandler {
                  status: .notFound, context: context)
             return nil
         }
+        // As S3 does: a copy pinned to an ETag the source no longer has is
+        // refused rather than made from whatever is there now.
+        if let ifMatch, ifMatch != "\"\(Self.entityTag(for: stored.data))\"" {
+            send(error: "PreconditionFailed", message: "x-amz-copy-source-if-match: \(ifMatch)",
+                 status: .preconditionFailed, context: context)
+            return nil
+        }
         return stored
     }
 
-    private func copyPart(from source: String, range: String?, number: Int, uploadID: String,
-                          context: ChannelHandlerContext) {
-        guard let stored = copySource(source, context: context) else { return }
+    private func copyPart(from source: String, range: String?, ifMatch: String?, number: Int,
+                          uploadID: String, context: ChannelHandlerContext) {
+        guard let stored = copySource(source, ifMatch: ifMatch, context: context) else { return }
         var part = stored.data
         if let range {
             guard let bounds = Self.byteRange(range.replacingOccurrences(of: "bytes ", with: "bytes="),
@@ -346,9 +355,9 @@ final class S3Handler: ChannelInboundHandler {
         send(status: .ok, body: Data(xml.utf8), contentType: "application/xml", context: context)
     }
 
-    private func copyObject(from source: String, to key: String,
+    private func copyObject(from source: String, to key: String, ifMatch: String?,
                             context: ChannelHandlerContext) {
-        guard let stored = copySource(source, context: context) else { return }
+        guard let stored = copySource(source, ifMatch: ifMatch, context: context) else { return }
         if let limit = behaviour.maxCopySourceBytes, stored.data.count > limit {
             send(error: "InvalidRequest",
                  message: "The specified copy source is larger than the maximum allowable size for a copy source: \(limit)",
