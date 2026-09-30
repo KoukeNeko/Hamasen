@@ -85,7 +85,20 @@ public struct S3Endpoint: Sendable, Equatable {
 
     static func isLoopback(_ host: String) -> Bool {
         let bare = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-        return bare == "localhost" || bare == "::1" || bare.hasPrefix("127.")
+        if bare == "localhost" || bare == "::1" { return true }
+        // Only an address literal counts: "127.example.com" is a valid name
+        // that can resolve anywhere, and plain HTTP to it would put the
+        // objects on the wire.
+        var address = in_addr()
+        guard inet_pton(AF_INET, bare, &address) == 1 else { return false }
+        return bare.hasPrefix("127.")
+    }
+
+    /// A raw IPv6 literal needs brackets in a URL and in the Host header,
+    /// and the field it is typed into does not require them.
+    static func bracketed(_ host: String) -> String {
+        guard host.contains(":"), !host.hasPrefix("[") else { return host }
+        return "[\(host)]"
     }
 
 
@@ -140,8 +153,9 @@ public struct S3Endpoint: Sendable, Equatable {
     /// URLSession omits the port when it is the scheme's default, so
     /// including it here would sign a header the request never carries.
     func hostHeader(for requestHost: String) -> String {
-        guard let port, port != Self.defaultPorts[scheme] else { return requestHost }
-        return "\(requestHost):\(port)"
+        let host = Self.bracketed(requestHost)
+        guard let port, port != Self.defaultPorts[scheme] else { return host }
+        return "\(host):\(port)"
     }
 
     // MARK: - Request construction

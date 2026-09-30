@@ -28,15 +28,22 @@ public struct WorkingSetAnchor: Equatable, Sendable, Codable {
     /// at: a batch that reports changes under an unchanged anchor reads as
     /// "nothing to see".
     public let walk: WorkingSetWalk.Token?
+    /// Marks a batch that reported something when nothing else in the anchor
+    /// moved — a queued refresh, with no walk step and no server change —
+    /// for the same reason: the header expects such a batch to end on a
+    /// different anchor.
+    public let batch: String?
 
-    public init(serverList: String, walk: WorkingSetWalk.Token?) {
+    public init(serverList: String, walk: WorkingSetWalk.Token?, batch: String? = nil) {
         self.serverList = serverList
         self.walk = walk
+        self.batch = batch
     }
 
     private enum CodingKeys: String, CodingKey {
         case serverList = "l"
         case walk = "w"
+        case batch = "b"
     }
 
     public func encoded() -> Data {

@@ -25,9 +25,15 @@ enum HTTPTransfer {
     /// servers vary between `"abc"`, `W/"abc"` and bare `abc` — and a version
     /// token that differs by spelling makes the system re-download a file
     /// that never changed.
+    ///
+    /// A weak tag (`W/"abc"`) is dropped rather than unwrapped: HTTP lets it
+    /// stay the same across representations whose bytes differ, and both
+    /// users here — the content version and the range cache's validator —
+    /// need a tag that changes when a byte does. Without one they fall back
+    /// to size and modification time.
     static func normalizedETag(_ raw: String?) -> String? {
         guard var tag = raw?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
-        if tag.hasPrefix("W/") { tag.removeFirst(2) }
+        if tag.hasPrefix("W/") { return nil }
         if tag.count >= 2, tag.hasPrefix("\""), tag.hasSuffix("\"") {
             tag = String(tag.dropFirst().dropLast())
         }

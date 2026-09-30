@@ -424,6 +424,15 @@ public actor FTPFileService: RemoteFileService {
             do {
                 try await store(localURL, at: resolve(temporaryPath), progress: progress, on: connection)
                 try await promoteUpload(from: resolve(temporaryPath), to: resolve(path), on: connection)
+            } catch let incomplete as PromotionIncomplete {
+                // The old file is gone and the upload is the only copy left
+                // on the server, so it stays under its temporary name, where
+                // listings hide it but nothing removes it.
+                Self.log.error(
+                    "Upload of \(path) could not be renamed into place and the old file could not be put back; "
+                    + "the new content is at \(temporaryPath), the old at \(incomplete.oldFileAt): "
+                    + "\(String(describing: incomplete.underlying))")
+                throw incomplete.underlying
             } catch {
                 await discardTemporaryUpload(at: resolve(temporaryPath), on: connection)
                 if let ftpError = error as? FTPError,
@@ -457,24 +466,53 @@ public actor FTPFileService: RemoteFileService {
         }
     }
 
+    /// Thrown once the destination has been moved aside and the upload could
+    /// neither take its place nor the old file be put back.
+    private struct PromotionIncomplete: Error {
+        let underlying: Error
+        let oldFileAt: String
+    }
+
+    /// Renames the upload over the destination.
+    ///
+    /// Some servers refuse to rename onto a file that exists, and deleting
+    /// it first would leave a window in which a failure loses both versions.
+    /// So the old file is moved aside instead, and only deleted once the
+    /// upload is in place; if the upload cannot be renamed, the old file is
+    /// put back.
     private func promoteUpload(
         from temporaryPath: String,
         to remotePath: String,
         on connection: FTPControlConnection
     ) async throws {
+        let refusal: FTPResponse
         do {
             try await rename(from: temporaryPath, to: remotePath, on: connection)
+            return
         } catch let error as FTPError {
             guard case .commandFailed("RNTO", let response) = error, response.isPermanentFailure else { throw error }
-            // Some servers refuse to rename onto a file that exists. Removing
-            // it and renaming again is the overwrite the caller asked for.
-            do {
-                try await connection.expect("DELE \(remotePath)")
-            } catch {
-                throw FTPError.commandFailed(command: "RNTO", response: response)
-            }
-            try await rename(from: temporaryPath, to: remotePath, on: connection)
+            refusal = response
         }
+
+        let backup = RemotePath.temporaryUploadPath(for: remotePath)
+        do {
+            try await rename(from: remotePath, to: backup, on: connection)
+        } catch let error as FTPError where !error.isConnectionLevel {
+            // Nothing to move aside, or not allowed to: the refusal that
+            // started this is the one the caller should hear about.
+            throw FTPError.commandFailed(command: "RNTO", response: refusal)
+        }
+        do {
+            try await rename(from: temporaryPath, to: remotePath, on: connection)
+        } catch {
+            do {
+                try await rename(from: backup, to: remotePath, on: connection)
+            } catch {
+                throw PromotionIncomplete(underlying: error, oldFileAt: backup)
+            }
+            throw error
+        }
+        await discardTemporaryUpload(at: backup, on: connection)
     }
 
     /// Best effort: the upload has already failed, and this only tidies up

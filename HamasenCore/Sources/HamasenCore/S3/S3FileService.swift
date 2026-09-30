@@ -300,6 +300,12 @@ public actor S3FileService: RemoteFileService {
             try? FileManager.default.removeItem(at: localURL)
             try FileManager.default.moveItem(at: temporary, to: localURL)
         }
+        // The delegate reports bytes as they arrive, but not reliably the
+        // last of them: the call can return before its final callback. The
+        // total is known now, so it is reported here whatever came before.
+        if let progress, let size = try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            progress(Int64(size))
+        }
     }
 
     public func downloadRange(at path: String, offset: Int64, length: Int) async throws -> Data {
@@ -361,10 +367,13 @@ public actor S3FileService: RemoteFileService {
                 method: Method.put, object: object,
                 upload: FileUpload(url: localURL, payloadHash: payloadHash), progress: progress,
                 operation: Self.uploadOperation, path: path)
-            return
+        } else {
+            try await uploadInParts(
+                from: localURL, to: object, size: size, path: path, progress: progress)
         }
-        try await uploadInParts(
-            from: localURL, to: object, size: size, path: path, progress: progress)
+        // The delegate reports bytes as they go, but not reliably the last
+        // of them: the call can return before its final callback.
+        progress?(size)
     }
 
     /// An empty object whose key ends in a separator. That marker is the only
@@ -1028,8 +1037,11 @@ public actor S3FileService: RemoteFileService {
 
     private func tearDownSessionIfIdle() {
         guard isTearingDown, requestsInFlight == 0, let session else { return }
-        session.finishTasksAndInvalidate()
         self.session = nil
+        // Cleared with the session, or connect() would refuse to make a new
+        // one and the service could never be used again.
+        isTearingDown = false
+        session.finishTasksAndInvalidate()
     }
 
     // MARK: - Operation names, for messages the user sees

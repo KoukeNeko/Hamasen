@@ -212,7 +212,7 @@ struct WebDAVReliabilityTests {
         try await Self.withService { service, server in
             try Data("a".utf8).write(to: server.rootDirectory.appendingPathComponent("a.txt"))
             try Data("b".utf8).write(to: server.rootDirectory.appendingPathComponent("b.txt"))
-            await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/a.txt")) {
+            await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/b.txt")) {
                 try await service.moveItem(from: "/a.txt", to: "/b.txt")
             }
         }

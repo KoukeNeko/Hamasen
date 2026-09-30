@@ -98,6 +98,9 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 // One directory the account cannot read, or one server that
                 // is down, must not end the walk for every other server.
                 Self.log.notice("Skipping \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
+                if FileProviderErrorMapper.isConnectionFailure(error) {
+                    await registry.reportUnreachable(pending.serverID)
+                }
                 walk.skipCurrent()
             }
 
@@ -185,11 +188,17 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                     try await DirectoryRefresh.report(
                         serverID: refresh.serverID, directoryPath: refresh.path, registry: registry, to: observer)
                     reported.insert(refresh)
+                    await registry.reportReachable(refresh.serverID)
                 } catch {
                     // Stays queued: the change is not lost with the server
                     // being down, and a server that is down must not hold up
-                    // the server list.
+                    // the server list. The signal that brought it here is
+                    // spent, though, so the probe that notices the server
+                    // coming back is what makes the next one.
                     Self.log.notice("Could not refresh \(refresh.path) on \(refresh.serverID): \(error.localizedDescription)")
+                    if FileProviderErrorMapper.isConnectionFailure(error) {
+                        await registry.reportUnreachable(refresh.serverID)
+                    }
                 }
             }
             var clearedRefreshes = false
@@ -205,12 +214,18 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 }
             }
 
+            // A batch that reported anything ends on a new anchor, as the
+            // header expects; one that repeats the last could be read as
+            // nothing having changed, with the queue already cleared.
+            let batch = !reported.isEmpty || !changes.diff.isEmpty
+                ? ServerListEnumerator.newBatch() : changes.previousBatch
             guard var walk = nextWalk, let walkStore else {
-                serverList.report(changes, to: observer, walk: changes.previousWalk)
+                serverList.report(changes, to: observer, walk: changes.previousWalk, batch: batch)
                 return
             }
             if !changes.diff.isEmpty || clearedRefreshes {
-                serverList.report(changes, to: observer, walk: changes.previousWalk, moreComing: true)
+                serverList.report(
+                    changes, to: observer, walk: changes.previousWalk, batch: batch, moreComing: true)
                 return
             }
 
@@ -221,10 +236,13 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 // Without the file the next call cannot resume. Ending here
                 // keeps what was listed; the walk is due again.
                 Self.log.error("Could not save the working-set walk: \(error.localizedDescription)")
-                serverList.report(changes, to: observer, walk: changes.previousWalk)
+                serverList.report(
+                    changes, to: observer, walk: changes.previousWalk, batch: ServerListEnumerator.newBatch())
                 return
             }
-            serverList.report(changes, to: observer, walk: walk.token, moreComing: !walk.isFinished)
+            serverList.report(
+                changes, to: observer, walk: walk.token, batch: ServerListEnumerator.newBatch(),
+                moreComing: !walk.isFinished)
         }
     }
 
@@ -254,6 +272,9 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 // One directory the account cannot read, or one server that
                 // is down, must not end the walk for every other server.
                 Self.log.notice("Skipping \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
+                if FileProviderErrorMapper.isConnectionFailure(error) {
+                    await registry.reportUnreachable(pending.serverID)
+                }
                 walk.skipCurrent()
             }
         }

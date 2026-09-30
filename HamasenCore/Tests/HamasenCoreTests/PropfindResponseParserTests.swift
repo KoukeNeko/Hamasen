@@ -178,7 +178,7 @@ struct PropfindResponseParserTests {
         )
     }
 
-    @Test("getetag 去掉引號與弱驗證前綴")
+    @Test("getetag 去掉引號，弱驗證標記視為沒有 ETag")
     func normalisesTheEntityTag() throws {
         let xml = """
         <?xml version="1.0"?>
@@ -197,7 +197,7 @@ struct PropfindResponseParserTests {
         </d:multistatus>
         """
         let entries = try PropfindResponseParser.parse(Data(xml.utf8))
-        #expect(entries.map(\.contentTag) == ["abc123", "plain", nil])
+        #expect(entries.map(\.contentTag) == [nil, "plain", nil])
     }
 
     @Test("failureStatuses 只回傳非 2xx 的成員狀態")

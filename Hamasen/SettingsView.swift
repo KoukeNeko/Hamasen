@@ -435,7 +435,15 @@ private struct S3UploadSection: View {
     private var thresholdSelection: Binding<S3MultipartThreshold> {
         Binding(
             get: { S3MultipartThreshold(bytes: thresholdBytes) },
-            set: { thresholdBytes = $0.rawValue })
+            set: { newValue in
+                // The same rule the other way round: a threshold below one
+                // part is raised to the first that is not, so the picker
+                // shows the threshold the upload will use.
+                thresholdBytes = newValue.rawValue >= partSizeBytes
+                    ? newValue.rawValue
+                    : S3MultipartThreshold.allCases.first { $0.rawValue >= partSizeBytes }?.rawValue
+                        ?? partSizeBytes
+            })
     }
 }
 

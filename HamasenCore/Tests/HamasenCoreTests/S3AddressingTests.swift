@@ -210,4 +210,25 @@ struct S3EndpointTests {
                     "\(style) \(key): the URL must end with the signed path")
         }
     }
+
+    @Test("只有 loopback 位址才用明文 HTTP", arguments: [
+        ("localhost", "http"), ("127.0.0.1", "http"), ("127.1.2.3", "http"),
+        ("::1", "http"), ("[::1]", "http"),
+        ("127.example.com", "https"), ("127.0.0.1.attacker.net", "https"),
+        ("minio.local", "https"), ("s3.amazonaws.com", "https"),
+    ])
+    func plainHTTPIsUsedOnlyForALoopbackAddress(host: String, scheme: String) {
+        #expect(S3Endpoint.scheme(forHost: host) == scheme)
+    }
+
+    @Test("IPv6 位址在 URL 與 Host 標頭中加上中括號")
+    func bracketsARawIPv6Host() throws {
+        let loopback = endpoint(host: "::1", scheme: "http", port: 9_000)
+        let address = try #require(loopback.address(for: S3ObjectKey(bucket: "b", key: "x")))
+        #expect(address.hostHeader == "[::1]:9000")
+        #expect(address.url.absoluteString == "http://[::1]:9000/b/x")
+
+        let typedWithBrackets = endpoint(host: "[::1]", scheme: "http", port: 9_000)
+        #expect(typedWithBrackets.address(for: S3ObjectKey(bucket: "b", key: "x"))?.hostHeader == "[::1]:9000")
+    }
 }

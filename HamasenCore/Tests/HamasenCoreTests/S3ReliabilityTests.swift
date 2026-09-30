@@ -114,6 +114,20 @@ struct S3ReliabilityTests {
         }
     }
 
+    // MARK: - Reconnecting
+
+    @Test("中斷連線後可以重新連線")
+    func reconnectsAfterDisconnecting() async throws {
+        try await withService { service, server in
+            try await service.disconnect()
+            #expect(await service.isConnected == false)
+            try await service.connect()
+            #expect(await service.isConnected == true)
+            _ = try await service.listDirectory(at: "/")
+            _ = server
+        }
+    }
+
     // MARK: - Single PUT from disk
 
     @Test

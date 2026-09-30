@@ -289,10 +289,26 @@ public actor SFTPFileService: RemoteFileService {
                 )
             }
             try await replace(destination, with: temporary, session: session)
+        } catch let incomplete as ReplaceIncomplete {
+            // The old file is gone and the upload is the only copy left on
+            // the server, so it stays under its temporary name, where the
+            // next listing hides it but nothing removes it.
+            Self.log.error(
+                "Upload of \(path) could not be renamed into place and the old file could not be put back; "
+                + "the new content is at \(temporary), the old at \(incomplete.oldFileAt): "
+                + "\(String(describing: incomplete.underlying))")
+            throw session.mapError(incomplete.underlying, operation: operation, path: path)
         } catch {
             await removeTemporaryUpload(temporary, session: session)
             throw session.mapError(error, operation: operation, path: path)
         }
+    }
+
+    /// Thrown once the destination has been moved aside and the upload could
+    /// neither take its place nor the old file be put back.
+    private struct ReplaceIncomplete: Error {
+        let underlying: Error
+        let oldFileAt: String
     }
 
     /// Moves a finished upload over the destination.
@@ -301,15 +317,35 @@ public actor SFTPFileService: RemoteFileService {
     /// atomically, and a plain SFTP rename refuses an existing destination.
     /// So the old file is removed first, leaving a brief window with no file
     /// at all; the upload itself is already complete on the server by then.
+    /// Renames the upload over the destination.
+    ///
+    /// A plain SFTP rename refuses an existing destination on most servers,
+    /// and removing the old file first would leave a window in which a
+    /// failure loses both versions. So the old file is moved aside instead,
+    /// and only removed once the upload is in place; if the upload cannot be
+    /// renamed, the old file is put back.
     private func replace(_ destination: String, with temporary: String, session: Session) async throws {
         let sftp = session.sftp
         do {
             try await session.run { try await sftp.rename(at: temporary, to: destination) }
+            return
         } catch {
             guard await itemExists(destination, session: session) else { throw error }
-            try await session.run { try await sftp.remove(at: destination) }
-            try await session.run { try await sftp.rename(at: temporary, to: destination) }
         }
+
+        let backup = RemotePath.temporaryUploadPath(for: destination)
+        try await session.run { try await sftp.rename(at: destination, to: backup) }
+        do {
+            try await session.run { try await sftp.rename(at: temporary, to: destination) }
+        } catch {
+            do {
+                try await session.run { try await sftp.rename(at: backup, to: destination) }
+            } catch {
+                throw ReplaceIncomplete(underlying: error, oldFileAt: backup)
+            }
+            throw error
+        }
+        await removeTemporaryUpload(backup, session: session)
     }
 
     private func removeTemporaryUpload(_ temporary: String, session: Session) async {

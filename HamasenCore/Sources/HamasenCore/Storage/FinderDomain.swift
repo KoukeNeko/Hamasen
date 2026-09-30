@@ -96,7 +96,11 @@ public enum FinderDomain {
         if isRegistered {
             let generation = store.integer(forKey: AppSettings.Keys.domainCapabilityGeneration)
             guard needsReplacing(storedGeneration: generation) else { return }
-            _ = try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData)
+            if let preserved = try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData) {
+                // The one record of where unsynced edits went.
+                HamasenLog(category: "domain").notice(
+                    "Replaced the Finder location; unsynced edits were kept at \(preserved.path)")
+            }
         }
         try await NSFileProviderManager.add(domain)
         store.set(capabilityGeneration, forKey: AppSettings.Keys.domainCapabilityGeneration)

@@ -33,10 +33,17 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
     func invalidate() {}
 
     private static func anchor(
-        for configs: [ServerConfig], walk: WorkingSetWalk.Token? = nil
+        for configs: [ServerConfig], walk: WorkingSetWalk.Token? = nil, batch: String? = nil
     ) throws -> NSFileProviderSyncAnchor {
         let digest = try ServerListSnapshotStore().save(ServerListChangeTracker.snapshot(of: configs))
-        return NSFileProviderSyncAnchor(WorkingSetAnchor(serverList: digest, walk: walk).encoded())
+        return NSFileProviderSyncAnchor(
+            WorkingSetAnchor(serverList: digest, walk: walk, batch: batch).encoded())
+    }
+
+    /// A token for a batch that reported something, so its anchor differs
+    /// from the one it started at.
+    static func newBatch() -> String {
+        String(UUID().uuidString.prefix(8))
     }
 
     func enumerateItems(for observer: NSFileProviderEnumerationObserver, startingAt page: NSFileProviderPage) {
@@ -56,6 +63,7 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
         let diff: ServerListChangeTracker.Diff
         /// What the anchor carried besides the list, for the working set.
         let previousWalk: WorkingSetWalk.Token?
+        let previousBatch: String?
     }
 
     /// Read errors must not reach the diff: an empty list would be reported
@@ -69,12 +77,15 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
               let previousList = try ServerListSnapshotStore().load(digest: previous.serverList)
         else { throw NSFileProviderError(.syncAnchorExpired) }
         let diff = ServerListChangeTracker.diff(previous: previousList, current: configs)
-        return PendingChanges(configs: configs, diff: diff, previousWalk: previous.walk)
+        return PendingChanges(
+            configs: configs, diff: diff, previousWalk: previous.walk, previousBatch: previous.batch)
     }
 
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
         do {
-            report(try Self.pendingChanges(since: anchor), to: observer)
+            let changes = try Self.pendingChanges(since: anchor)
+            report(changes, to: observer,
+                   batch: changes.diff.isEmpty ? changes.previousBatch : Self.newBatch())
         } catch {
             observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
         }
@@ -87,6 +98,7 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
         _ changes: PendingChanges,
         to observer: NSFileProviderChangeObserver,
         walk: WorkingSetWalk.Token? = nil,
+        batch: String? = nil,
         moreComing: Bool = false
     ) {
         let diff = changes.diff
@@ -104,7 +116,8 @@ final class ServerListEnumerator: NSObject, NSFileProviderEnumerator {
         }
         do {
             observer.finishEnumeratingChanges(
-                upTo: try Self.anchor(for: changes.configs, walk: walk), moreComing: moreComing)
+                upTo: try Self.anchor(for: changes.configs, walk: walk, batch: batch),
+                moreComing: moreComing)
         } catch {
             observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
         }

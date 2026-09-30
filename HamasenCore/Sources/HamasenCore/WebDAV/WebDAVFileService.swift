@@ -306,6 +306,12 @@ public actor WebDAVFileService: RemoteFileService {
         } catch {
             throw RemoteFileServiceError.localFileUnreadable(url: localURL)
         }
+        // The delegate reports bytes as they arrive, but not reliably the
+        // last of them: the call can return before its final callback. The
+        // total is known now, so it is reported here whatever came before.
+        if let progress, let size = try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            progress(Int64(size))
+        }
     }
 
     public func downloadRange(at path: String, offset: Int64, length: Int) async throws -> Data {
@@ -400,6 +406,9 @@ public actor WebDAVFileService: RemoteFileService {
         }
         try Self.validate(response, body: body, method: .put, operation: String(localized: "上傳", bundle: .module), path: path)
         discardCachedBody(forPath: path)
+        if let progress, let size = try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            progress(Int64(size))
+        }
     }
 
     public func createDirectory(at path: String) async throws {
@@ -426,6 +435,11 @@ public actor WebDAVFileService: RemoteFileService {
             } catch {
                 throw Self.mapTransportError(error, operation: String(localized: "移動", bundle: .module), path: oldPath)
             }
+        }
+        // Overwrite: F met an existing destination; the name in the way is
+        // the destination's, not the source's.
+        if (response as? HTTPURLResponse)?.statusCode == Status.preconditionFailed {
+            throw RemoteFileServiceError.alreadyExists(path: newPath)
         }
         try Self.validate(response, body: body, method: .move, operation: String(localized: "移動", bundle: .module), path: oldPath)
         discardCachedBody(forPath: oldPath)
@@ -565,8 +579,11 @@ public actor WebDAVFileService: RemoteFileService {
     private func currentValidator(at path: String) async -> String? {
         // Every failure here means "cannot confirm the copy is current", and
         // the caller then fetches again, where the real error is reported.
-        guard let request = try? makeRequest(method: .head, path: path),
-              let (_, response) = try? await withSession({ try await $0.data(for: request) }),
+        guard var request = try? makeRequest(method: .head, path: path) else { return nil }
+        // The same request shape as the ranged GET whose validator this is
+        // compared against: a compressed answer can carry a different ETag.
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        guard let (_, response) = try? await withSession({ try await $0.data(for: request) }),
               let http = response as? HTTPURLResponse,
               Status.successRange.contains(http.statusCode)
         else { return nil }
@@ -686,9 +703,6 @@ public actor WebDAVFileService: RemoteFileService {
         case Status.notFound:
             log.debug("\(operation) at \(path): not found")
             throw RemoteFileServiceError.itemNotFound(path: path)
-        case Status.preconditionFailed where method == .move:
-            // Overwrite: F met an existing destination.
-            throw RemoteFileServiceError.alreadyExists(path: path)
         default:
             log.error("\(operation) at \(path) failed: HTTP \(httpResponse.statusCode)")
             throw RemoteFileServiceError.operationFailed(

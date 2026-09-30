@@ -218,7 +218,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 alignment: alignment,
                 fileSize: info.size
             )
-            context.progress.beginTransfer(byteCount: Int64(range.length), operation: .downloading)
+            // Left at its single unit: the range call reports no bytes, and a
+            // byte-scaled progress that never moves reads as a stalled
+            // transfer, which is what gets one cancelled.
             let contents = try await service.downloadRange(
                 at: location.path,
                 offset: range.offset,
@@ -328,14 +330,27 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 }
                 if mayAlreadyExist {
                     // The system found the file on disk after losing track
-                    // of it. Without contents (it is dataless) or with the
-                    // same size, it is the server's file. A different size
-                    // means the two diverged; neither side is dropped: the
-                    // disk's bytes are kept beside it as a conflict copy and
-                    // the server's replace them on disk.
-                    guard let url, Self.fileSize(of: url) != existing.size else {
+                    // of it. Without contents it is dataless, so it is the
+                    // server's file. With contents, the disk copy is the
+                    // server's only if it was made from the version the
+                    // server still has, or its bytes are the same — an
+                    // equal size proves nothing, since an edit that keeps
+                    // the length is ordinary. Anything else diverged, and
+                    // neither side is dropped: the disk's bytes are kept
+                    // beside the file as a conflict copy and the server's
+                    // replace them on disk.
+                    guard let url else {
                         return CreatedItem(item: existingItem, shouldFetchContent: false)
                     }
+                    if let version = itemTemplate.itemVersion,
+                       Self.hasContentVersion(version, serverID: serverID, existing) {
+                        return CreatedItem(item: existingItem, shouldFetchContent: false)
+                    }
+                    if Self.fileSize(of: url) == existing.size,
+                       try await Self.contentsMatch(url, existing, using: service, domain: domain) {
+                        return CreatedItem(item: existingItem, shouldFetchContent: false)
+                    }
+                    context.progress.beginTransfer(byteCount: Self.fileSize(of: url), operation: .uploading)
                     try await Self.saveConflictCopy(
                         of: existing.name, inDirectory: context.location.path, serverID: serverID,
                         from: url, using: service, progress: context.progress)
@@ -792,6 +807,19 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         return Data("\(remoteItem.size)-\(modificationEpoch)".utf8)
     }
 
+    /// Whether the file on disk holds the same bytes as the one on the
+    /// server. The only way to know is to read both; the server's copy is
+    /// fetched to the temporary directory and removed again.
+    private static func contentsMatch(
+        _ localURL: URL, _ remoteItem: RemoteItem, using service: any RemoteFileService,
+        domain: NSFileProviderDomain
+    ) async throws -> Bool {
+        let remoteURL = try makeTemporaryFileURL(for: domain)
+        defer { try? FileManager.default.removeItem(at: remoteURL) }
+        try await service.downloadFile(at: remoteItem.path, to: remoteURL)
+        return FileManager.default.contentsEqual(atPath: localURL.path, andPath: remoteURL.path)
+    }
+
     /// The error that has the system rename one of two items claiming the
     /// same name, and then create this one again.
     private static func collision(with existing: RemoteItem, serverID: UUID) -> Error {
@@ -834,10 +862,26 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
     // MARK: Moving between servers
 
+    /// What a cross-server copy took from the source, so the source can be
+    /// checked against it before it is deleted.
+    private struct CopiedTree {
+        /// Source path of each file to the content version that was copied.
+        var files: [String: String] = [:]
+        /// Source path of each directory to the names it held when listed.
+        var directories: [String: Set<String>] = [:]
+        /// Whether the destination is this operation's to remove on failure.
+        var createdDestination = false
+    }
+
+    /// The source changed while it was being copied. Deleting it would lose
+    /// the change, so the move is undone and left for the system to retry.
+    private struct SourceChangedDuringMove: Error {}
+
     /// Moves an item to a folder on another server. No protocol can do that
     /// in one step, so the item is copied and the original deleted once the
-    /// copy is complete; a failed copy is removed again and leaves the
-    /// original alone.
+    /// copy is complete and the original is confirmed not to have changed
+    /// meanwhile; a failed copy is removed again and leaves the original
+    /// alone.
     private static func moveAcrossServers(
         from source: ItemLocation,
         using sourceService: any RemoteFileService,
@@ -854,6 +898,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             throw collision(with: existing, serverID: parent.serverID)
         }
 
+        var copied = CopiedTree()
         do {
             if sourceInfo.isDirectory {
                 progress.totalUnitCount = 1
@@ -861,25 +906,37 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 try await copyDirectory(
                     from: source.path, using: sourceService,
                     to: destinationPath, using: destinationService,
-                    domain: domain, progress: progress)
+                    domain: domain, progress: progress, copied: &copied)
             } else {
                 // Every byte moves twice, down and then up.
                 progress.beginTransfer(byteCount: sourceInfo.size * 2, operation: .copying)
+                copied.createdDestination = true
                 try await copyFile(
                     sourceInfo, using: sourceService,
                     to: destinationPath, using: destinationService,
                     domain: domain, byteProgress: progress)
+                copied.files[sourceInfo.path] = sourceInfo.contentVersionToken
+            }
+            // The copy took time, and the source may have moved on meanwhile:
+            // an edit, a file added to the tree. Deleting it then would lose
+            // that.
+            guard try await isUnchanged(copied, on: sourceService) else {
+                throw SourceChangedDuringMove()
             }
         } catch {
-            // Detached from cancellation, or the cleanup of a cancelled
-            // copy would be cancelled itself.
-            await Task {
-                if sourceInfo.isDirectory {
-                    try? await destinationService.deleteDirectory(at: destinationPath)
-                } else {
-                    try? await destinationService.deleteFile(at: destinationPath)
-                }
-            }.value
+            // Only what this operation created is its to remove: a
+            // destination that was already there is someone else's.
+            // Detached from cancellation, or the cleanup of a cancelled copy
+            // would be cancelled itself.
+            if copied.createdDestination {
+                await Task {
+                    if sourceInfo.isDirectory {
+                        try? await destinationService.deleteDirectory(at: destinationPath)
+                    } else {
+                        try? await destinationService.deleteFile(at: destinationPath)
+                    }
+                }.value
+            }
             throw error
         }
 
@@ -891,6 +948,26 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         return RemoteFileItem(
             serverID: parent.serverID,
             remoteItem: try await destinationService.itemInfo(at: destinationPath))
+    }
+
+    /// Whether the source still holds exactly what was copied from it: the
+    /// same names in every directory, the same content version on every
+    /// file.
+    private static func isUnchanged(
+        _ copied: CopiedTree, on service: any RemoteFileService
+    ) async throws -> Bool {
+        guard !copied.directories.isEmpty else {
+            guard let (path, token) = copied.files.first else { return true }
+            return try await service.itemInfo(at: path).contentVersionToken == token
+        }
+        for (path, names) in copied.directories {
+            let listing = try await service.listDirectory(at: path)
+            guard Set(listing.map(\.name)) == names else { return false }
+            for item in listing where item.kind == .file {
+                guard copied.files[item.path] == item.contentVersionToken else { return false }
+            }
+        }
+        return true
     }
 
     /// Copies one file through a temporary file. With `byteProgress`, its
@@ -925,10 +1002,13 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         to destinationPath: String,
         using destinationService: any RemoteFileService,
         domain: NSFileProviderDomain,
-        progress: Progress
+        progress: Progress,
+        copied: inout CopiedTree
     ) async throws {
         try await destinationService.createDirectory(at: destinationPath)
+        copied.createdDestination = true
         let children = try await sourceService.listDirectory(at: sourcePath)
+        copied.directories[sourcePath] = Set(children.map(\.name))
         progress.totalUnitCount += Int64(children.count)
         progress.completedUnitCount += 1
 
@@ -940,12 +1020,13 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 try await copyDirectory(
                     from: child.path, using: sourceService,
                     to: childDestination, using: destinationService,
-                    domain: domain, progress: progress)
+                    domain: domain, progress: progress, copied: &copied)
             case .file:
                 try await copyFile(
                     child, using: sourceService,
                     to: childDestination, using: destinationService,
                     domain: domain, byteProgress: nil)
+                copied.files[child.path] = child.contentVersionToken
                 progress.completedUnitCount += 1
             case .symlink:
                 // No protocol can create one on the other side, and copying

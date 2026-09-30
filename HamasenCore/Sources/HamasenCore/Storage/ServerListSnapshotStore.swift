@@ -46,7 +46,9 @@ public struct ServerListSnapshotStore: Sendable {
         let digest = ServerListChangeTracker.digest(of: snapshot)
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         try ServerListChangeTracker.encode(snapshot).write(to: fileURL(digest), options: .atomic)
-        try discardOldest()
+        // Best effort: the snapshot is saved, and a file another process
+        // pruned a moment ago is no reason to report that it was not.
+        discardOldest()
         return digest
     }
 
@@ -57,14 +59,15 @@ public struct ServerListSnapshotStore: Sendable {
         return try? JSONDecoder().decode(ServerListChangeTracker.Snapshot.self, from: data)
     }
 
-    private func discardOldest() throws {
-        let files = try FileManager.default.contentsOfDirectory(
+    private func discardOldest() {
+        guard let files = try? FileManager.default.contentsOfDirectory(
             at: directoryURL, includingPropertiesForKeys: [.contentModificationDateKey])
+        else { return }
         let newestFirst = files.sorted {
             Self.modificationDate(of: $0) > Self.modificationDate(of: $1)
         }
         for url in newestFirst.dropFirst(Self.keptCount) {
-            try FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: url)
         }
     }
 
