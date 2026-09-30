@@ -93,7 +93,10 @@ final class RemoteSearchEnumerator: NSObject, NSFileProviderSearchEnumerator {
         startingAt page: NSFileProviderPage?
     ) {
         if let page {
-            deliver(from: SearchResultPage.offset(from: page.rawValue), to: observer)
+            lock.lock()
+            let all = results
+            lock.unlock()
+            Self.deliver(all, from: SearchResultPage.offset(from: page.rawValue), to: observer)
             return
         }
 
@@ -124,14 +127,23 @@ final class RemoteSearchEnumerator: NSObject, NSFileProviderSearchEnumerator {
                     }
                 }
             } catch {
-                observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
+                // Only `invalidate()` cancels, and the system has stopped
+                // listening by then; any other observer is finished exactly
+                // once, here or below.
+                if !(error is CancellationError) {
+                    observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
+                }
                 return
             }
-            guard let self, !Task.isCancelled else { return }
-            self.lock.lock()
-            self.results = collected
-            self.lock.unlock()
-            self.deliver(from: 0, to: observer)
+            if Task.isCancelled { return }
+            // The enumerator can be gone by now without having been
+            // invalidated; its observer still has to be finished.
+            guard let self else {
+                Self.deliver(collected, from: 0, to: observer)
+                return
+            }
+            self.lock.withLock { self.results = collected }
+            Self.deliver(collected, from: 0, to: observer)
         }
 
         lock.lock()
@@ -139,13 +151,10 @@ final class RemoteSearchEnumerator: NSObject, NSFileProviderSearchEnumerator {
         lock.unlock()
     }
 
-    private func deliver(
-        from offset: Int, to observer: any NSFileProviderSearchEnumerationObserver
+    private static func deliver(
+        _ all: [RemoteSearchResult], from offset: Int,
+        to observer: any NSFileProviderSearchEnumerationObserver
     ) {
-        lock.lock()
-        let all = results
-        lock.unlock()
-
         let page = SearchResultPage(
             resultCount: all.count, offset: offset,
             maximumPerPage: observer.maximumNumberOfResultsPerPage)

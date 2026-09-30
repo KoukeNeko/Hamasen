@@ -111,6 +111,20 @@ public enum FinderDomain {
         try await manager().signalEnumerator(for: .workingSet)
     }
 
+    /// Tells the system that whatever made the extension answer "not
+    /// authenticated" may be fixed, then asks it to look again.
+    ///
+    /// That answer — a refused password, a host key that changed — pauses
+    /// the whole domain until the error is reported resolved; a signal alone
+    /// does not lift it. Only the app can fix those causes, so the app says
+    /// so after the person changes credentials or clears a host key. If the
+    /// cause is still there, the next operation reports it again.
+    public static func signalAuthenticationResolved() async throws {
+        let manager = try manager()
+        try await manager.signalErrorResolved(NSFileProviderError(.notAuthenticated))
+        try await manager.signalEnumerator(for: .workingSet)
+    }
+
     /// The system's handle on the domain, which exists only while the domain
     /// is registered.
     public static func manager() throws -> NSFileProviderManager {

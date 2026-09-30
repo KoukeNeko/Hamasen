@@ -131,7 +131,9 @@ final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
                 // unless the browsing that happens anyway writes it down.
                 RemoteDirectoryRecord.record(items, serverID: serverID, directoryPath: directoryPath)
                 observer.finishEnumerating(upTo: nil)
+                await registry.reportReachable(serverID)
             } catch {
+                await Self.noteFailure(error, serverID: serverID, registry: registry)
                 observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
             }
         }
@@ -152,7 +154,9 @@ final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
                 try await DirectoryRefresh.report(
                     serverID: serverID, directoryPath: directoryPath, registry: registry, to: observer)
                 observer.finishEnumeratingChanges(upTo: Self.anchor(), moreComing: false)
+                await registry.reportReachable(serverID)
             } catch {
+                await Self.noteFailure(error, serverID: serverID, registry: registry)
                 observer.finishEnumeratingWithError(FileProviderErrorMapper.map(error))
             }
         }
@@ -164,6 +168,15 @@ final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
 
     private static func anchor() -> NSFileProviderSyncAnchor {
         NSFileProviderSyncAnchor(Data(Date().ISO8601Format().utf8))
+    }
+
+    /// A listing that could not reach the server is answered with
+    /// `.serverUnreachable`, which pauses the domain until the system is told
+    /// the server is back — so the probe that notices has to be started here
+    /// too, not only by item operations.
+    private static func noteFailure(_ error: Error, serverID: UUID, registry: ConnectionRegistry) async {
+        guard FileProviderErrorMapper.isConnectionFailure(error) else { return }
+        await registry.reportUnreachable(serverID)
     }
 }
 

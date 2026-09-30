@@ -140,12 +140,13 @@ final class ServerListModel {
             return false
         }
 
-        // A rename shows up as the folder name in Finder; tell the system to
-        // re-check the server list.
+        // A rename shows up as the folder name in Finder, and new credentials
+        // may clear a sign-in failure that paused the whole domain; tell the
+        // system both.
         if isMounted(config) {
             // The domain may still be initializing; the next enumeration
             // picks the rename up anyway.
-            _ = try? await FinderDomain.signalWorkingSet()
+            _ = try? await FinderDomain.signalAuthenticationResolved()
         }
         if previous?.indexesInBackground != config.indexesInBackground {
             index.settingsChanged()

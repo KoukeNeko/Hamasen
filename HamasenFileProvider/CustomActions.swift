@@ -93,7 +93,7 @@ enum CustomActionRunner {
             try await copyLocalPath(of: identifier)
             return nil
         case .refresh:
-            try await FinderDomain.signalWorkingSet()
+            try await refresh(entities, identifiers: itemIdentifiers)
             return nil
         case .unmountServer:
             let entity = try singleServerEntity(in: entities)
@@ -201,6 +201,43 @@ enum CustomActionRunner {
                 await download(items)
             }
         }
+    }
+
+    /// Asks the system to list what the selection shows again.
+    ///
+    /// The working-set enumerator only re-lists directories found in the
+    /// queue, so signalling alone refreshes nothing: the folders selected go
+    /// in, and for a file the folder that holds it.
+    private static func refresh(
+        _ entities: [ProviderEntity], identifiers: [NSFileProviderItemIdentifier]
+    ) async throws {
+        var directories: Set<DirectoryRefreshQueue.Entry> = []
+        for (entity, identifier) in zip(entities, identifiers) {
+            switch entity {
+            case .root:
+                for config in try ConnectionRegistry.mountedConfigs() {
+                    directories.insert(.init(serverID: config.id, path: RemotePath.root))
+                }
+            case .serverRoot(let serverID):
+                directories.insert(.init(serverID: serverID, path: RemotePath.root))
+            case .item(let serverID, let path):
+                let directoryPath = await isDirectory(identifier) ? path : RemotePath.parent(of: path)
+                directories.insert(.init(serverID: serverID, path: directoryPath))
+            }
+        }
+        try DirectoryRefreshQueue().enqueue(directories)
+        try await FinderDomain.signalWorkingSet()
+    }
+
+    /// Whether the item on this Mac is a folder, which the identifier alone
+    /// does not say. Reading the attribute does not download anything. When
+    /// it cannot be read the answer is no, since listing the parent shows
+    /// the item either way.
+    private static func isDirectory(_ identifier: NSFileProviderItemIdentifier) async -> Bool {
+        guard let url = try? await FinderDomain.manager().getUserVisibleURL(for: identifier) else {
+            return false
+        }
+        return (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
 
     private static func refresh(_ directories: Set<DirectoryRefreshQueue.Entry>) async {
