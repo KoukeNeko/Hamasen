@@ -119,6 +119,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             let info = try await context.service.itemInfo(at: location.path)
             let (localURL, latest) = try await Self.downloadUnchanged(
                 info, using: context.service, progress: context.progress, domain: domain)
+            // What automatic cleaning measures "unused for a while" from.
+            try? ItemUsageStore().recordDownload(of: itemIdentifier.rawValue)
             return (localURL, RemoteFileItem(serverID: location.serverID, remoteItem: latest))
         } answer: { result in
             switch result {
@@ -431,12 +433,13 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             completionHandler(RootItem(), changedFields, false, nil)
             return Self.answered()
         case .item:
-            if changedFields.isDisjoint(with: Self.modifiableFields) {
+            let pending = Self.recordingUse(of: item, changedFields: changedFields)
+            if pending.isDisjoint(with: Self.modifiableFields) {
                 // Only fields this provider cannot store, typically Finder
                 // stamping a date. Returning the fields as still pending,
                 // unchanged, is how the system is told they are unsupported,
                 // and nothing on the server needs to be read for that.
-                completionHandler(item, changedFields, false, nil)
+                completionHandler(item, pending, false, nil)
                 return Self.answered()
             }
         case nil:
@@ -582,12 +585,30 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             switch result {
             case .success(let modified):
                 completionHandler(
-                    modified.item, changedFields.subtracting(Self.modifiableFields),
+                    modified.item,
+                    // The use was recorded on the way in.
+                    changedFields.subtracting(Self.modifiableFields).subtracting(.lastUsedDate),
                     modified.shouldFetchContent, nil)
             case .failure(let error):
                 completionHandler(nil, changedFields, false, error)
             }
         }
+    }
+
+    /// Keeps the date Finder stamps on a file when it is opened, which is
+    /// the only word the system gives a provider of a file being used, and
+    /// returns the fields still pending once that one is taken care of.
+    ///
+    /// The date stays on this Mac: it is what automatic cleaning measures
+    /// "unused for a while" from, and no server here has a field for it.
+    private static func recordingUse(
+        of item: NSFileProviderItem, changedFields: NSFileProviderItemFields
+    ) -> NSFileProviderItemFields {
+        guard changedFields.contains(.lastUsedDate) else { return changedFields }
+        if let lastUsed = item.lastUsedDate ?? nil {
+            try? ItemUsageStore().recordUse(of: item.itemIdentifier.rawValue, at: lastUsed)
+        }
+        return changedFields.subtracting(.lastUsedDate)
     }
 
     // MARK: - Delete
