@@ -61,6 +61,26 @@ struct WalkingSearchTests {
         try await server.stop()
     }
 
+    /// A link to an ancestor is a match like any item, but not somewhere to
+    /// search; followed, it repeats the tree until the budget runs out.
+    @Test("不會沿著符號連結繞圈搜尋")
+    func doesNotSearchThroughALink() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+        try Self.seed(server)
+        try FileManager.default.createSymbolicLink(
+            at: server.rootDirectory.appendingPathComponent("Designs/loop"),
+            withDestinationURL: server.rootDirectory.appendingPathComponent("Designs"))
+
+        let found = try await service.searchItems(matching: "report", under: "/", limit: 50)
+        #expect(Set(found.map(\.path)) == [
+            "/report.pdf",
+            "/Designs/report-draft.pdf",
+        ])
+
+        try await service.disconnect()
+        try await server.stop()
+    }
+
     /// Finder's own comparison: case and accents do not have to match.
     @Test("大小寫與變音符號不需相符")
     func matchesTheWayFinderDoes() async throws {

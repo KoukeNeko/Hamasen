@@ -168,6 +168,53 @@ struct S3ReliabilityTests {
         }
     }
 
+    // MARK: - Paging
+
+    /// A page marked truncated with no way on is not the end of the folder;
+    /// a delete taking it as one would remove part of it and report done.
+    @Test
+    func aTruncatedPageWithoutATokenFailsTheListing() async throws {
+        try await withService(behaviour: .init(maxKeysPerPage: 2, omitsContinuationToken: true)) { service, server in
+            for key in ["d/a", "d/b", "d/c"] { server.store.put(Data("x".utf8), forKey: key) }
+            await #expect(throws: RemoteFileServiceError.self) {
+                _ = try await service.listDirectory(at: "/d")
+            }
+            await #expect(throws: RemoteFileServiceError.self) {
+                try await service.deleteDirectory(at: "/d")
+            }
+        }
+    }
+
+    /// Deleted as pages arrive, every page is still deleted.
+    @Test
+    func aFolderDeleteSpanningPagesRemovesEveryKey() async throws {
+        try await withService(behaviour: .init(maxKeysPerPage: 2)) { service, server in
+            for key in ["d/a", "d/b", "d/c", "d/e/f"] { server.store.put(Data("x".utf8), forKey: key) }
+            try await service.deleteDirectory(at: "/d")
+            #expect(["d/a", "d/b", "d/c", "d/e/f"].allSatisfy { server.store.object(forKey: $0) == nil })
+        }
+    }
+
+    /// The root lookup is answered locally; reachability has to ask.
+    @Test
+    func reachabilityAsksTheServer() async throws {
+        let server = try await TestS3Server.start()
+        let service = S3FileService(
+            config: ServerConfig(
+                name: "測試 S3", transferProtocol: .s3, host: "127.0.0.1", port: 443,
+                username: TestS3Server.credentials.accessKeyID,
+                remotePath: "/\(TestS3Server.bucket)"),
+            credentials: .password(TestS3Server.credentials.secretAccessKey),
+            endpoint: server.endpoint)
+        try await service.connect()
+        try await service.checkReachable()
+        try await server.stop()
+        await #expect(throws: (any Error).self) {
+            try await service.checkReachable()
+        }
+        try await service.disconnect()
+    }
+
     // MARK: - Search
 
     /// An object and a prefix can share a name; a listing shows the object,

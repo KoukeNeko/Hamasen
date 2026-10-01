@@ -221,7 +221,7 @@ public actor S3FileService: RemoteFileService {
                     size: 0)
             }
 
-            continuationToken = listing.isTruncated ? listing.nextContinuationToken : nil
+            continuationToken = try Self.continuation(of: listing, operation: Self.listOperation, path: path)
             pages += 1
         } while continuationToken != nil && pages < Listing.maximumPages
 
@@ -402,12 +402,31 @@ public actor S3FileService: RemoteFileService {
 
     public func deleteDirectory(at path: String) async throws {
         let object = try object(for: path)
-        let keys = try await objectsUnder(object, path: path, operation: Self.deleteOperation)
-            .map(\.key)
+        // Deleted a batch at a time as the listing arrives: a prefix with a
+        // million keys is a million names, and holding them all first could
+        // take the extension's memory with it.
+        var batch: [String] = []
+        try await forEachObject(under: object, path: path, operation: Self.deleteOperation) { entry in
+            batch.append(entry.key)
+            return .continue
+        } afterEachPage: {
+            guard batch.count >= Batch.deleteLimit else { return }
+            try await self.delete(keys: batch, bucket: object.bucket, path: path)
+            batch.removeAll()
+        }
         // The marker is not returned by a prefix listing when the prefix is
         // the marker's own key, so it is removed by name as well.
-        try await delete(keys: keys + [object.folderMarkerKey],
+        try await delete(keys: batch + [object.folderMarkerKey],
                          bucket: object.bucket, path: path)
+    }
+
+    /// The root lookup is answered without a request, so this makes the one
+    /// every working key can: the bucket's HEAD.
+    public func checkReachable() async throws {
+        let object = try rootObject()
+        _ = try await send(
+            method: Method.head, object: S3ObjectKey(bucket: object.bucket, key: ""),
+            operation: Self.checkOperation, path: RemotePath.root)
     }
 
     /// Copy then delete, because object storage has no rename.
@@ -713,15 +732,46 @@ public actor S3FileService: RemoteFileService {
     /// Every key beginning with this prefix, across as many pages as it takes.
     /// No delimiter, because a recursive delete or move wants the whole
     /// subtree rather than one level of it.
+    /// Every object under a prefix, for a move, which has to compare the
+    /// whole set before it may delete anything. Capped, because the set is
+    /// held in memory: a folder past the cap is not something to move by
+    /// copying each object anyway.
     private func objectsUnder(
         _ object: S3ObjectKey, path: String, operation: String
     ) async throws -> [S3ListResponseParser.Object] {
         var objects: [S3ListResponseParser.Object] = []
+        var isTooLarge = false
         try await forEachObject(under: object, path: path, operation: operation) { entry in
+            guard objects.count < Self.maximumMovedObjects else {
+                isTooLarge = true
+                return .stop
+            }
             objects.append(entry)
             return .continue
         }
+        if isTooLarge {
+            throw RemoteFileServiceError.operationFailed(
+                operation: operation, path: path,
+                underlying: "資料夾超過 \(Self.maximumMovedObjects) 個物件，無法逐一複製移動")
+        }
         return objects
+    }
+
+    private static let maximumMovedObjects = 100_000
+
+    /// The token for the next page, or nil after the last. A page that says
+    /// it was cut short but gives no way on is not the end of the listing:
+    /// taken as one, a delete or move would act on part of a folder and
+    /// report it done.
+    private static func continuation(
+        of listing: S3ListResponseParser.Listing, operation: String, path: String
+    ) throws -> String? {
+        guard listing.isTruncated else { return nil }
+        guard let token = listing.nextContinuationToken, !token.isEmpty else {
+            throw RemoteFileServiceError.operationFailed(
+                operation: operation, path: path, underlying: "伺服器的列舉缺少下一頁的位置")
+        }
+        return token
     }
 
     private enum PageWalk {
@@ -736,7 +786,8 @@ public actor S3FileService: RemoteFileService {
         under object: S3ObjectKey,
         path: String,
         operation: String,
-        body: (S3ListResponseParser.Object) -> PageWalk
+        body: (S3ListResponseParser.Object) -> PageWalk,
+        afterEachPage: () async throws -> Void = {}
     ) async throws {
         var continuationToken: String?
         var pages = 0
@@ -760,7 +811,8 @@ public actor S3FileService: RemoteFileService {
             for entry in listing.objects where body(entry) == .stop {
                 return
             }
-            continuationToken = listing.isTruncated ? listing.nextContinuationToken : nil
+            try await afterEachPage()
+            continuationToken = try Self.continuation(of: listing, operation: operation, path: path)
             pages += 1
         } while continuationToken != nil && pages < Listing.maximumPages
 

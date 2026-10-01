@@ -465,10 +465,44 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                     // delete the item from disk, so the move is done as a
                     // copy to the other server followed by a delete.
                     let name = isRenamed ? item.filename : RemotePath.name(of: location.path)
+                    // The system may send the move together with an edit.
+                    // What moves is the server's copy, so the edit has to
+                    // follow it — or, when the server's copy changed since
+                    // the edit's base, sit beside it as a conflict copy.
+                    let editedContents = changedFields.contains(.contents) ? newContents : nil
+                    var editConflicts = false
+                    if editedContents != nil,
+                       version.contentVersion != NSFileProviderItemVersion.beforeFirstSyncComponent {
+                        let current = try await service.itemInfo(at: location.path)
+                        editConflicts = !Self.hasContentVersion(version, serverID: serverID, current)
+                    }
                     do {
-                        let moved = try await Self.moveAcrossServers(
+                        var moved = try await Self.moveAcrossServers(
                             from: location, using: service, to: parent, named: name,
                             registry: registry, domain: domain, progress: context.progress)
+                        guard let editedContents else {
+                            return ModifiedItem(item: moved, shouldFetchContent: false)
+                        }
+                        let destinationService = try await Self.onDestination {
+                            try await registry.service(for: parent.serverID)
+                        }
+                        let destinationPath = RemotePath.join(parent.path, name)
+                        if editConflicts {
+                            try await Self.onDestination {
+                                try await Self.saveConflictCopy(
+                                    of: name, inDirectory: parent.path, serverID: parent.serverID,
+                                    from: editedContents, using: destinationService, progress: context.progress)
+                            }
+                            return ModifiedItem(item: moved, shouldFetchContent: true)
+                        }
+                        try await Self.onDestination {
+                            try await destinationService.uploadFile(from: editedContents, to: destinationPath)
+                        }
+                        moved = RemoteFileItem(
+                            serverID: parent.serverID,
+                            remoteItem: try await Self.onDestination {
+                                try await destinationService.itemInfo(at: destinationPath)
+                            })
                         return ModifiedItem(item: moved, shouldFetchContent: false)
                     } catch is DestinationUnreachable {
                         // The server that could not be reached is the
@@ -1068,8 +1102,21 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             { @Sendable bytes in progress.completedUnitCount = min(size + bytes, progress.totalUnitCount) }
         }
         try await sourceService.downloadFile(at: item.path, to: temporaryURL, progress: downloaded)
-        try await onDestination {
-            try await destinationService.uploadFile(from: temporaryURL, to: destinationPath, progress: uploaded)
+
+        // Uploaded under a name of its own and then renamed into place,
+        // because an upload overwrites: a file someone created at the
+        // destination since it was checked would otherwise be replaced, and
+        // a rollback would then delete it. The rename refuses an existing
+        // name — on FTP, as far as the server does.
+        let staging = RemotePath.temporaryUploadPath(for: destinationPath)
+        do {
+            try await onDestination {
+                try await destinationService.uploadFile(from: temporaryURL, to: staging, progress: uploaded)
+                try await destinationService.moveItem(from: staging, to: destinationPath)
+            }
+        } catch {
+            try? await destinationService.deleteFile(at: staging)
+            throw error
         }
         return try? await destinationService.itemInfo(at: destinationPath).contentVersionToken
     }

@@ -47,6 +47,10 @@ public protocol RemoteFileService: Sendable {
     /// Fetches attributes for a single item.
     func itemInfo(at path: String) async throws -> RemoteItem
 
+    /// Asks the server something that only an answering server can answer,
+    /// to tell whether it is reachable again. Throws while it is not.
+    func checkReachable() async throws
+
     /// Downloads a whole file to a local URL (overwriting any existing file).
     ///
     /// `progress` receives the running total of bytes written so far. The
@@ -98,6 +102,13 @@ public protocol RemoteFileService: Sendable {
 public typealias TransferProgress = @Sendable (_ bytesTransferred: Int64) -> Void
 
 extension RemoteFileService {
+    /// The root's attributes, which is a real request for any protocol whose
+    /// root lookup is one; those that answer the root without asking
+    /// override this.
+    public func checkReachable() async throws {
+        _ = try await itemInfo(at: RemotePath.root)
+    }
+
     /// Protocols without links list the same either way.
     public func listDirectoryWithoutFollowingLinks(at path: String) async throws -> [RemoteItem] {
         try await listDirectory(at: path)
@@ -150,7 +161,9 @@ extension RemoteFileService {
                     found.append(item)
                     if found.count == limit { break }
                 }
-                if item.isDirectory { queue.append(item.path) }
+                // A link to a folder is a match like any other item, but not a
+                // place to search: one to an ancestor never ends.
+                if item.isDirectory, !item.isResolvedLink { queue.append(item.path) }
             }
         }
         return found

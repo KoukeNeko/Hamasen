@@ -83,6 +83,7 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             // left waits for an unreachable server, and a later change batch
             // resumes it.
             if walk.isFinished { walk.markCompleted() }
+            if let retry = walk.nextRetry { WalkRetrySignal.schedule(at: retry) }
             try? store.save(walk)
             observer.finishEnumerating(upTo: nil)
             return
@@ -110,6 +111,9 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 return
             }
 
+            if walk.isWaiting(), let retry = walk.nextRetry {
+                WalkRetrySignal.schedule(at: retry)
+            }
             if walk.isFinished || walk.isWaiting() {
                 observer.finishEnumerating(upTo: nil)
             } else {
@@ -230,8 +234,11 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                     changes, to: observer, walk: changes.previousWalk, batch: ServerListEnumerator.newBatch())
                 return
             }
-            // A walk waiting on an unreachable server pauses here; the probe
-            // that sees it back signals, and the next batch resumes it.
+            // A walk waiting on an unreachable server pauses here, and is
+            // signalled again when its first postponed directory comes due.
+            if walk.isWaiting(), let retry = walk.nextRetry {
+                WalkRetrySignal.schedule(at: retry)
+            }
             serverList.report(
                 changes, to: observer, walk: walk.token, batch: ServerListEnumerator.newBatch(),
                 moreComing: !walk.isFinished && !walk.isWaiting())
@@ -317,5 +324,35 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         let walk = (try? WorkingSetWalkStore())?.load()
         let ongoing = walk.flatMap { $0.completedAt == nil && !$0.isFinished ? $0.token : nil }
         serverList.currentSyncAnchor(walk: ongoing, completionHandler: completionHandler)
+    }
+}
+
+/// Signals the working set when a postponed walk directory comes due.
+///
+/// The recovery probe signals as soon as a server answers again, which is
+/// usually before the directory's retry delay is over; that batch finds the
+/// walk still waiting and ends. Without a signal of its own the branch would
+/// then wait for some unrelated one — with the app closed, possibly never.
+/// One pending signal at a time: a later schedule replaces it.
+enum WalkRetrySignal {
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var pending: Task<Void, Never>?
+
+    static func schedule(at date: Date) {
+        let delay = max(date.timeIntervalSinceNow, 1)
+        let task = Task {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            do {
+                try await FinderDomain.signalWorkingSet()
+            } catch {
+                HamasenLog(category: "workingset").error(
+                    "Could not signal the postponed walk: \(error.localizedDescription)")
+            }
+        }
+        lock.withLock {
+            pending?.cancel()
+            pending = task
+        }
     }
 }

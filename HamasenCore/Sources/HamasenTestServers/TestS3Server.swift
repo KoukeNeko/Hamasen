@@ -67,6 +67,9 @@ public final class TestS3Server {
         public var deleteRefusedKeys: Set<String> = []
         /// Answer a ranged GET with the whole object and status 200.
         public var ignoresRange = false
+        /// Mark a cut-short listing as truncated without naming the next
+        /// page, as a broken S3-compatible server can.
+        public var omitsContinuationToken = false
 
         public static let wellBehaved = Behaviour()
 
@@ -80,7 +83,8 @@ public final class TestS3Server {
             completeFailsWithStatusOK: Bool = false,
             copyAnswersEmptyOK: Bool = false,
             deleteRefusedKeys: Set<String> = [],
-            ignoresRange: Bool = false
+            ignoresRange: Bool = false,
+            omitsContinuationToken: Bool = false
         ) {
             self.maxKeysPerPage = maxKeysPerPage
             self.ignoresEncodingType = ignoresEncodingType
@@ -92,6 +96,7 @@ public final class TestS3Server {
             self.copyAnswersEmptyOK = copyAnswersEmptyOK
             self.deleteRefusedKeys = deleteRefusedKeys
             self.ignoresRange = ignoresRange
+            self.omitsContinuationToken = omitsContinuationToken
         }
     }
 

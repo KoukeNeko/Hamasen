@@ -30,6 +30,10 @@ actor ConnectionRegistry {
     /// session and open a second one for the same server.
     private struct Connection {
         let id = UUID()
+        /// The settings the service was made from. A service keeps what it
+        /// was given — an S3 endpoint, a host — so one made before the
+        /// server was edited would go on using the old settings.
+        let config: ServerConfig
         let task: Task<any RemoteFileService, Error>
     }
 
@@ -64,7 +68,16 @@ actor ConnectionRegistry {
         // same failure however many times the user retries. So the cached
         // entry is checked, and looked up again after each suspension, since
         // what was cached when the wait began may not be what is cached now.
+        let config = try Self.config(for: serverID)
         while let cached = connections[serverID] {
+            if cached.config != config {
+                if let stale = try? await cached.task.value {
+                    retire(serverID: serverID, id: cached.id, service: stale)
+                } else if connections[serverID]?.id == cached.id {
+                    connections[serverID] = nil
+                }
+                continue
+            }
             let service: any RemoteFileService
             do {
                 service = try await cached.task.value
@@ -80,8 +93,7 @@ actor ConnectionRegistry {
             retire(serverID: serverID, id: cached.id, service: service)
         }
 
-        let connection = Connection(task: Task { () throws -> any RemoteFileService in
-            let config = try Self.config(for: serverID)
+        let connection = Connection(config: config, task: Task { () throws -> any RemoteFileService in
             let credentials = try KeychainCredentialStore().loadCredentials(for: config)
             let service = RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
             try await service.connect()
@@ -145,7 +157,7 @@ actor ConnectionRegistry {
         do {
             let leased = try await lease(for: serverID)
             do {
-                _ = try await leased.service.itemInfo(at: RemotePath.root)
+                try await leased.service.checkReachable()
             } catch {
                 if FileProviderErrorMapper.isConnectionFailure(error) { discard(leased) }
                 throw error

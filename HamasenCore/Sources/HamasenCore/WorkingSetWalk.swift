@@ -141,6 +141,12 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
         !isFinished && current(at: now) == nil
     }
 
+    /// When the first postponed directory comes due, for a walk that is
+    /// waiting; nil when nothing is postponed.
+    public var nextRetry: Date? {
+        queue.compactMap(\.notBefore).min()
+    }
+
     /// How many more items the walk may report for this server.
     public func remainingItems(for serverID: UUID) -> Int {
         max(limits.maximumItems - itemsListedPerServer[serverID, default: 0], 0)

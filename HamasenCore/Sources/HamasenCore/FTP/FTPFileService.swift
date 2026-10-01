@@ -313,6 +313,13 @@ public actor FTPFileService: RemoteFileService {
         }
     }
 
+    /// The root lookup answers without asking the server, so this asks.
+    public func checkReachable() async throws {
+        _ = try await perform(operation: Self.connectOperation, path: RemotePath.root) { connection in
+            try await connection.expect("NOOP")
+        }
+    }
+
     public func itemInfo(at path: String) async throws -> RemoteItem {
         try await perform(operation: Self.infoOperation, path: path) { connection in
             let item = try await lookup(path, on: connection)

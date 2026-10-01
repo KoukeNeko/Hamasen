@@ -207,7 +207,7 @@ final class S3Handler: ChannelInboundHandler {
             xml += "<Delimiter>\(text(delimiter, urlEncode: urlEncode))</Delimiter>\n"
         }
         if urlEncode { xml += "<EncodingType>url</EncodingType>\n" }
-        if isTruncated, let last = page.last?.sortKey {
+        if isTruncated, !behaviour.omitsContinuationToken, let last = page.last?.sortKey {
             let token = Data(last.utf8).base64EncodedString()
             xml += "<NextContinuationToken>\(escaped(token))</NextContinuationToken>\n"
         }
