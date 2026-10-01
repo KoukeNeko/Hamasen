@@ -63,9 +63,10 @@ enum CustomActionRunner {
     static let log = HamasenLog(category: "CustomActions")
 
     /// Work that must wait until the system has been told the action is
-    /// done. Unmounting the last server removes the domain, which stops this
-    /// very extension; and asking the system to re-enumerate a folder while
-    /// it is still waiting on the action never gets an answer.
+    /// done. Unmounting the last server hides the domain, which takes the
+    /// location away from under the action still waiting on it; and asking
+    /// the system to re-enumerate a folder while it is still waiting on the
+    /// action never gets an answer.
     typealias AfterCompletion = () async -> Void
 
     static func run(
@@ -164,7 +165,7 @@ enum CustomActionRunner {
             try await FinderDomain.synchronize(hasMountedServers: true)
             return nil
         }
-        return { await removeDomainPreservingEdits() }
+        return { await hideDomain() }
     }
 
     /// Records that the user wants the selection kept on this Mac, or no
@@ -298,16 +299,14 @@ enum CustomActionRunner {
             .map { ItemIdentifierMapper.identifier(for: .serverRoot($0)) }
     }
 
-    /// Content that never reached the server survives the removal, but by the
-    /// time its location is known this process may already be gone, so it is
-    /// recorded rather than revealed.
-    private static func removeDomainPreservingEdits() async {
+    /// Takes the location out of Finder once nothing is mounted. With nothing
+    /// mounted the domain is only hidden, even an outdated one, so no
+    /// unsynced edits are moved anywhere that would need recording.
+    private static func hideDomain() async {
         do {
-            if let preservedLocation = try await FinderDomain.synchronize(hasMountedServers: false) {
-                log.notice("Unsynced edits were preserved at \(preservedLocation.path)")
-            }
+            try await FinderDomain.synchronize(hasMountedServers: false)
         } catch {
-            log.error("Removing the Finder location after the last unmount failed: \(error.localizedDescription)")
+            log.error("Hiding the Finder location after the last unmount failed: \(error.localizedDescription)")
         }
     }
 }

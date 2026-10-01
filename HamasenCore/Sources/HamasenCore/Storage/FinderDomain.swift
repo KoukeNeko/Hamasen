@@ -22,7 +22,11 @@ import Foundation
 /// the domain bookkeeping lives here instead of being repeated — and
 /// drifting — in each.
 public enum FinderDomain {
-    public static let domain: NSFileProviderDomain = {
+    private static let log = HamasenLog(category: "domain")
+
+    public static let domain = makeDomain(isHidden: false)
+
+    static func makeDomain(isHidden: Bool) -> NSFileProviderDomain {
         let domain = NSFileProviderDomain(
             identifier: NSFileProviderDomainIdentifier(
                 rawValue: SharedConstants.mainDomainIdentifier),
@@ -33,27 +37,73 @@ public enum FinderDomain {
         if #available(macOS 26, *) {
             domain.supportsStringSearchRequest = true
         }
+        domain.isHidden = isHidden
         return domain
-    }()
+    }
 
-    /// Registers the domain when something is mounted and removes it when
-    /// nothing is, then asks Finder to re-read the server list.
+    /// Shows the domain when something is mounted and hides it when nothing
+    /// is, then asks Finder to re-read the server list.
     ///
-    /// Removing the domain already tears the location down, so the signal is
-    /// only meaningful while at least one server remains.
+    /// Hidden, not removed: unmounting the last server and mounting one again
+    /// must not remove the domain and add it back. A removal that keeps
+    /// unsynced edits leaves them in the location's folder, and the domain
+    /// added next takes that folder over — what was left comes back as new
+    /// local items at the root, which the extension refuses and which shadow
+    /// the servers' own folders. Adding a domain that already exists only
+    /// updates its display name and hidden state, and a hidden one keeps its
+    /// files, so nothing is left behind for a later domain to find.
     ///
-    /// Returns where locally modified content was preserved, if there was
-    /// any: removing a domain deletes its local replica, and unmounting is a
-    /// single click, so edits that never reached the server must not go with
-    /// it. Nothing on the server is touched either way.
+    /// The signal matters when hiding too: it is how the system learns that
+    /// the unmounted server's folder is gone and drops what it held on this
+    /// Mac. Edits that never reached the server are not dropped with it; the
+    /// system re-creates an item it finds edited instead of deleting it.
+    ///
+    /// Returns where unsynced edits were kept when an outdated domain had to
+    /// be replaced, the one removal left here.
     @discardableResult
     public static func synchronize(hasMountedServers: Bool) async throws -> URL? {
-        guard hasMountedServers else {
-            return try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData)
+        let store = AppSettings.sharedStore
+        let registered = try await NSFileProviderManager.domains().first {
+            $0.identifier == domain.identifier
         }
-        try await register()
+        let step = registrationStep(
+            registered: registered,
+            storedGeneration: store.integer(forKey: AppSettings.Keys.domainCapabilityGeneration),
+            hasMountedServers: hasMountedServers
+        )
+
+        var preservedLocation: URL?
+        switch step {
+        case .leave:
+            // With nothing registered there is no one to signal, and the
+            // signal would throw.
+            guard registered != nil else { return nil }
+        case .create:
+            try await addCurrentDomain()
+            log.notice("Added the Finder location")
+        case .setHidden(let isHidden):
+            // The generation is not touched: the domain keeps the
+            // capabilities it was created with.
+            try await NSFileProviderManager.add(makeDomain(isHidden: isHidden))
+            log.notice(isHidden ? "Hid the Finder location: nothing is mounted" : "Showed the Finder location")
+        case .replace:
+            // Removing drops the replica: cached copies are downloaded again
+            // the next time they are opened, a cost paid once and only by
+            // someone whose domain predates a capability. Edits that have
+            // not reached the server are kept, possibly in the location's
+            // own folder, which the add that follows then takes over (see
+            // above); resetting the location is the way out of that.
+            preservedLocation = try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData)
+            if let preservedLocation {
+                // The one record of where unsynced edits went, written
+                // before the add has a chance to fail.
+                log.notice("Removed the outdated Finder location; unsynced edits were kept at \(preservedLocation.path)")
+            }
+            try await addCurrentDomain()
+            log.notice("Replaced the Finder location")
+        }
         try await signalWorkingSet()
-        return nil
+        return preservedLocation
     }
 
     /// Bumped whenever a property of `domain` changes what the system will
@@ -85,32 +135,48 @@ public enum FinderDomain {
         storedGeneration < capabilityGeneration
     }
 
-    /// Adds the domain, replacing one created before the capabilities it
-    /// declares now.
-    ///
-    /// Replacing means removing, which drops the replica: cached copies are
-    /// downloaded again the next time they are opened. Edits that have not
-    /// reached the server are kept, which is what `.preserveDirtyUserData`
-    /// is for. That cost is paid once, and only by someone whose domain
-    /// predates a capability.
-    public static func register() async throws {
-        let store = AppSettings.sharedStore
-        let domains = try await NSFileProviderManager.domains()
-        let isRegistered = domains.contains {
-            $0.identifier.rawValue == SharedConstants.mainDomainIdentifier
-        }
+    /// What `synchronize` does to the registration.
+    enum RegistrationStep: Equatable {
+        /// Already as it should be, or nothing registered to hide.
+        case leave
+        /// Adds the domain where none is registered.
+        case create
+        /// Shows or hides the registered domain and changes nothing else.
+        case setHidden(Bool)
+        /// Removes a domain that predates what `domain` declares, and adds
+        /// it again.
+        case replace
+    }
 
-        if isRegistered {
-            let generation = store.integer(forKey: AppSettings.Keys.domainCapabilityGeneration)
-            guard needsReplacing(storedGeneration: generation) else { return }
-            if let preserved = try await NSFileProviderManager.remove(domain, mode: .preserveDirtyUserData) {
-                // The one record of where unsynced edits went.
-                HamasenLog(category: "domain").notice(
-                    "Replaced the Finder location; unsynced edits were kept at \(preserved.path)")
-            }
+    /// Decides the step from what is registered now.
+    ///
+    /// Only `replace` removes anything, and it is never the answer while
+    /// nothing is mounted: an outdated domain is just as well replaced at
+    /// the next mount, and that is when the capability is first wanted.
+    static func registrationStep(
+        registered: NSFileProviderDomain?,
+        storedGeneration: Int,
+        hasMountedServers: Bool
+    ) -> RegistrationStep {
+        guard let registered else {
+            // A domain exists for something to show; one is not created
+            // just to be hidden.
+            return hasMountedServers ? .create : .leave
         }
+        guard hasMountedServers else {
+            return registered.isHidden ? .leave : .setHidden(true)
+        }
+        if needsReplacing(storedGeneration: storedGeneration) {
+            return .replace
+        }
+        return registered.isHidden ? .setHidden(false) : .leave
+    }
+
+    /// Adds `domain` as declared now, and records that what is registered
+    /// carries every capability this system can declare.
+    private static func addCurrentDomain() async throws {
         try await NSFileProviderManager.add(domain)
-        store.set(capabilityGeneration, forKey: AppSettings.Keys.domainCapabilityGeneration)
+        AppSettings.sharedStore.set(capabilityGeneration, forKey: AppSettings.Keys.domainCapabilityGeneration)
     }
 
     /// Asks the system to re-enumerate.
@@ -134,6 +200,31 @@ public enum FinderDomain {
         let manager = try manager()
         try await manager.signalErrorResolved(NSFileProviderError(.notAuthenticated))
         try await manager.signalEnumerator(for: .workingSet)
+    }
+
+    /// Empties the Finder location and builds it again, for a location the
+    /// system can no longer bring into line with the servers.
+    ///
+    /// A removal that keeps edits that never reached a server — replacing an
+    /// outdated domain, or unmounting the last server in builds before the
+    /// domain was hidden instead — can leave them in the location's folder.
+    /// The domain added next takes that folder over and treats what is in it
+    /// as new local items, which shadow the servers' own. This keeps nothing:
+    /// copies on this Mac go, and so do unsynced edits. The servers are not
+    /// touched.
+    ///
+    /// With nothing mounted the domain is only removed; the next mount adds
+    /// it as new.
+    public static func reset(hasMountedServers: Bool) async throws {
+        let registered = try await NSFileProviderManager.domains()
+        if registered.contains(where: { $0.identifier == domain.identifier }) {
+            _ = try await NSFileProviderManager.remove(domain, mode: .removeAll)
+            log.notice("Reset the Finder location: removed it with everything in it")
+        }
+        guard hasMountedServers else { return }
+        try await addCurrentDomain()
+        log.notice("Added the Finder location")
+        try await signalWorkingSet()
     }
 
     /// The system's handle on the domain, which exists only while the domain
