@@ -16,8 +16,34 @@ import Foundation
 
 /// What the WebDAV and S3 clients share because both are plain HTTP over
 /// URLSession: how an ETag is compared, which URLSession failures mean the
-/// server could not be reached, and how bytes moved are reported.
+/// server could not be reached, which answers say to try again and when,
+/// and how bytes moved are reported.
 enum HTTPTransfer {
+    /// The service failing rather than the request: 500, 503 from one that
+    /// is overloaded — S3's SlowDown among them — and a gateway in front of
+    /// it saying the same. Every service here documents them as "try again".
+    static let serviceFailureStatuses: Set<Int> = [500, 502, 503, 504]
+
+    /// A Retry-After longer than this is not waited out inside one request;
+    /// the operation fails and the system retries the item later.
+    private static let longestRetryWait: TimeInterval = 60
+
+    /// How long to wait before sending a request again, `attempt` being the
+    /// number of retries already made: the server's own Retry-After when it
+    /// gives one, otherwise an exponential backoff starting at one second.
+    /// nil when the server asks for longer than one request should take, and
+    /// the answer stands.
+    static func retryDelay(after response: HTTPURLResponse, attempt: Int) -> TimeInterval? {
+        let wait: TimeInterval
+        if let header = response.value(forHTTPHeaderField: "Retry-After"),
+           let seconds = TimeInterval(header.trimmingCharacters(in: .whitespaces)) {
+            wait = max(seconds, 0)
+        } else {
+            wait = pow(2, Double(attempt))
+        }
+        return wait <= longestRetryWait ? wait : nil
+    }
+
     /// The ETag with its quoting and weak marker removed.
     ///
     /// A listing and a single-item lookup often spell one ETag differently —

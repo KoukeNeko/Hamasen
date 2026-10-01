@@ -83,6 +83,12 @@ final class S3Handler: ChannelInboundHandler {
             return
         }
 
+        if store.takeInternalError() {
+            send(error: "InternalError", message: "We encountered an internal error. Please try again.",
+                 status: .internalServerError, context: context)
+            return
+        }
+
         let isWrite = ["PUT", "POST", "DELETE"].contains(head.method.rawValue)
         if behaviour.forbidsWrites && isWrite {
             send(error: "AccessDenied", message: "this key may only read",

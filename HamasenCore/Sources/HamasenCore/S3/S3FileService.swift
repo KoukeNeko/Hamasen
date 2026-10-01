@@ -46,6 +46,25 @@ public actor S3FileService: RemoteFileService {
         static let rangeNotSatisfiable = 416
     }
 
+    /// How many more times a request the service failed is sent. S3's own
+    /// SDKs send a request again on those failures, and they pass: SeaweedFS
+    /// answers 500 for a moment after it restarts, and AWS sheds load with
+    /// 503 SlowDown.
+    private static let maximumRetries = 2
+
+    /// Waits before the next attempt when the answer was the service's own
+    /// failure and attempts remain; false when the answer stands. 429 is not
+    /// among them: S3 documents 503 SlowDown as its way to say "slow down".
+    private static func waitToRetry(after response: HTTPURLResponse, attempt: inout Int) async throws -> Bool {
+        guard HTTPTransfer.serviceFailureStatuses.contains(response.statusCode), attempt < maximumRetries,
+              let wait = HTTPTransfer.retryDelay(after: response, attempt: attempt)
+        else { return false }
+        log.notice("HTTP \(response.statusCode), trying again")
+        try await Task.sleep(for: .seconds(wait))
+        attempt += 1
+        return true
+    }
+
     private enum Listing {
         static let typeParameter = URLQueryItem(name: "list-type", value: "2")
         /// Asked for on every listing so a key containing a character XML
@@ -281,18 +300,23 @@ public actor S3FileService: RemoteFileService {
     public func downloadFile(at path: String, to localURL: URL, progress: TransferProgress?) async throws {
         let object = try object(for: path)
         try await withSession { session in
-            let request = try self.signedRequest(
-                method: Method.get, object: object, path: path)
-            let temporary: URL
-            let http: HTTPURLResponse
-            do {
-                let (url, response) = try await session.download(
-                    for: request, delegate: Self.progressDelegate(progress))
-                temporary = url
-                http = try Self.httpResponse(response, operation: Self.downloadOperation, path: path)
-            } catch {
-                throw Self.mapTransportError(error, operation: Self.downloadOperation, path: path)
-            }
+            var attempt = 0
+            var temporary: URL
+            var http: HTTPURLResponse
+            repeat {
+                let request = try self.signedRequest(
+                    method: Method.get, object: object, path: path)
+                do {
+                    let (url, response) = try await session.download(
+                        for: request, delegate: Self.progressDelegate(progress))
+                    temporary = url
+                    http = try Self.httpResponse(response, operation: Self.downloadOperation, path: path)
+                } catch {
+                    throw Self.mapTransportError(error, operation: Self.downloadOperation, path: path)
+                }
+                guard try await Self.waitToRetry(after: http, attempt: &attempt) else { break }
+                try? FileManager.default.removeItem(at: temporary)
+            } while true
             guard Status.successRange.contains(http.statusCode) else {
                 // A failed download still has a body, and it is the error
                 // document; reading it is what turns a 403 into a reason.
@@ -321,14 +345,24 @@ public actor S3FileService: RemoteFileService {
         // Streamed to disk: a server that ignores Range answers with the whole
         // object, which must not be buffered in memory to take a slice of it.
         let (bodyURL, http) = try await withSession { session in
-            let request = try self.signedRequest(
-                method: Method.get, object: object,
-                headers: ["Range": "bytes=\(offset)-\(lastByte)"], path: path)
-            do {
-                let (url, response) = try await session.download(for: request)
-                return (url, try Self.httpResponse(response, operation: Self.downloadOperation, path: path))
-            } catch {
-                throw Self.mapTransportError(error, operation: Self.downloadOperation, path: path)
+            var attempt = 0
+            while true {
+                let request = try self.signedRequest(
+                    method: Method.get, object: object,
+                    headers: ["Range": "bytes=\(offset)-\(lastByte)"], path: path)
+                let url: URL
+                let http: HTTPURLResponse
+                do {
+                    let (body, response) = try await session.download(for: request)
+                    url = body
+                    http = try Self.httpResponse(response, operation: Self.downloadOperation, path: path)
+                } catch {
+                    throw Self.mapTransportError(error, operation: Self.downloadOperation, path: path)
+                }
+                guard try await Self.waitToRetry(after: http, attempt: &attempt) else {
+                    return (url, http)
+                }
+                try? FileManager.default.removeItem(at: url)
             }
         }
         defer { try? FileManager.default.removeItem(at: bodyURL) }
@@ -1125,27 +1159,33 @@ public actor S3FileService: RemoteFileService {
         using explicitSession: URLSession? = nil
     ) async throws -> Response {
         let work: (URLSession) async throws -> Response = { session in
-            var request = try self.signedRequest(
-                method: method, object: object, queryItems: queryItems,
-                headers: headers, body: body, payloadHash: upload?.payloadHash, path: path)
-            let data: Data
-            let response: URLResponse
-            do {
-                if let upload {
-                    (data, response) = try await session.upload(
-                        for: request, fromFile: upload.url,
-                        delegate: Self.progressDelegate(progress))
-                } else if let progress, !body.isEmpty {
-                    (data, response) = try await session.upload(
-                        for: request, from: body, delegate: Self.progressDelegate(progress))
-                } else {
-                    if !body.isEmpty { request.httpBody = body }
-                    (data, response) = try await session.data(for: request)
+            var attempt = 0
+            var data: Data
+            var http: HTTPURLResponse
+            repeat {
+                // Signed again for each attempt: the signature carries the
+                // time it was made.
+                var request = try self.signedRequest(
+                    method: method, object: object, queryItems: queryItems,
+                    headers: headers, body: body, payloadHash: upload?.payloadHash, path: path)
+                let response: URLResponse
+                do {
+                    if let upload {
+                        (data, response) = try await session.upload(
+                            for: request, fromFile: upload.url,
+                            delegate: Self.progressDelegate(progress))
+                    } else if let progress, !body.isEmpty {
+                        (data, response) = try await session.upload(
+                            for: request, from: body, delegate: Self.progressDelegate(progress))
+                    } else {
+                        if !body.isEmpty { request.httpBody = body }
+                        (data, response) = try await session.data(for: request)
+                    }
+                } catch {
+                    throw Self.mapTransportError(error, operation: operation, path: path)
                 }
-            } catch {
-                throw Self.mapTransportError(error, operation: operation, path: path)
-            }
-            let http = try Self.httpResponse(response, operation: operation, path: path)
+                http = try Self.httpResponse(response, operation: operation, path: path)
+            } while try await Self.waitToRetry(after: http, attempt: &attempt)
             let accepted = acceptableStatuses?.contains(http.statusCode)
                 ?? Status.successRange.contains(http.statusCode)
             guard accepted else {

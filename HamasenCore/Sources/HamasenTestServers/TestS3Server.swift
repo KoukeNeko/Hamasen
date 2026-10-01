@@ -203,6 +203,7 @@ public final class TestS3ObjectStore: @unchecked Sendable {
     private var writes = 0
     private var listings = 0
     private var completedUploads = 0
+    private var internalErrorsLeft = 0
 
     /// How many times a bucket listing was served, so a test can tell one
     /// request covering a subtree from one request per directory.
@@ -222,6 +223,23 @@ public final class TestS3ObjectStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         writes += 1
+    }
+
+    /// Answers the next `count` requests with 500 InternalError, as
+    /// SeaweedFS does for a moment after a restart, before its volumes are
+    /// loaded again.
+    public func failNextRequests(_ count: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        internalErrorsLeft = count
+    }
+
+    func takeInternalError() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard internalErrorsLeft > 0 else { return false }
+        internalErrorsLeft -= 1
+        return true
     }
 
     public var writeCount: Int {

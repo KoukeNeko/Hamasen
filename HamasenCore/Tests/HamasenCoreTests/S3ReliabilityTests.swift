@@ -378,6 +378,43 @@ struct S3ReliabilityTests {
         }
     }
 
+    /// A 500 InternalError is the service failing, not the request: S3 says
+    /// to try again, and SeaweedFS answers with one for a moment after it
+    /// restarts. Every kind of request comes through it.
+    @Test
+    func aPassingInternalErrorIsRetried() async throws {
+        try await withService { service, server in
+            let source = try temporaryFile(Data("contents".utf8))
+            defer { try? FileManager.default.removeItem(at: source) }
+
+            server.store.failNextRequests(2)
+            try await service.uploadFile(from: source, to: "/a.txt")
+            server.store.failNextRequests(2)
+            #expect(try await service.listDirectory(at: RemotePath.root).map(\.name) == ["a.txt"])
+            server.store.failNextRequests(2)
+            #expect(try await service.downloadRange(at: "/a.txt", offset: 2, length: 3) == Data("nte".utf8))
+            server.store.failNextRequests(2)
+            let downloaded = FileManager.default.temporaryDirectory
+                .appendingPathComponent("s3-reliability-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: downloaded) }
+            try await service.downloadFile(at: "/a.txt", to: downloaded)
+            #expect(try Data(contentsOf: downloaded) == Data("contents".utf8))
+        }
+    }
+
+    /// One that does not pass is reported, not waited on for good.
+    @Test
+    func aLastingInternalErrorIsReported() async throws {
+        try await withService { service, server in
+            server.store.put(Data("x".utf8), forKey: "a.txt")
+            server.store.failNextRequests(100)
+            await #expect(throws: RemoteFileServiceError.self) {
+                _ = try await service.itemInfo(at: "/a.txt")
+            }
+            server.store.failNextRequests(0)
+        }
+    }
+
     // MARK: - Move
 
     @Test
