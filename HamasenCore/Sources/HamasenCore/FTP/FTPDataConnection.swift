@@ -16,6 +16,7 @@ import Foundation
 import NIOCore
 import NIOPosix
 import NIOSSL
+import NIOTLS
 
 /// One transfer's data connection.
 ///
@@ -52,17 +53,38 @@ enum FTPDataConnection {
 
     /// Starts TLS on the connection when the session is protected, then lets
     /// reading begin. `extra` handlers go behind it, so they see plaintext.
+    ///
+    /// - Parameter waitingForHandshake: returns only once TLS is up, giving
+    ///   up after `timeoutSeconds`. An upload needs it: with nothing to send
+    ///   it closes straight away, and a close mid-handshake fails the
+    ///   server's side of it — vsftpd then gives up on the whole session,
+    ///   writing its reason in plaintext over the protected control channel.
     private static func activate(
         _ channel: Channel,
         protection: FTPDataProtection,
-        handlers extra: [ChannelHandler]
+        handlers extra: [ChannelHandler],
+        waitingForHandshake: Bool = false,
+        timeoutSeconds: Int = 0
     ) async throws {
         var handlers: [ChannelHandler] = []
+        var handshake: EventLoopFuture<Void>?
         if case .tls(let context, let hostname) = protection {
             handlers.append(try FTPTLS.makeHandler(context: context, host: hostname))
+            if waitingForHandshake {
+                let waiter = HandshakeWaiter(promise: channel.eventLoop.makePromise())
+                handshake = waiter.promise.futureResult
+                handlers.append(waiter)
+            }
         }
         try await channel.pipeline.addHandlers(handlers + extra).get()
         try await channel.setOption(ChannelOptions.autoRead, value: true).get()
+        if let handshake {
+            let timer = channel.eventLoop.scheduleTask(in: .seconds(Int64(timeoutSeconds))) {
+                channel.close(promise: nil)
+            }
+            defer { timer.cancel() }
+            try await handshake.get()
+        }
     }
 
     /// Reads from a connected data channel until the server closes it.
@@ -132,7 +154,9 @@ enum FTPDataConnection {
         let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
         try await withTaskCancellationHandler {
-            try await activate(channel, protection: protection, handlers: [])
+            try await activate(
+                channel, protection: protection, handlers: [],
+                waitingForHandshake: true, timeoutSeconds: timeoutSeconds)
             var sent: Int64 = 0
             while let chunk = try handle.read(upToCount: uploadChunkSize), !chunk.isEmpty {
                 try Task.checkCancellation()
@@ -298,5 +322,43 @@ private final class FTPDataReceiver: ChannelInboundHandler, @unchecked Sendable 
             self.completion = promise
             return promise.futureResult
         }
+    }
+}
+
+/// Tells when the data connection's TLS handshake has finished, or that the
+/// connection ended first.
+private final class HandshakeWaiter: ChannelInboundHandler, RemovableChannelHandler {
+    typealias InboundIn = NIOAny
+
+    let promise: EventLoopPromise<Void>
+    private var isSettled = false
+
+    init(promise: EventLoopPromise<Void>) {
+        self.promise = promise
+    }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if case TLSUserEvent.handshakeCompleted = event { settle(.success(())) }
+        context.fireUserInboundEventTriggered(event)
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        settle(.failure(error))
+        context.fireErrorCaught(error)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        settle(.failure(ChannelError.ioOnClosedChannel))
+        context.fireChannelInactive()
+    }
+
+    func handlerRemoved(context: ChannelHandlerContext) {
+        settle(.failure(ChannelError.ioOnClosedChannel))
+    }
+
+    private func settle(_ result: Result<Void, Error>) {
+        guard !isSettled else { return }
+        isSettled = true
+        promise.completeWith(result)
     }
 }
