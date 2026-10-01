@@ -388,6 +388,14 @@ public actor S3FileService: RemoteFileService {
     /// otherwise just the shared start of other keys.
     public func createDirectory(at path: String) async throws {
         let object = try object(for: path)
+        // A PUT replaces whatever has the key, so a folder that is already
+        // there — as a marker or only as a prefix — would be reported as
+        // made here. Looked up first; nothing narrower is portable.
+        do {
+            _ = try await itemInfo(at: path)
+            throw RemoteFileServiceError.alreadyExists(path: path)
+        } catch RemoteFileServiceError.itemNotFound {
+        }
         _ = try await send(
             method: Method.put, object: object.folderMarker,
             operation: Self.createOperation, path: path)

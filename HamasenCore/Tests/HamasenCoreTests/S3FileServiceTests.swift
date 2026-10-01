@@ -308,6 +308,19 @@ struct S3FileServiceTests {
         }
     }
 
+    /// A PUT of the marker succeeds whatever is there; a folder that already
+    /// exists, as a marker or only as a prefix, is still a name in use.
+    @Test(arguments: ["photos/", "notes/x.md", "report.pdf"])
+    func refusesAFolderWhoseNameIsTaken(existingKey: String) async throws {
+        try await withService { service, server in
+            server.store.put(Data("x".utf8), forKey: existingKey)
+            let name = String(existingKey.split(separator: "/").first!)
+            await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/\(name)")) {
+                try await service.createDirectory(at: "/\(name)")
+            }
+        }
+    }
+
     @Test
     func deletesAFile() async throws {
         try await withService { service, server in
