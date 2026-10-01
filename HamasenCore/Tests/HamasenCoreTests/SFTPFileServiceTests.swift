@@ -103,7 +103,9 @@ struct SFTPFileServiceTests {
             hostKeyPolicy: .acceptAnything
         )
 
-        await #expect(throws: RemoteFileServiceError.self) {
+        // A refused password asks for the password again; reported as a
+        // connection failure, it would read as the server being down.
+        await #expect(throws: RemoteFileServiceError.authenticationFailed) {
             try await service.connect()
         }
 
@@ -151,7 +153,7 @@ struct SFTPFileServiceTests {
             hostKeyPolicy: .acceptAnything
         )
 
-        await #expect(throws: RemoteFileServiceError.self) {
+        await #expect(throws: RemoteFileServiceError.authenticationFailed) {
             try await service.connect()
         }
 

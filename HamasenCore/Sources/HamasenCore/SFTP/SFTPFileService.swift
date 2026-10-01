@@ -95,6 +95,11 @@ public actor SFTPFileService: RemoteFileService {
             // it as a connection failure would throw that away.
             Self.log.error("SSH connection to \(config.host):\(config.port) refused: \(String(describing: error))")
             throw error
+        } catch SSHClientError.allAuthenticationOptionsFailed {
+            // The server answered and turned the password or key down, which
+            // is a question for the person, not a server that is down.
+            Self.log.error("SSH authentication to \(config.host):\(config.port) as \(config.username) was refused")
+            throw RemoteFileServiceError.authenticationFailed
         } catch {
             Self.log.error("SSH connection to \(config.host):\(config.port) failed: \(String(describing: error))")
             throw RemoteFileServiceError.connectionFailed(underlying: String(describing: error))
