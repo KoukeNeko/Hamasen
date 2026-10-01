@@ -559,6 +559,23 @@ struct SFTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    /// An upload cut off with the connection cannot remove its temporary
+    /// file, and listings hide it; the folder still has to delete.
+    @Test("刪除目錄時一併移除中斷上傳留下的暫存檔")
+    func deletingDirectoryRemovesStrandedUploads() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let folder = server.rootDirectory.appendingPathComponent("inner")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        let temporaryName = RemotePath.name(of: RemotePath.temporaryUploadPath(for: "/inner/report.txt"))
+        try Data("partial".utf8).write(to: folder.appendingPathComponent(temporaryName))
+
+        try await service.deleteDirectory(at: "/inner")
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+
+        try await Self.tearDown(service, server)
+    }
+
     // MARK: - Symlinks
 
     @Test("刪除指向目錄的連結不會刪掉目標內容")

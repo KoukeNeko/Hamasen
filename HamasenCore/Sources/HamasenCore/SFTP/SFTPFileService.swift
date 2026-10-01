@@ -157,7 +157,12 @@ public actor SFTPFileService: RemoteFileService {
         try await listEntries(at: path, resolvingLinks: false)
     }
 
-    private func listEntries(at path: String, resolvingLinks: Bool) async throws -> [RemoteItem] {
+    /// `includingUnfinishedUploads` is for deleting a folder: an upload cut
+    /// off with its connection leaves its temporary file behind, and RMDIR
+    /// refuses a folder until that is gone too.
+    private func listEntries(
+        at path: String, resolvingLinks: Bool, includingUnfinishedUploads: Bool = false
+    ) async throws -> [RemoteItem] {
         let session = try activeSession()
         let remoteDirectory = remoteAbsolutePath(for: path)
         let sftp = session.sftp
@@ -174,7 +179,7 @@ public actor SFTPFileService: RemoteFileService {
         var items: [RemoteItem] = []
         for component in nameBatches.flatMap(\.components)
         where component.filename != "." && component.filename != ".."
-            && !RemotePath.isTemporaryUpload(name: component.filename) {
+            && (includingUnfinishedUploads || !RemotePath.isTemporaryUpload(name: component.filename)) {
             let item = Self.makeRemoteItem(
                 path: RemotePath.join(path, component.filename),
                 name: component.filename,
@@ -452,7 +457,7 @@ public actor SFTPFileService: RemoteFileService {
         // SFTP's RMDIR only removes an empty directory, so the tree is
         // emptied depth-first first. Only a real directory is entered: a
         // link, whatever it points at, is removed as a link.
-        for child in try await listEntries(at: path, resolvingLinks: false) {
+        for child in try await listEntries(at: path, resolvingLinks: false, includingUnfinishedUploads: true) {
             if child.kind == .directory {
                 try await deleteTree(at: child.path)
             } else {

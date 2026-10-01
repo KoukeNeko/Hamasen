@@ -253,11 +253,12 @@ private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
         return .ok
     }
 
+    /// rmdir(2), as OpenSSH's server calls it: a directory with anything
+    /// left in it stays, and the client hears the same generic failure.
     func removeDirectory(_ filePath: String, context: SSHContext) async throws -> SFTPStatusCode {
         let url = localURL(for: filePath)
         guard FileManager.default.fileExists(atPath: url.path) else { return .noSuchFile }
-        try FileManager.default.removeItem(at: url)
-        return .ok
+        return rmdir(url.path) == 0 ? .ok : .failure
     }
 
     func realPath(for canonicalUrl: String, context: SSHContext) async throws -> [SFTPPathComponent] {
