@@ -118,3 +118,46 @@ struct ItemUsageStoreTests {
         #expect(again["new"]?.firstSeen == seen)
     }
 }
+
+@Suite("ActivityStore")
+struct ActivityStoreTests {
+    private static func store() -> ActivityStore {
+        ActivityStore(fileURL: FileManager.default.temporaryDirectory.appending(path: "activity-\(UUID().uuidString).json"))
+    }
+
+    @Test("傳輸紀錄計算速度與剩餘時間")
+    func computesRates() {
+        let start = Date(timeIntervalSince1970: 0)
+        let record = TransferRecord(
+            serverID: UUID(), path: "/a/b.mov", direction: .download, bytesTransferred: 2_000_000,
+            totalBytes: 10_000_000, startedAt: start, updatedAt: start.addingTimeInterval(2))
+        #expect(record.fileName == "b.mov")
+        #expect(record.fractionCompleted == 0.2)
+        #expect(record.bytesPerSecond == 1_000_000)
+        #expect(record.secondsRemaining == 8)
+    }
+
+    @Test("完成與衝突只保留最近的幾筆")
+    func capsHistory() throws {
+        let store = Self.store()
+        let server = UUID()
+        for index in 0..<40 {
+            try store.recordConflict(ConflictRecord(serverID: server, path: "/\(index).txt", copyName: "c"))
+        }
+        let snapshot = try store.load()
+        #expect(snapshot.conflicts.count == ActivitySnapshot.maximumConflicts)
+        #expect(snapshot.conflicts.first?.path == "/39.txt")
+    }
+
+    @Test("伺服器狀態只在改變時寫入，刪除伺服器時一併清掉")
+    func recordsHealth() throws {
+        let store = Self.store()
+        let server = UUID()
+        try store.recordHealth(ServerHealth(state: .unreachable, message: "down"), for: server)
+        let first = try store.load().servers[server]
+        try store.recordHealth(ServerHealth(state: .unreachable, message: "down"), for: server)
+        #expect(try store.load().servers[server] == first)
+        try store.forget(serverID: server)
+        #expect(try store.load().servers.isEmpty)
+    }
+}

@@ -76,6 +76,10 @@ public enum SharedConstants {
     /// `ItemUsageStore`.
     public static let itemUsageFileName = "item-usage.json"
 
+    /// Transfers, conflicts and server health, from the extension to the
+    /// app. See `ActivityStore`.
+    public static let activityFileName = "activity.json"
+
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar
     /// label comes from the app's localized display name (哈瑪星 / Hamasen);
