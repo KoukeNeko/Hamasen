@@ -227,6 +227,19 @@ public enum FinderDomain {
         try await signalWorkingSet()
     }
 
+    /// Lifts a pause earlier versions put on the whole domain by answering a
+    /// read that could not reach one server, or whose password was refused,
+    /// with `.serverUnreachable` or `.notAuthenticated`. Reads no longer
+    /// pause anything — every server shares this domain — but a pause
+    /// already in place lasts until it is reported resolved. A write still
+    /// waiting on such a server reports it again, and pauses again.
+    public static func releaseDomainWidePauses() async throws {
+        let manager = try manager()
+        try await manager.signalErrorResolved(NSFileProviderError(.serverUnreachable))
+        try await manager.signalErrorResolved(NSFileProviderError(.notAuthenticated))
+        try await manager.signalEnumerator(for: .workingSet)
+    }
+
     /// The system's handle on the domain, which exists only while the domain
     /// is registered.
     public static func manager() throws -> NSFileProviderManager {
