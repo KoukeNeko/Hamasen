@@ -118,6 +118,8 @@ public actor WebDAVFileService: RemoteFileService {
         static let unauthorized = 401
         static let forbidden = 403
         static let notFound = 404
+        /// MKCOL's answer for a name already taken.
+        static let methodNotAllowed = 405
         static let preconditionFailed = 412
         static let rangeNotSatisfiable = 416
     }
@@ -412,7 +414,28 @@ public actor WebDAVFileService: RemoteFileService {
     }
 
     public func createDirectory(at path: String) async throws {
-        try await perform(method: .mkcol, path: path, operation: String(localized: "建立目錄", bundle: .module))
+        let operation = String(localized: "建立目錄", bundle: .module)
+        // RFC 4918 refuses an existing name with 405, but some servers —
+        // rclone among them — answer 201 and leave it as it was, which would
+        // pass an existing folder off as a new one. So the name is looked up
+        // first, and 405 still covers one created in between.
+        do {
+            _ = try await itemInfo(at: path)
+            throw RemoteFileServiceError.alreadyExists(path: path)
+        } catch RemoteFileServiceError.itemNotFound {
+        }
+        let request = try makeRequest(method: .mkcol, path: path)
+        let (body, response) = try await withSession { session in
+            do {
+                return try await session.data(for: request)
+            } catch {
+                throw Self.mapTransportError(error, operation: operation, path: path)
+            }
+        }
+        if (response as? HTTPURLResponse)?.statusCode == Status.methodNotAllowed {
+            throw RemoteFileServiceError.alreadyExists(path: path)
+        }
+        try Self.validate(response, body: body, method: .mkcol, operation: operation, path: path)
     }
 
     public func deleteFile(at path: String) async throws {

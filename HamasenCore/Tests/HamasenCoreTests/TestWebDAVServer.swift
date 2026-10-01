@@ -45,6 +45,9 @@ final class TestWebDAVServer {
         var omitsContentLength = false
         /// Send no ETag anywhere, so a client can only go by Last-Modified.
         var omitsETag = false
+        /// Answer MKCOL on an existing collection with 201 and change
+        /// nothing, as rclone does, instead of RFC 4918's 405.
+        var createsExistingCollection = false
 
         static let wellBehaved = Behaviour()
     }
@@ -380,6 +383,11 @@ private final class WebDAVHandler: ChannelInboundHandler {
     }
 
     private func handleMkcol(target: URL, context: ChannelHandlerContext) {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            send(status: behaviour.createsExistingCollection ? .created : .methodNotAllowed, context: context)
+            return
+        }
         do {
             try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
             send(status: .created, context: context)

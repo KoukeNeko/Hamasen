@@ -200,6 +200,24 @@ struct WebDAVServerQuirkTests {
         try await server.stop()
     }
 
+    @Test("建立已存在的資料夾時回報名稱已存在", arguments: [false, true])
+    func reportsExistingFolder(createsExistingCollection: Bool) async throws {
+        var behaviour = TestWebDAVServer.Behaviour.wellBehaved
+        behaviour.createsExistingCollection = createsExistingCollection
+        let server = try await TestWebDAVServer.start(behaviour: behaviour)
+        try FileManager.default.createDirectory(
+            at: server.rootDirectory.appendingPathComponent("taken"), withIntermediateDirectories: false)
+
+        let service = Self.makeService(port: server.port)
+        try await service.connect()
+        await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/taken")) {
+            try await service.createDirectory(at: "/taken")
+        }
+
+        try await service.disconnect()
+        try await server.stop()
+    }
+
     // MARK: - Missing metadata
 
     @Test("伺服器不回報檔案大小時視為未知")
