@@ -1,0 +1,47 @@
+#!/bin/sh
+# issue-server-cert <ca-dir> <out-dir>
+# Writes a new key and certificate for localhost, 127.0.0.1 and $E2E_HOST if
+# set, signed by the CA in <ca-dir> (ca.pem, ca-key.pem), to
+# <out-dir>/server.pem and <out-dir>/server-key.pem.
+set -eu
+
+names="DNS:localhost, IP:127.0.0.1"
+case "${E2E_HOST:-}" in
+"" | localhost | 127.0.0.1) ;;
+*[!0-9.]*) names="$names, DNS:$E2E_HOST" ;;
+*) names="$names, IP:$E2E_HOST" ;;
+esac
+
+ca_dir=$1
+out_dir=$2
+
+# Backdated an hour so a client whose clock trails Docker's still accepts a
+# certificate issued a moment ago. 800 days is at least the two years the
+# harness relies on and within the 825 days Apple platforms accept for any
+# TLS server certificate, private CAs included.
+now=$(date +%s)
+not_before=$(date -u -d "@$((now - 3600))" +%Y%m%d%H%M%SZ)
+not_after=$(date -u -d "@$((now - 3600 + 800 * 86400))" +%Y%m%d%H%M%SZ)
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+cat > "$work/ext" <<EOF
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = $names
+EOF
+
+openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+    -out "$work/server-key.pem"
+openssl req -new -key "$work/server-key.pem" -subj /CN=localhost \
+    -out "$work/server.csr"
+openssl x509 -req -in "$work/server.csr" \
+    -CA "$ca_dir/ca.pem" -CAkey "$ca_dir/ca-key.pem" \
+    -not_before "$not_before" -not_after "$not_after" \
+    -extfile "$work/ext" -out "$work/server.pem"
+
+chmod 600 "$work/server-key.pem"
+chmod 644 "$work/server.pem"
+mv "$work/server-key.pem" "$work/server.pem" "$out_dir/"

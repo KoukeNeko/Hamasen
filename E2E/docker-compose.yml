@@ -1,0 +1,177 @@
+# Servers the end-to-end tests run against. E2E/CONTRACT.md is the
+# specification; E2E/scripts/e2e-services.sh starts and stops them.
+name: hamasen-e2e
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 60s
+  start_interval: 1s
+
+x-webdav-build: &webdav-build
+  context: ./services/webdav
+  additional_contexts:
+    common: ./services/common
+
+services:
+  # Writes the CA, server certificate and SFTP client key to .run once.
+  certs:
+    build:
+      context: ./services/certs
+      additional_contexts:
+        common: ./services/common
+    environment:
+      # The address clients use when the services run on another machine,
+      # added to the server certificate's names and announced for FTP
+      # passive data. Unset for a stack on this Mac.
+      - E2E_HOST
+    volumes:
+      - ./.run:/out
+
+  sftp:
+    build:
+      context: ./services/sftp
+      additional_contexts:
+        common: ./services/common
+    init: true
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:2222:22"
+    volumes:
+      - sftp-hostkeys:/etc/ssh/keys
+      - sftp-data:/home/hamasen/data
+      - ./.run/keys:/e2e-keys:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "listening", "22"]
+
+  ftp:
+    build:
+      context: ./services/ftp
+      additional_contexts:
+        common: ./services/common
+    init: true
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+    environment:
+      - E2E_HOST
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:2121:21"
+      - "${E2E_BIND:-127.0.0.1}:30000-30049:30000-30049"
+    volumes:
+      - ftp-tls:/tls
+      - ftp-data:/home/hamasen/data
+      - ./.run/certs:/e2e-certs:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "listening", "21"]
+
+  webdav:
+    build: *webdav-build
+    init: true
+    environment:
+      E2E_PORT: "8080"
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:8081:8080"
+    volumes:
+      - webdav-data:/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "listening", "8080"]
+
+  webdavs:
+    build: *webdav-build
+    init: true
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+    environment:
+      E2E_PORT: "8443"
+      E2E_TLS: "1"
+      E2E_HOST: ${E2E_HOST:-}
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:8443:8443"
+    volumes:
+      - webdavs-tls:/tls
+      - webdavs-data:/data
+      - ./.run/certs:/e2e-certs:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "listening", "8443"]
+
+  smb:
+    build:
+      context: ./services/smb
+      additional_contexts:
+        common: ./services/common
+    init: true
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:1445:445"
+    volumes:
+      - smb-data:/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "listening", "445"]
+
+  s3:
+    build: ./services/s3
+    init: true
+    # SeaweedFS waits 15 s for its filer's metadata streams before it stops.
+    stop_grace_period: 30s
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:8333:8333"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "test -f /tmp/bucket-ready && wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
+
+  cloud:
+    build: ./services/cloud
+    init: true
+    environment:
+      # Passed through only when set, so the mock's own defaults apply.
+      - TOKEN_LIFETIME
+      - ROTATION_GRACE
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:8090:8090"
+    volumes:
+      - cloud-data:/data
+    healthcheck:
+      <<: *healthcheck
+      # The mock logs every request; a listening check keeps the log for the
+      # harness's own traffic.
+      test: ["CMD-SHELL", "netstat -tln | grep -q ':8090 '"]
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    command: ["-host=0.0.0.0", "-config=/etc/toxiproxy.json"]
+    ports:
+      - "${E2E_BIND:-127.0.0.1}:8474:8474"
+      - "${E2E_BIND:-127.0.0.1}:12222:12222"
+      - "${E2E_BIND:-127.0.0.1}:12121:12121"
+      - "${E2E_BIND:-127.0.0.1}:18081:18081"
+      - "${E2E_BIND:-127.0.0.1}:11445:11445"
+      - "${E2E_BIND:-127.0.0.1}:18333:18333"
+      - "${E2E_BIND:-127.0.0.1}:18090:18090"
+    volumes:
+      - ./services/toxiproxy/toxiproxy.json:/etc/toxiproxy.json:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "/toxiproxy-cli", "list"]
+
+volumes:
+  sftp-hostkeys:
+  sftp-data:
+  ftp-tls:
+  ftp-data:
+  webdav-data:
+  webdavs-tls:
+  webdavs-data:
+  smb-data:
+  s3-data:
+  cloud-data:

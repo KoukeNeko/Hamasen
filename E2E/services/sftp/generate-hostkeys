@@ -1,0 +1,9 @@
+#!/bin/sh
+# Replaces every host key sshd_config names with a freshly generated one.
+set -eu
+
+for type in ed25519 ecdsa rsa; do
+    key=/etc/ssh/keys/ssh_host_${type}_key
+    rm -f "$key" "$key.pub"
+    ssh-keygen -q -t "$type" -N '' -C '' -f "$key"
+done

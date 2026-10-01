@@ -1,0 +1,22 @@
+# sshd for the e2e SFTP service. Host keys live in a volume so they survive
+# restarts; rotate-hostkey replaces them.
+Port 22
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+HostKey /etc/ssh/keys/ssh_host_ecdsa_key
+HostKey /etc/ssh/keys/ssh_host_rsa_key
+
+PermitRootLogin no
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+
+UseDNS no
+ClientAliveInterval 0
+# Every harness connection comes from the same Docker gateway address, many
+# at once, and some tests fail logins on purpose: no per-source penalties,
+# and room for many connections that have not authenticated yet.
+PerSourcePenalties no
+MaxStartups 100
+
+Subsystem sftp internal-sftp
