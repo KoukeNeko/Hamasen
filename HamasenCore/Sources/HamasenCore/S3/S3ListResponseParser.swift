@@ -127,10 +127,12 @@ private final class ListBucketResultDelegate: NSObject, XMLParserDelegate {
 
     /// Percent-decoding is applied only when the server said it encoded, so a
     /// key that genuinely contains "%" is not mangled by a server that
-    /// ignored the request parameter.
+    /// ignored the request parameter. The encoding is a form's: a space is
+    /// "+" and a plus "%2B", as Amazon's own SDKs read it.
     private func decoded(_ value: String) -> String {
         guard isURLEncoded else { return value }
-        return value.removingPercentEncoding ?? value
+        let spaced = value.replacingOccurrences(of: "+", with: " ")
+        return spaced.removingPercentEncoding ?? spaced
     }
 
     func parser(

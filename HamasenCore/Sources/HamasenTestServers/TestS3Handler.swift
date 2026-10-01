@@ -488,11 +488,13 @@ final class S3Handler: ChannelInboundHandler {
         ]
     }
 
+    /// As Amazon encodes: a space as "+", and so a "+" as "%2B".
     private func text(_ value: String, urlEncode: Bool) -> String {
         guard urlEncode else { return escaped(value) }
         let unreserved = CharacterSet(
-            charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-        return escaped(value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? value)
+            charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~ ")
+        let encoded = value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? value
+        return escaped(encoded.replacingOccurrences(of: " ", with: "+"))
     }
 
     private func escaped(_ value: String) -> String {

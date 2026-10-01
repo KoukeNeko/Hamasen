@@ -93,6 +93,18 @@ struct S3ListResponseParserTests {
         #expect(listing.nextContinuationToken == nil)
     }
 
+    /// Amazon's url encoding writes a space as "+" and a "+" as "%2B", as a
+    /// form does; read as plain percent-encoding, every space in a name
+    /// would come back as a plus.
+    @Test
+    func readsSpacesWrittenAsPlus() throws {
+        let listing = try parse(Self.amazon
+            .replacingOccurrences(of: "photos/holiday%20snap.jpg", with: "photos/a%2Bb+c.jpg")
+            .replacingOccurrences(of: "photos/2026/", with: "photos/new+folder/"))
+        #expect(listing.objects.map(\.key) == ["photos/a+b c.jpg"])
+        #expect(listing.commonPrefixes == ["photos/new folder/"])
+    }
+
     @Test
     func readsCloudflaresListingWithoutTheOptionalElements() throws {
         let listing = try parse(Self.cloudflare)
