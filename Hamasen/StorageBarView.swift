@@ -97,7 +97,10 @@ struct StorageBarView: View {
         Rectangle()
             .fill(.quaternary)
             .overlay {
-                if freeBytes > 0, width >= Self.minimumWidthForLabel {
+                // Only an allowance leaves room that means anything; without
+                // one the remainder is padding, and labelling it showed a
+                // single free byte on an empty bar.
+                if allowance != nil, freeBytes > 0, width >= Self.minimumWidthForLabel {
                     Text(Self.formatted(freeBytes))
                         .font(.caption)
                         .foregroundStyle(.secondary)
