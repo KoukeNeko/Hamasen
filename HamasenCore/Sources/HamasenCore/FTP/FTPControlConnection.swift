@@ -56,6 +56,7 @@ actor FTPControlConnection {
         port: Int,
         timeoutSeconds: Int,
         tls: FTPTLSMode = .none,
+        trustRoots: NIOSSLTrustRoots = .default,
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton
     ) async throws -> (connection: FTPControlConnection, greeting: FTPResponse) {
         let responses = FTPResponseHandler()
@@ -95,7 +96,7 @@ actor FTPControlConnection {
         }
         if tls == .explicit {
             do {
-                try await connection.startTLS(host: host)
+                try await connection.startTLS(host: host, trustRoots: trustRoots)
             } catch {
                 await connection.close()
                 throw error
@@ -107,7 +108,7 @@ actor FTPControlConnection {
     /// Upgrades the control connection, which has to happen before the login
     /// rather than after it: the point is that the password never travels in
     /// the clear.
-    private func startTLS(host: String) async throws {
+    private func startTLS(host: String, trustRoots: NIOSSLTrustRoots) async throws {
         let response = try await send("AUTH TLS")
         guard response.isPositiveCompletion else {
             throw FTPError.commandFailed(command: "AUTH", response: response)
@@ -118,7 +119,7 @@ actor FTPControlConnection {
         // Swift 6 language mode. Only the hostname crosses.
         let hostname = host
         try await channel.eventLoop.submit {
-            let handler = try FTPTLS.makeHandler(context: FTPTLS.makeContext(), host: hostname)
+            let handler = try FTPTLS.makeHandler(context: FTPTLS.makeContext(trustRoots: trustRoots), host: hostname)
             // At the head, so bytes are decrypted before anything tries to
             // read lines out of them.
             try self.channel.pipeline.syncOperations.addHandler(handler, position: .first)

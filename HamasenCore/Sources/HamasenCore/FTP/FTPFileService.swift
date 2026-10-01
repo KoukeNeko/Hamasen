@@ -47,14 +47,30 @@ public actor FTPFileService: RemoteFileService {
     private var operationInFlight = false
     private var operationQueue: [CheckedContinuation<Void, Never>] = []
 
+    /// Whose certificates FTPS accepts: the system's trust store, except
+    /// in tests that run servers under a certificate authority of their own.
+    private let tlsTrustRoots: NIOSSLTrustRoots
+
     public init(
         config: ServerConfig,
         credentials: ServerCredentials,
         connectTimeoutSeconds: Int = AppSettings.defaultConnectTimeoutSeconds
     ) {
+        self.init(
+            config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds,
+            tlsTrustRoots: .default)
+    }
+
+    init(
+        config: ServerConfig,
+        credentials: ServerCredentials,
+        connectTimeoutSeconds: Int,
+        tlsTrustRoots: NIOSSLTrustRoots
+    ) {
         self.config = config
         self.credentials = credentials
         self.connectTimeoutSeconds = connectTimeoutSeconds
+        self.tlsTrustRoots = tlsTrustRoots
     }
 
     // MARK: - Serialization
@@ -115,7 +131,8 @@ public actor FTPFileService: RemoteFileService {
             host: config.host,
             port: config.port,
             timeoutSeconds: connectTimeoutSeconds,
-            tls: tlsMode
+            tls: tlsMode,
+            trustRoots: tlsTrustRoots
         )
 
         do {
@@ -146,7 +163,7 @@ public actor FTPFileService: RemoteFileService {
                 // required first and is always 0 over TLS.
                 try await connection.expect("PBSZ 0")
                 try await connection.expect("PROT P")
-                dataProtection = .tls(context: try FTPTLS.makeContext(), hostname: config.host)
+                dataProtection = .tls(context: try FTPTLS.makeContext(trustRoots: tlsTrustRoots), hostname: config.host)
             }
         } catch {
             await connection.close()

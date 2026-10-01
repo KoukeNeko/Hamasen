@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import Security
 
 /// Keeps credentials attached across redirects, but only when the redirect
 /// stays on the same origin and the method is safe to replay.
@@ -30,9 +31,13 @@ private final class RedirectAuthenticator: NSObject, URLSessionTaskDelegate, @un
 
     private let authorization: String?
     private let origin: URLComponents
+    /// Certificate authorities trusted in place of the system's, for tests
+    /// that serve HTTPS under one of their own. Empty in the app.
+    private let trustedAnchors: [SecCertificate]
 
-    init(authorization: String?, scheme: String?, host: String, port: Int) {
+    init(authorization: String?, scheme: String?, host: String, port: Int, trustedAnchors: [SecCertificate] = []) {
         self.authorization = authorization
+        self.trustedAnchors = trustedAnchors
         var origin = URLComponents()
         origin.scheme = scheme
         origin.host = host
@@ -63,6 +68,20 @@ private final class RedirectAuthenticator: NSObject, URLSessionTaskDelegate, @un
             request.setValue(authorization, forHTTPHeaderField: "Authorization")
         }
         completionHandler(request)
+    }
+
+    func urlSession(
+        _ session: URLSession, didReceive challenge: URLAuthenticationChallenge
+    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        guard !trustedAnchors.isEmpty,
+              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust
+        else { return (.performDefaultHandling, nil) }
+        SecTrustSetAnchorCertificates(trust, trustedAnchors as CFArray)
+        SecTrustSetAnchorCertificatesOnly(trust, true)
+        var error: CFError?
+        guard SecTrustEvaluateWithError(trust, &error) else { return (.cancelAuthenticationChallenge, nil) }
+        return (.useCredential, URLCredential(trust: trust))
     }
 
     /// Scheme, host and port must all match: a same-host redirect from https
@@ -192,14 +211,30 @@ public actor WebDAVFileService: RemoteFileService {
     /// proxy can put the /remote.php/ endpoint behind any path.
     private var uploadsInPlace = false
 
+    private let trustedAnchors: [SecCertificate]
+
     public init(
         config: ServerConfig,
         credentials: ServerCredentials,
         connectTimeoutSeconds: Int = AppSettings.defaultConnectTimeoutSeconds
     ) {
+        self.init(
+            config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds,
+            trustedAnchors: [])
+    }
+
+    /// - Parameter trustedAnchors: certificate authorities trusted in place
+    ///   of the system's, for tests that serve HTTPS under their own.
+    init(
+        config: ServerConfig,
+        credentials: ServerCredentials,
+        connectTimeoutSeconds: Int,
+        trustedAnchors: [SecCertificate]
+    ) {
         self.config = config
         self.credentials = credentials
         self.connectTimeoutSeconds = connectTimeoutSeconds
+        self.trustedAnchors = trustedAnchors
 
         if case .password(let password) = credentials {
             let pair = Data("\(config.username):\(password)".utf8).base64EncodedString()
@@ -261,7 +296,8 @@ public actor WebDAVFileService: RemoteFileService {
                 authorization: authorizationHeader,
                 scheme: config.transferProtocol.urlScheme,
                 host: config.host,
-                port: config.port
+                port: config.port,
+                trustedAnchors: trustedAnchors
             ),
             delegateQueue: nil
         )
