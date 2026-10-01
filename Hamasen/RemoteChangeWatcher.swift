@@ -136,11 +136,17 @@ final class RemoteChangeWatcher {
     ) -> [UUID: Set<String>] {
         var byServer: [UUID: Set<String>] = [:]
         for item in materialized {
-            guard case .item(let serverID, let path)? =
-                ItemIdentifierMapper.entity(for: item.itemIdentifier)
-            else { continue }
-            let directory = item.contentType == .folder ? path : RemotePath.parent(of: path)
-            byServer[serverID, default: []].insert(directory)
+            switch ItemIdentifierMapper.entity(for: item.itemIdentifier) {
+            case .serverRoot(let serverID)?:
+                // A server folder that was opened, even one with nothing
+                // downloaded from it yet, is one somebody is looking at.
+                byServer[serverID, default: []].insert(RemotePath.root)
+            case .item(let serverID, let path)?:
+                let directory = item.contentType == .folder ? path : RemotePath.parent(of: path)
+                byServer[serverID, default: []].insert(directory)
+            case .root?, nil:
+                continue
+            }
         }
         return byServer
     }

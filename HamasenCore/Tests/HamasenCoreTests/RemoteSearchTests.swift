@@ -184,6 +184,7 @@ struct BucketSearchTests {
 
             let found = try await service.searchItems(matching: "access", under: "/", limit: 50)
             #expect(Set(found.map(\.path)) == [
+                "/logs/access",
                 "/logs/access/2026/08/22/access-2026-08-22.log.gz",
                 "/logs/access/2026/08/23/access-2026-08-23.log.gz",
             ])
@@ -193,13 +194,15 @@ struct BucketSearchTests {
         }
     }
 
-    /// A folder marker is the folder itself, and has no name to be found by.
-    @Test("空資料夾的標記不會出現在結果裡")
-    func theFolderMarkerIsNotAResult() async throws {
+    /// A folder marker is the folder itself: found as the folder, by its
+    /// name, and not as a file.
+    @Test("空資料夾的標記以資料夾出現在結果裡")
+    func theFolderMarkerIsFoundAsTheFolder() async throws {
         try await withService { service, server in
             seed(server)
             let found = try await service.searchItems(matching: "archive", under: "/", limit: 50)
-            #expect(found.isEmpty)
+            #expect(found.map(\.path) == ["/archive"])
+            #expect(found.first?.isDirectory == true)
         }
     }
 

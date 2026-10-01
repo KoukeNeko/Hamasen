@@ -231,4 +231,14 @@ struct S3EndpointTests {
         let typedWithBrackets = endpoint(host: "[::1]", scheme: "http", port: 9_000)
         #expect(typedWithBrackets.address(for: S3ObjectKey(bucket: "b", key: "x"))?.hostHeader == "[::1]:9000")
     }
+
+    /// The bucket typed into the host, as Amazon's own console shows it, is
+    /// not prefixed a second time.
+    @Test
+    func aHostThatAlreadyNamesTheBucketIsUsedAsIs() throws {
+        let typed = endpoint(host: "photos.s3.us-west-2.amazonaws.com")
+        let address = try #require(typed.address(for: S3ObjectKey(bucket: "photos", key: "x")))
+        #expect(address.hostHeader == "photos.s3.us-west-2.amazonaws.com")
+        #expect(address.url.absoluteString == "https://photos.s3.us-west-2.amazonaws.com/x")
+    }
 }

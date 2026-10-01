@@ -80,11 +80,14 @@ public struct WorkingSetWalkStore: Sendable {
         // Resumed only under the settings it was started with. A walk saved
         // by a step still running when the settings changed would otherwise
         // come back and keep listing a server that opted out.
-        if let token, let stored = load(), stored.belongs(to: token), stored.completedAt == nil, !stored.isFinished,
-           stored.limits == limits, Set(stored.serverIDs) == Set(serverIDs) {
+        let stored = load()
+        let isCurrent = stored.map { $0.limits == limits && Set($0.serverIDs) == Set(serverIDs) } ?? false
+        if let token, let stored, isCurrent, stored.belongs(to: token), stored.completedAt == nil, !stored.isFinished {
             return stored
         }
-        guard isWalkDue(at: now) else { return nil }
+        // A walk over other servers or limits is due now, whatever its age:
+        // a server mounted since would otherwise wait out the old walk's day.
+        guard isWalkDue(at: now) || (stored != nil && !isCurrent) else { return nil }
         return WorkingSetWalk(serverIDs: serverIDs, limits: limits, startedAt: now)
     }
 }

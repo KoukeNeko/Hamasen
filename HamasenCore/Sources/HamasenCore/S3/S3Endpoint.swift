@@ -179,7 +179,10 @@ public struct S3Endpoint: Sendable, Equatable {
         let requestHost: String
         switch resolvedStyle(for: object.bucket) {
         case .virtualHosted:
-            requestHost = "\(object.bucket).\(host)"
+            // A host typed as the bucket's own (photos.s3.us-west-2…) already
+            // carries it; prefixing it again names a bucket that is not there.
+            requestHost = host.lowercased().hasPrefix("\(object.bucket.lowercased()).")
+                ? host : "\(object.bucket).\(host)"
             signingPath = RemotePath.root + object.key
         case .path:
             requestHost = host

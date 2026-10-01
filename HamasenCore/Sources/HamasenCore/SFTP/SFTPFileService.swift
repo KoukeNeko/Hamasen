@@ -315,17 +315,12 @@ public actor SFTPFileService: RemoteFileService {
         let oldFileAt: String
     }
 
-    /// Moves a finished upload over the destination.
-    ///
-    /// Citadel offers no `posix-rename@openssh.com`, which would overwrite
-    /// atomically, and a plain SFTP rename refuses an existing destination.
-    /// So the old file is removed first, leaving a brief window with no file
-    /// at all; the upload itself is already complete on the server by then.
     /// Renames the upload over the destination.
     ///
-    /// A plain SFTP rename refuses an existing destination on most servers,
-    /// and removing the old file first would leave a window in which a
-    /// failure loses both versions. So the old file is moved aside instead,
+    /// Citadel offers no `posix-rename@openssh.com`, which would overwrite
+    /// atomically; a plain SFTP rename refuses an existing destination on
+    /// most servers, and removing the old file first would leave a window in
+    /// which a failure loses both versions. So the old file is moved aside instead,
     /// and only removed once the upload is in place; if the upload cannot be
     /// renamed, the old file is put back.
     private func replace(_ destination: String, with temporary: String, session: Session) async throws {
@@ -375,10 +370,6 @@ public actor SFTPFileService: RemoteFileService {
         }
     }
 
-    /// Whether a path exists, as far as the server says. Citadel's test
-    /// server answers a stat of a missing path with empty attributes rather
-    /// than an error, and a real server always includes the mode, so a
-    /// missing mode counts as missing.
     /// The kind of the entry at a path, links not followed; nil when it
     /// cannot be told.
     private func entryKind(at remotePath: String, session: Session) async -> RemoteItem.Kind? {
@@ -396,6 +387,10 @@ public actor SFTPFileService: RemoteFileService {
         return nil
     }
 
+    /// Whether a path exists, as far as the server says. Citadel's test
+    /// server answers a stat of a missing path with empty attributes rather
+    /// than an error, and a real server always includes the mode, so a
+    /// missing mode counts as missing.
     private func itemExists(_ remotePath: String, session: Session) async -> Bool {
         let sftp = session.sftp
         guard let attributes = try? await session.run({ try await sftp.getAttributes(at: remotePath) }) else {
@@ -687,10 +682,6 @@ public actor SFTPFileService: RemoteFileService {
 
         /// Runs one request, failing with a connection error (and writing
         /// the session off) if it is not answered in time.
-        ///
-        /// The request itself is not cancelled: a NIO future cannot be
-        /// abandoned. Closing the channel is what releases it.
-        /// Runs one request with an idle timeout.
         ///
         /// Cancellation does not answer the caller early: the request is
         /// already on the channel, and abandoning it lets its reply arrive

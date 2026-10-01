@@ -435,21 +435,27 @@ public actor S3FileService: RemoteFileService {
         }
 
         if let state = try await objectState(source, path: oldPath) {
-            try await copy(from: source, to: destination, size: state.size, tag: state.tag, path: oldPath)
-            // A write to the source after the copy would be lost with it.
-            guard try await objectState(source, path: oldPath) == state else {
+            // Without an ETag nothing can pin the copy and the delete to one
+            // version, and a same-size write in between would be lost.
+            guard let tag = state.tag else { throw Self.unversioned(path: oldPath) }
+            try await copy(from: source, to: destination, size: state.size, tag: tag, path: oldPath)
+            do {
+                // Only the version that was copied may go: a write to the
+                // source after the copy fails this with 412.
+                _ = try await send(
+                    method: Method.delete, object: source, headers: ["If-Match": "\"\(tag)\""],
+                    operation: Self.moveOperation, path: oldPath)
+            } catch {
                 _ = try? await send(
                     method: Method.delete, object: destination, operation: Self.moveOperation, path: newPath)
-                throw Self.sourceChanged(path: oldPath)
+                throw error
             }
-            _ = try await send(
-                method: Method.delete, object: source,
-                operation: Self.moveOperation, path: oldPath)
             return
         }
 
         let objects = try await objectsUnder(source, path: oldPath, operation: Self.moveOperation)
         guard !objects.isEmpty else { throw RemoteFileServiceError.itemNotFound(path: oldPath) }
+        guard objects.allSatisfy({ $0.contentTag != nil }) else { throw Self.unversioned(path: oldPath) }
 
         let sourcePrefix = source.directoryPrefix
         for entry in objects {
@@ -468,7 +474,9 @@ public actor S3FileService: RemoteFileService {
             try? await delete(keys: copiedKeys, bucket: destination.bucket, path: newPath)
             throw Self.sourceChanged(path: oldPath)
         }
-        try await delete(keys: objects.map(\.key), bucket: source.bucket, path: oldPath)
+        // Each key goes only if it still has the ETag that was copied.
+        try await delete(
+            keys: objects.map(\.key), tags: objects.map(\.contentTag), bucket: source.bucket, path: oldPath)
     }
 
     // MARK: - Writing helpers
@@ -619,6 +627,11 @@ public actor S3FileService: RemoteFileService {
             uniquingKeysWith: { first, _ in first })
     }
 
+    private static func unversioned(path: String) -> Error {
+        RemoteFileServiceError.operationFailed(
+            operation: moveOperation, path: path, underlying: "伺服器沒有提供 ETag，無法安全移動")
+    }
+
     private static func sourceChanged(path: String) -> Error {
         RemoteFileServiceError.operationFailed(
             operation: moveOperation, path: path, underlying: "來源在移動期間被修改")
@@ -750,12 +763,28 @@ public actor S3FileService: RemoteFileService {
         let object = try object(for: path)
         let prefix = object.directoryPrefix
         var found: [RemoteItem] = []
+        var directoriesSeen: Set<String> = []
 
         try await forEachObject(under: object, path: path, operation: Self.searchOperation) { entry in
             let suffix = String(entry.key.dropFirst(prefix.count))
-            // The marker of an empty folder is the folder, not a file in it,
-            // and a name it cannot be searched by.
-            guard !suffix.isEmpty, !suffix.hasSuffix(RemotePath.separator) else { return .continue }
+            guard !suffix.isEmpty else { return .continue }
+
+            // Folders exist only as the shared start of keys, or as an empty
+            // folder's marker, so they are found in the keys' components —
+            // each once, however many keys pass through it.
+            let components = suffix.split(separator: Character(RemotePath.separator)).map(String.init)
+            let isMarker = suffix.hasSuffix(RemotePath.separator)
+            let folderCount = isMarker ? components.count : components.count - 1
+            for depth in 0..<max(folderCount, 0) {
+                let folder = components[0...depth].joined(separator: RemotePath.separator)
+                guard directoriesSeen.insert(folder).inserted,
+                      components[depth].localizedStandardContains(query) else { continue }
+                found.append(RemoteItem(
+                    path: RemotePath.join(path, folder), name: components[depth], kind: .directory, size: 0))
+                if found.count >= limit { return .stop }
+            }
+
+            guard !isMarker else { return .continue }
             let name = RemotePath.name(of: RemotePath.root + suffix)
             guard name.localizedStandardContains(query) else { return .continue }
             found.append(RemoteItem(
@@ -770,11 +799,16 @@ public actor S3FileService: RemoteFileService {
         return found
     }
 
-    private func delete(keys: [String], bucket: String, path: String) async throws {
+    /// - Parameter tags: when given, one per key: that key is deleted only
+    ///   if it still has this ETag, so a write since it was read survives.
+    private func delete(keys: [String], tags: [String?]? = nil, bucket: String, path: String) async throws {
         for batch in stride(from: 0, to: keys.count, by: Batch.deleteLimit) {
-            let slice = keys[batch..<min(batch + Batch.deleteLimit, keys.count)]
+            let range = batch..<min(batch + Batch.deleteLimit, keys.count)
             let body = Data(("<Delete>"
-                + slice.map { "<Object><Key>\(Self.escaped($0))</Key></Object>" }.joined()
+                + range.map { index in
+                    let tag = tags?[index].map { "<ETag>\(Self.escaped("\"\($0)\""))</ETag>" } ?? ""
+                    return "<Object><Key>\(Self.escaped(keys[index]))</Key>\(tag)</Object>"
+                }.joined()
                 + "</Delete>").utf8)
             let response = try await send(
                 method: Method.post, object: S3ObjectKey(bucket: bucket, key: ""),

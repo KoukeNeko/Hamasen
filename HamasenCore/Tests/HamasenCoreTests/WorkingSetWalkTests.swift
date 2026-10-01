@@ -275,6 +275,19 @@ struct WorkingSetWalkTests {
         #expect(relimited != walk)
     }
 
+    /// A server mounted since the last walk would otherwise wait out that
+    /// walk's day before it is indexed at all.
+    @Test
+    func aWalkOverOtherServersMakesANewOneDueAtOnce() throws {
+        let store = makeStore()
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        walk.advance(itemCount: 0, subdirectories: [])
+        walk.markCompleted(at: start)
+        try store.save(walk)
+        let next = store.walkForChangeBatch(after: walk.token, serverIDs: [a, b], limits: .default, at: start + oneHour)
+        #expect(next?.serverIDs == [a, b])
+    }
+
     /// A saved step the system never recorded leaves the anchor one behind.
     /// Refusing it would strand the walk until it goes stale.
     @Test

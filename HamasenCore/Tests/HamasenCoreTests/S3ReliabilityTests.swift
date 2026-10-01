@@ -131,21 +131,42 @@ struct S3ReliabilityTests {
             credentials: .password(TestS3Server.credentials.secretAccessKey),
             endpoint: server.endpoint,
             uploadSizes: { sizes.current })
-        defer { Task { try? await server.stop() } }
-        try await service.connect()
-
         let payload = Data(repeating: 7, count: 250)
         let source = try temporaryFile(payload)
         defer { try? FileManager.default.removeItem(at: source) }
 
-        try await service.uploadFile(from: source, to: "/single.bin")
-        #expect(server.store.completedMultipartUploadCount == 0)
+        do {
+            try await service.connect()
+            try await service.uploadFile(from: source, to: "/single.bin")
+            #expect(server.store.completedMultipartUploadCount == 0)
 
-        sizes.set(threshold: 100, partSize: 100)
-        try await service.uploadFile(from: source, to: "/parts.bin")
-        #expect(server.store.completedMultipartUploadCount == 1)
-        #expect(server.store.object(forKey: "parts.bin")?.data == payload)
+            sizes.set(threshold: 100, partSize: 100)
+            try await service.uploadFile(from: source, to: "/parts.bin")
+            #expect(server.store.completedMultipartUploadCount == 1)
+            #expect(server.store.object(forKey: "parts.bin")?.data == payload)
+        } catch {
+            try? await service.disconnect()
+            try? await server.stop()
+            throw error
+        }
         try await service.disconnect()
+        try await server.stop()
+    }
+
+    // MARK: - Search
+
+    /// A folder exists on S3 only as the start of its keys, so a search by a
+    /// folder's name has to find it there.
+    @Test
+    func searchFindsFoldersByName() async throws {
+        try await withService { service, server in
+            server.store.put(Data("1".utf8), forKey: "assets/icons/a.png")
+            server.store.put(Data("2".utf8), forKey: "assets/b.png")
+            server.store.put(Data(), forKey: "empty-assets/")
+            let found = try await service.searchItems(matching: "assets", under: "/", limit: 10)
+            #expect(Set(found.filter(\.isDirectory).map(\.path)) == ["/assets", "/empty-assets"])
+            #expect(found.filter { $0.path == "/assets" }.count == 1)
+        }
     }
 
     // MARK: - Reconnecting
