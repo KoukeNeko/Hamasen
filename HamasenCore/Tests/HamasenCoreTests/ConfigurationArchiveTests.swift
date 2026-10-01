@@ -169,6 +169,7 @@ struct ConfigurationArchiveTests {
                 "storageMode",
                 "s3AddressingStyle",
                 "indexesInBackground",
+                "isPaused",
             ]
         )
     }
@@ -184,6 +185,7 @@ struct ConfigurationArchiveTests {
         server.cacheLimitBytes = 1_073_741_824
         server.s3Region = "auto"
         server.s3AddressingStyle = .path
+        server.remoteChangeIntervalSeconds = 300
 
         let data = try Self.archive(servers: [server]).encoded()
         let json = try #require(
@@ -206,6 +208,8 @@ struct ConfigurationArchiveTests {
                 "s3Region",
                 "s3AddressingStyle",
                 "indexesInBackground",
+                "isPaused",
+                "remoteChangeIntervalSeconds",
             ]
         )
     }

@@ -197,6 +197,9 @@ public enum RemoteFileServiceError: Error, Equatable, Sendable {
     /// The record of known host keys could not be read, so the server's
     /// identity could not be checked at all.
     case hostKeyUnverifiable(reason: String)
+    /// The user paused the connection; nothing goes to the server until it
+    /// is resumed.
+    case paused(serverName: String)
 }
 
 extension RemoteFileServiceError: LocalizedError {
@@ -232,6 +235,8 @@ extension RemoteFileServiceError: LocalizedError {
             return String(localized: "\(endpoint) 的主機金鑰和上次不同，連線已中止。可能是伺服器重建過，也可能有人冒充它。核對伺服器端的指紋後，到該伺服器的設定中清除已記錄的金鑰。已記錄：\(recorded)，這次收到：\(presented)", bundle: .module)
         case .hostKeyUnverifiable(let reason):
             return String(localized: "無法確認伺服器身分，連線已中止：\(reason)", bundle: .module)
+        case .paused(let serverName):
+            return String(localized: "「\(serverName)」已暫停，繼續後才會同步", bundle: .module)
         }
     }
 }

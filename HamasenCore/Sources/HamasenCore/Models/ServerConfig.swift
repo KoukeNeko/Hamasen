@@ -60,6 +60,17 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             }
         }
 
+        /// How often a new connection asks the server what changed.
+        ///
+        /// Off for S3, where every listing is billed and the person paying
+        /// should be the one to switch it on.
+        public var defaultRemoteChangeIntervalSeconds: Int {
+            switch self {
+            case .s3: return 0
+            case .sftp, .webdav, .webdavs, .ftp, .ftps: return 30
+            }
+        }
+
         /// Whether the protocol authenticates with an SSH key rather than a
         /// password.
         public var supportsPrivateKeyAuthentication: Bool {
@@ -137,6 +148,17 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     /// Spotlight can index it. Every directory is one listing request, which
     /// on S3 is billed, so a server can decline.
     public var indexesInBackground: Bool
+    /// Paused connections stay in Finder with whatever is already on this
+    /// Mac, but nothing is sent to or fetched from the server until resumed.
+    public var isPaused: Bool
+    /// How often the app asks the server what changed, in seconds; 0 is
+    /// never and nil the protocol's default.
+    public var remoteChangeIntervalSeconds: Int?
+
+    /// The interval actually in force.
+    public var effectiveRemoteChangeIntervalSeconds: Int {
+        remoteChangeIntervalSeconds ?? transferProtocol.defaultRemoteChangeIntervalSeconds
+    }
 
     public init(
         id: UUID = UUID(),
@@ -151,7 +173,9 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         cacheLimitBytes: Int64? = nil,
         s3Region: String? = nil,
         s3AddressingStyle: S3AddressingStyle = .automatic,
-        indexesInBackground: Bool = true
+        indexesInBackground: Bool = true,
+        isPaused: Bool = false,
+        remoteChangeIntervalSeconds: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -166,6 +190,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.s3Region = s3Region
         self.s3AddressingStyle = s3AddressingStyle
         self.indexesInBackground = indexesInBackground
+        self.isPaused = isPaused
+        self.remoteChangeIntervalSeconds = remoteChangeIntervalSeconds
     }
 
     /// Configurations written before key authentication existed have no
@@ -210,6 +236,11 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         // Spotlight finding their files, which nobody had a reason to refuse.
         self.indexesInBackground = try container.decodeIfPresent(
             Bool.self, forKey: .indexesInBackground) ?? true
+        // Both added with pausing and per-connection change checks; every
+        // server saved before them was running, on the protocol's default.
+        self.isPaused = try container.decodeIfPresent(Bool.self, forKey: .isPaused) ?? false
+        self.remoteChangeIntervalSeconds = try container.decodeIfPresent(
+            Int.self, forKey: .remoteChangeIntervalSeconds)
     }
 
     /// What makes two entries the same connection.

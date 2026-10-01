@@ -48,7 +48,10 @@ extension ServerConfig {
     /// folder's item version is built from the same string: announcing a
     /// change the item does not reflect, or changing an item nobody is told
     /// about, both leave Finder on stale metadata.
+    ///
+    /// Pausing is in it so the folder's badge follows, and only when paused,
+    /// so a running server keeps the token it had before pausing existed.
     public var finderItemToken: String {
-        "\(name)|\(storageMode.versionToken)"
+        "\(name)|\(storageMode.versionToken)" + (isPaused ? "|paused" : "")
     }
 }
