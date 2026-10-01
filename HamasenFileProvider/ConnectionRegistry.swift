@@ -187,8 +187,11 @@ actor ConnectionRegistry {
 /// header has `.serverUnreachable`, `.notAuthenticated` and
 /// `.cannotSynchronize` make the system back off "until the next time it is
 /// signalled", for everything in the domain, so they are reserved for
-/// states that really are domain-wide. Any other error is retried for that
-/// one item only.
+/// states that really are domain-wide. Every server shares this one domain,
+/// so one server out of reach or refusing its password pauses all of them:
+/// only a write takes that price, since the system drops a transient
+/// failure after a few retries and a change would never reach the server.
+/// A read is retried for its item alone. Any other error is too.
 enum FileProviderErrorMapper {
     /// What the system was doing, which decides how a refusal reads: the
     /// header has no code for "permission denied", so the Cocoa ones stand in.
@@ -202,7 +205,10 @@ enum FileProviderErrorMapper {
         case is CancellationError:
             return CocoaError(.userCancelled)
         case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected:
-            return NSFileProviderError(.serverUnreachable)
+            // A read is asked for again when it is needed. Paused instead, it
+            // would hold up every other server for as long as this one stays
+            // out of reach — a NAS on another network can be, for days.
+            return operation == .read ? retriedForTheItem(error) : NSFileProviderError(.serverUnreachable)
         case RemoteFileServiceError.itemNotFound,
              ConnectionRegistry.RegistryError.serverConfigurationMissing:
             return NSFileProviderError(.noSuchItem)
@@ -210,17 +216,9 @@ enum FileProviderErrorMapper {
             return NSFileProviderError(.filenameCollision)
         case RemoteFileServiceError.permissionDenied:
             return CocoaError(operation == .read ? .fileReadNoPermission : .fileWriteNoPermission)
-        case RemoteFileServiceError.authenticationFailed,
-             is KeychainCredentialStore.KeychainError,
-             RemoteFileServiceError.unsupportedCredentials,
-             RemoteFileServiceError.privateKeyPassphraseRequired,
-             RemoteFileServiceError.privateKeyUnreadable,
-             RemoteFileServiceError.hostKeyChanged:
-            // All of these mean "the stored credential or identity cannot be
-            // used", which is the state that makes Finder offer a sign-in
-            // affordance. A changed host key is included because retrying
-            // never helps until the user has acted in the app.
-            return NSFileProviderError(.notAuthenticated)
+        case _ where isAuthenticationFailure(error):
+            // As above. The app asks for the credentials either way.
+            return operation == .read ? retriedForTheItem(error) : NSFileProviderError(.notAuthenticated)
         default:
             let domain = (error as NSError).domain
             if domain == NSCocoaErrorDomain || domain == NSFileProviderErrorDomain {
@@ -229,6 +227,31 @@ enum FileProviderErrorMapper {
             // The system rejects any other error domain outright. This code
             // is the one it treats as transient, retried for the item alone.
             return CocoaError(.xpcConnectionReplyInvalid, userInfo: [NSUnderlyingErrorKey: error])
+        }
+    }
+
+    /// The system's transient error, carrying the reason so Finder can show
+    /// it. The only domain it accepts besides its own is Cocoa's.
+    private static func retriedForTheItem(_ error: Error) -> Error {
+        CocoaError(.xpcConnectionReplyInvalid, userInfo: [
+            NSLocalizedDescriptionKey: error.localizedDescription, NSUnderlyingErrorKey: error,
+        ])
+    }
+
+    /// The stored credential or identity cannot be used, and retrying will
+    /// not help until the person acts in the app. A changed host key counts:
+    /// only clearing it there lets the connection through.
+    static func isAuthenticationFailure(_ error: Error) -> Bool {
+        switch error {
+        case RemoteFileServiceError.authenticationFailed,
+             is KeychainCredentialStore.KeychainError,
+             RemoteFileServiceError.unsupportedCredentials,
+             RemoteFileServiceError.privateKeyPassphraseRequired,
+             RemoteFileServiceError.privateKeyUnreadable,
+             RemoteFileServiceError.hostKeyChanged:
+            return true
+        default:
+            return false
         }
     }
 

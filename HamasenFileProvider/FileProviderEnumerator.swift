@@ -210,10 +210,9 @@ final class DirectoryEnumerator: NSObject, NSFileProviderEnumerator {
         NSFileProviderSyncAnchor(Data(Date().ISO8601Format().utf8))
     }
 
-    /// A listing that could not reach the server is answered with
-    /// `.serverUnreachable`, which pauses the domain until the system is told
-    /// the server is back — so the probe that notices has to be started here
-    /// too, not only by item operations.
+    /// A listing that could not reach the server starts the probe too, not
+    /// only item operations: it is what reports the server back, both to the
+    /// app and to a write the system is holding until then.
     private static func noteFailure(_ error: Error, serverID: UUID, registry: ConnectionRegistry) async {
         guard FileProviderErrorMapper.isConnectionFailure(error) else { return }
         await registry.reportUnreachable(serverID)
