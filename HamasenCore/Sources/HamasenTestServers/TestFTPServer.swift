@@ -296,6 +296,10 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
             renameSource = nil
             if behavior.rejectsRename { return fail(context, "Rename refused") }
             perform(context) {
+                let destination = self.localURL(for: argument)
+                if self.behavior.renameReplacesExisting, FileManager.default.fileExists(atPath: destination.path) {
+                    try FileManager.default.removeItem(at: destination)
+                }
                 try FileManager.default.moveItem(
                     at: self.localURL(for: source), to: self.localURL(for: argument)
                 )
@@ -649,6 +653,7 @@ public final class FTPServerBehavior: @unchecked Sendable {
     private var stalls = false
     private var withholds = false
     private var rejectsRenames = false
+    private var renameReplaces = false
     private var repliesLate = false
     private var storeReply: (code: Int, text: String)?
     private var hidesDots = false
@@ -714,6 +719,13 @@ public final class FTPServerBehavior: @unchecked Sendable {
     public var rejectsRename: Bool {
         get { lock.withLock { rejectsRenames } }
         set { lock.withLock { rejectsRenames = newValue } }
+    }
+
+    /// RNTO replaces a file already at the destination, as rename(2) does
+    /// and vsftpd passes on.
+    public var renameReplacesExisting: Bool {
+        get { lock.withLock { renameReplaces } }
+        set { lock.withLock { renameReplaces = newValue } }
     }
 
     /// The reply STOR draws in place of accepting the upload.

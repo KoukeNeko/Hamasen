@@ -236,6 +236,24 @@ struct FTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    /// vsftpd renames the way rename(2) does, replacing whatever is at the
+    /// destination; the extension relies on a move refusing a name in use.
+    @Test("移動到已存在的名稱時拒絕，不覆蓋既有檔案")
+    func refusesToOverwriteOnMove() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+        server.behavior.renameReplacesExisting = true
+        try Self.write("source", to: "a.txt", in: server)
+        try Self.write("must survive", to: "b.txt", in: server)
+
+        await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/b.txt")) {
+            try await service.moveItem(from: "/a.txt", to: "/b.txt")
+        }
+        #expect(try String(contentsOf: server.rootDirectory.appendingPathComponent("b.txt"), encoding: .utf8)
+            == "must survive")
+        #expect(FileManager.default.fileExists(atPath: server.rootDirectory.appendingPathComponent("a.txt").path))
+        try await Self.tearDown(service, server)
+    }
+
     @Test("刪除檔案")
     func deletesAFile() async throws {
         let (service, server) = try await Self.makeConnectedService()

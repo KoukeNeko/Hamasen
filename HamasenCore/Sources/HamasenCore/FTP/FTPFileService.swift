@@ -679,6 +679,12 @@ public actor FTPFileService: RemoteFileService {
 
     public func moveItem(from oldPath: String, to newPath: String) async throws {
         try await perform(operation: Self.moveOperation, path: oldPath) { connection in
+            // Servers that pass RNTO to rename(2) — vsftpd among them —
+            // replace whatever is at the destination without a word. Looking
+            // first narrows that to a name created in the moment between.
+            if await pathExists(newPath, on: connection) == true {
+                throw RemoteFileServiceError.alreadyExists(path: newPath)
+            }
             do {
                 try await rename(from: resolve(oldPath), to: resolve(newPath), on: connection)
             } catch FTPError.commandFailed("RNTO", let response) where [550, 553].contains(response.code) {
