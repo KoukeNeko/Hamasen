@@ -129,6 +129,7 @@ final class ServerListModel {
         await refreshDomainState()
         await syncDomainRegistration()
         await refreshDomainState()
+        _ = try? await FinderDomain.releaseDomainWidePauses()
     }
 
     /// Earlier versions registered one domain per server (identifier = server
