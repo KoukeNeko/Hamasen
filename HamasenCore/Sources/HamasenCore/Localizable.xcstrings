@@ -16,6 +16,18 @@
             "value": "%@はSSH鍵認証に対応していません。パスワードをお使いください。"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서는 SSH 키 인증을 지원하지 않습니다. 암호를 사용하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不支持 SSH 密钥认证，请改用密码"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -37,6 +49,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@に失敗しました（%2$@）：%3$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 실패(%2$@): %3$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 失败（%2$@）：%3$@"
           }
         },
         "zh-Hant": {
@@ -62,6 +86,18 @@
             "value": "%1$@に失敗しました（%2$@）：権限がありません"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 실패(%2$@): 권한이 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 失败（%2$@）：没有权限"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -76,19 +112,66 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The host key for %1$@ is not the one recorded, so the connection was refused. The server may have been rebuilt, or something may be answering in its place. Check the fingerprint on the server itself, then clear the recorded key in that server's settings. Recorded: %2$@, received: %3$@"
+            "value": "The host key for %1$@ is not the one recorded, so the connection was refused. The server may have been rebuilt, or something may be answering in its place. Check the fingerprint on the server itself, then clear the recorded key in that server’s settings. Recorded: %2$@, received: %3$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@のホスト鍵が記録と異なるため接続を中止しました。サーバが再構築された可能性も、別のものが応答している可能性もあります。サーバ側でフィンガープリントを確認してから、そのサーバの設定で記録済みの鍵を消去してください。記録：%2$@、今回：%3$@"
+            "value": "%1$@のホスト鍵が記録と異なるため接続を中止しました。サーバが再構築された可能性も、第三者がなりすましている可能性もあります。サーバ側でフィンガープリントを確認してから、そのサーバの設定で記録済みの鍵を消去してください。記録：%2$@、今回：%3$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 호스트 키가 기록된 키와 달라 연결을 중단했습니다. 서버가 재구축되었거나 누군가 서버를 사칭하고 있을 수 있습니다. 서버에서 직접 지문을 확인한 다음 해당 서버의 설정에서 기록된 키를 지우십시오. 기록됨: %2$@, 수신됨: %3$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 的主机密钥与上次不同，连接已中止。可能是服务器重建过，也可能有人冒充它。核对服务器端的指纹后，到该服务器的设置中清除已记录的密钥。已记录：%2$@，这次收到：%3$@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ 的主機金鑰和上次不同，連線已中止。可能是伺服器重建過，也可能有人冒充它。核對伺服器端的指紋後，到該伺服器的設定中清除已記錄的金鑰。已記錄：%@，這次收到：%@"
+          }
+        }
+      }
+    },
+    "Google 雲端硬碟": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Drive"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google ドライブ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google 드라이브"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google 云端硬盘"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google 雲端硬碟"
           }
         }
       }
@@ -106,6 +189,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "現在マウント中の場所がありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hamasen에 현재 마운트된 위치가 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hamasen 目前没有已挂载的位置"
           }
         },
         "zh-Hant": {
@@ -131,6 +226,18 @@
             "value": "キーチェーン項目の形式を認識できません"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키체인 항목의 형식을 인식할 수 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钥匙串项目格式无法识别"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -152,6 +259,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "キーチェーンの操作に失敗しました（%1$d: %2$@）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키체인 작업에 실패했습니다(%1$d: %2$@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钥匙串操作失败（%1$d: %2$@）"
           }
         },
         "zh-Hant": {
@@ -177,10 +296,57 @@
             "value": "SSH鍵"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 키"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 密钥"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "SSH 金鑰"
+          }
+        }
+      }
+    },
+    "「%@」已暫停，繼續後才會同步": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” is paused and will not sync until resumed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」は一時停止中です。再開するまで同期されません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” 연결은 일시 정지되었습니다. 재개할 때까지 동기화되지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”已暂停，恢复后才会同步"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」已暫停，繼續後才會同步"
           }
         }
       }
@@ -198,6 +364,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "アップロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업로드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传"
           }
         },
         "zh-Hant": {
@@ -223,6 +401,18 @@
             "value": "ダウンロード"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -244,6 +434,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "範囲のダウンロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "범위 다운로드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "范围下载"
           }
         },
         "zh-Hant": {
@@ -269,6 +471,18 @@
             "value": "サポートされていない鍵の種類：%@（Ed25519とRSAに対応しています）"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지원되지 않는 키 유형: %@(Ed25519 및 RSA를 지원합니다)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不支持的密钥类型：%@（目前支持 Ed25519 与 RSA）"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -290,6 +504,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "制限なし"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제한 없음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不限制"
           }
         },
         "zh-Hant": {
@@ -316,6 +542,18 @@
             "value": "ホスト名"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호스트 이름"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主机名"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -337,6 +575,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "ディレクトリの一覧取得"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디렉터리 목록 조회"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "列出目录"
           }
         },
         "zh-Hant": {
@@ -363,6 +613,18 @@
             "value": "削除"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -377,13 +639,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld removed"
+            "value": "%lld deleted"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld 件削除"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld개 삭제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %lld 个"
           }
         },
         "zh-Hant": {
@@ -400,13 +674,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Removed %@"
+            "value": "Deleted %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ が削除されました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 삭제됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除了 %@"
           }
         },
         "zh-Hant": {
@@ -432,6 +718,18 @@
             "value": "ファイルの削除"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 삭제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除文件"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -453,6 +751,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "ディレクトリの削除"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디렉터리 삭제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除目录"
           }
         },
         "zh-Hant": {
@@ -478,6 +788,18 @@
             "value": "パスワード"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -501,10 +823,57 @@
             "value": "パスワードが違うか、このファイルは壊れています"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호가 올바르지 않거나 이 파일이 손상되었습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码不正确，或此文件已损坏"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "密碼不正確，或這個檔案已損毀"
+          }
+        }
+      }
+    },
+    "尚未設定 %@ 的用戶端 ID，請到「設定 › 雲端服務」填寫": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Client ID for %@ is not set. Enter it in “Settings › Cloud Services”."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のクライアント ID が設定されていません。「設定 › クラウドサービス」で入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 클라이언트 ID가 설정되지 않았습니다. “설정 › 클라우드 서비스”에서 입력하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未设置 %@ 的客户端 ID，请前往“设置 › 云服务”填写"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未設定 %@ 的用戶端 ID，請到「設定 › 雲端服務」填寫"
           }
         }
       }
@@ -524,10 +893,57 @@
             "value": "サーバに接続していません"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버에 연결되어 있지 않습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未连接到服务器"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "尚未連線到伺服器"
+          }
+        }
+      }
+    },
+    "已取消登入": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in canceled"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインがキャンセルされました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인이 취소되었습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消登录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消登入"
           }
         }
       }
@@ -545,6 +961,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "ディレクトリの作成"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디렉터리 생성"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建目录"
           }
         },
         "zh-Hant": {
@@ -571,6 +999,18 @@
             "value": "フォルダの作成"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더 생성"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建文件夹"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -592,6 +1032,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "キーチェーン項目が見つかりません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키체인 항목을 찾을 수 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到钥匙串项目"
           }
         },
         "zh-Hant": {
@@ -617,6 +1069,18 @@
             "value": "サーバに項目が見つかりません：%@"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버에서 항목을 찾을 수 없습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到远程项目：%@"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -638,6 +1102,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索"
           }
         },
         "zh-Hant": {
@@ -663,6 +1139,18 @@
             "value": "%lld 件追加"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld개 추가됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增 %lld 个"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -684,6 +1172,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ が追加されました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 추가됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增了 %@"
           }
         },
         "zh-Hant": {
@@ -709,6 +1209,18 @@
             "value": "%lld 件更新"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld개 업데이트됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 %lld 个"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -732,10 +1244,57 @@
             "value": "%@ が更新されました"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 업데이트됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新了 %@"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "更新了 %@"
+          }
+        }
+      }
+    },
+    "瀏覽器登入": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browser Sign-In"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウザでサインイン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브라우저 로그인"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浏览器登录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "瀏覽器登入"
           }
         }
       }
@@ -755,10 +1314,57 @@
             "value": "パスワードから鍵を導出できませんでした"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호에서 키를 도출할 수 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法从密码推导密钥"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "無法從密碼推導金鑰"
+          }
+        }
+      }
+    },
+    "無法接收登入結果：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not receive the sign-in result: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインの結果を受信できませんでした：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 결과를 받을 수 없습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法接收登录结果：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法接收登入結果：%@"
           }
         }
       }
@@ -769,13 +1375,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The server's identity could not be checked, so the connection was refused: %@"
+            "value": "The server’s identity could not be checked, so the connection was refused: %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "サーバの身元を確認できないため接続を中止しました：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버의 신원을 확인할 수 없어 연결을 중단했습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认服务器身份，连接已中止：%@"
           }
         },
         "zh-Hant": {
@@ -801,6 +1419,18 @@
             "value": "SSH鍵を読み込めませんでした（パスフレーズが違う可能性があります）：%@"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 키를 읽을 수 없습니다(키 암호가 올바르지 않을 수 있습니다): %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 SSH 密钥（密钥密码可能有误）：%@"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -824,10 +1454,57 @@
             "value": "ローカルファイルを読み込めませんでした：%@"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 파일을 읽을 수 없습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取本地文件：%@"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "無法讀取本地檔案：%@"
+          }
+        }
+      }
+    },
+    "無法連線到伺服器": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not connect to the server"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバに接続できませんでした"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버에 연결할 수 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到服务器"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法連線到伺服器"
           }
         }
       }
@@ -847,10 +1524,92 @@
             "value": "サーバに接続できませんでした：%@"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버에 연결할 수 없습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到服务器：%@"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "無法連線到伺服器：%@"
+          }
+        }
+      }
+    },
+    "登入回應與這次的要求不符，請重新登入": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sign-in response does not match this request. Sign in again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインの応答がこのリクエストと一致しません。もう一度サインインしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 응답이 이번 요청과 일치하지 않습니다. 다시 로그인하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录响应与本次请求不符，请重新登录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入回應與這次的要求不符，請重新登入"
+          }
+        }
+      }
+    },
+    "登入失敗：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in failed: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインに失敗しました：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인에 실패했습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录失败：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入失敗：%@"
           }
         }
       }
@@ -868,6 +1627,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "移動"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이동"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动"
           }
         },
         "zh-Hant": {
@@ -893,6 +1664,18 @@
             "value": "項目の移動"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "항목 이동"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动项目"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -914,6 +1697,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "オンラインのみ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "온라인 전용"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在线"
           }
         },
         "zh-Hant": {
@@ -939,6 +1734,18 @@
             "value": "URLの組み立て"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL 조합"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组合网址"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -960,6 +1767,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "自動"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
           }
         },
         "zh-Hant": {
@@ -985,10 +1804,57 @@
             "value": "認証に失敗しました。ユーザ名とパスワードを確認してください。"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증에 실패했습니다. 사용자 이름과 암호를 확인하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "认证失败，请检查用户名与密码"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "認證失敗，請檢查帳號與密碼"
+          }
+        }
+      }
+    },
+    "請在路徑填入共用資料夾名稱": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the share name in the path"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスに共有フォルダの名前を入力してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로에 공유 폴더 이름을 입력하세요"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在路径中填入共享文件夹名称"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請在路徑填入共用資料夾名稱"
           }
         }
       }
@@ -1006,6 +1872,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "パスワードを設定してください。暗号化バックアップにパスワードは必須です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호를 설정하십시오. 암호화된 백업에는 암호가 필요합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请设置密码，加密备份必须有密码"
           }
         },
         "zh-Hant": {
@@ -1029,6 +1907,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "属性の読み込み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "속성 읽기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取属性"
           }
         },
         "zh-Hant": {
@@ -1055,6 +1945,18 @@
             "value": "項目情報の取得"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "항목 정보 읽기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取项目信息"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -1077,6 +1979,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "パス"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경로"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路径"
           }
         },
         "zh-Hant": {
@@ -1102,6 +2016,18 @@
             "value": "OpenSSH秘密鍵ファイルではありません"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSSH 개인 키 파일이 아닙니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是 OpenSSH 私钥文件"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -1123,6 +2049,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "このバックアップは新しいバージョン（形式%1$@、このビルドは%2$@まで）で作成されています。先にHamasenを更新してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 백업은 더 새로운 버전(형식 %1$@, 이 버전은 %2$@까지 읽을 수 있음)에서 만들어졌습니다. 먼저 Hamasen을 업데이트하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这份备份由较新版本创建（第 %1$@ 版，此版本只能读取到第 %2$@ 版），请先更新 Hamasen"
           }
         },
         "zh-Hant": {
@@ -1148,6 +2086,18 @@
             "value": "この暗号化バックアップは、このバージョンが知らない方式を使っています"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 암호화된 백업은 이 버전에서 인식하지 못하는 암호화 방식을 사용합니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这份加密备份使用了此版本无法识别的加密方式"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -1162,13 +2112,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This file is not a Hamasen configuration backup"
+            "value": "This file is not a Hamasen settings backup"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "このファイルはHamasenの設定バックアップではありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 파일은 Hamasen 설정 백업이 아닙니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个文件不是 Hamasen 的设置备份"
           }
         },
         "zh-Hant": {
@@ -1194,6 +2156,18 @@
             "value": "このSSH鍵は保護されています。パスフレーズを入力してください。"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 SSH 키는 암호로 보호되어 있습니다. 키 암호를 입력하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 SSH 密钥有密码保护，请输入密钥密码"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -1215,6 +2189,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "旧形式のPEM鍵です。ssh-keygen -p -f <鍵> でOpenSSH形式に変換してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 형식의 PEM 키입니다. ssh-keygen -p -f <키> 명령으로 OpenSSH 형식으로 변환하십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是旧式 PEM 密钥，请使用 ssh-keygen -p -f <密钥> 转换为 OpenSSH 格式"
           }
         },
         "zh-Hant": {
@@ -1240,10 +2226,57 @@
             "value": "接続"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接"
+          }
+        },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "連線"
+          }
+        }
+      }
+    },
+    "連線逾時": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection timed out"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続がタイムアウトしました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 시간이 초과되었습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接超时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線逾時"
           }
         }
       }
@@ -1261,6 +2294,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "サーバに同じ名前の項目がすでにあります：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버에 같은 이름의 항목이 이미 있습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器上已有同名项目：%@"
           }
         },
         "zh-Hant": {
@@ -1284,6 +2329,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "鍵ファイルが破損しているか、形式が正しくありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 파일이 손상되었거나 형식이 올바르지 않습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥文件已损坏或格式不正确"
           }
         },
         "zh-Hant": {

@@ -177,7 +177,7 @@ check_translations() {
     /usr/bin/python3 - "$CATALOG" "$PACKAGE_CATALOG" <<'EOF'
 import json, pathlib, sys
 
-LANGUAGES = ("en", "ja", "zh-Hant")
+LANGUAGES = ("en", "ja", "ko", "zh-Hans", "zh-Hant")
 untranslated = []
 for path in map(pathlib.Path, sys.argv[1:]):
     catalog = json.loads(path.read_text())
