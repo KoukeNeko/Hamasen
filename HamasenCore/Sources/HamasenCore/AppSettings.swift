@@ -38,6 +38,11 @@ public enum AppSettings {
         public static let indexingDirectoryLimit = "indexingDirectoryLimit"
         public static let indexingItemLimit = "indexingItemLimit"
         public static let remoteChangePollSeconds = "remoteChangePollSeconds"
+        /// Whether local copies nobody has used for a while are dropped, and
+        /// the two bounds that decide what "a while" and "too much" are.
+        public static let autoCleanEnabled = "autoCleanEnabled"
+        public static let autoCleanUnusedDays = "autoCleanUnusedDays"
+        public static let autoCleanTotalLimitBytes = "autoCleanTotalLimitBytes"
     }
 
     public static let defaultConnectTimeoutSeconds = 30
@@ -119,6 +124,24 @@ public enum AppSettings {
         let seconds = store.integer(forKey: Keys.remoteChangePollSeconds)
         guard remoteChangePollRange.contains(seconds) else { return nil }
         return TimeInterval(seconds)
+    }
+
+    /// Local copies are cleaned by default: a mount that fills the disk
+    /// with every file ever opened is a worse surprise than one that has to
+    /// download a file again after a week.
+    public static let defaultAutoCleanUnusedDays = 7
+    public static let defaultAutoCleanTotalLimitBytes: Int64 = 10_000_000_000
+
+    /// The policy in force, or nil when automatic cleaning is off.
+    public static func autoCleanPolicy(from store: UserDefaults = sharedStore) -> AutoCleanPolicy? {
+        let isEnabled = store.object(forKey: Keys.autoCleanEnabled) as? Bool ?? true
+        guard isEnabled else { return nil }
+        let days = store.object(forKey: Keys.autoCleanUnusedDays) as? Int ?? defaultAutoCleanUnusedDays
+        let limit = store.object(forKey: Keys.autoCleanTotalLimitBytes) as? Int64
+            ?? defaultAutoCleanTotalLimitBytes
+        return AutoCleanPolicy(
+            unusedDays: AutoCleanUnusedDays(days: days).rawValue,
+            totalLimitBytes: AutoCleanTotalLimit(bytes: limit).bytes)
     }
 
     public static func indexingLimits(from store: UserDefaults = sharedStore) -> WorkingSetWalk.Limits {

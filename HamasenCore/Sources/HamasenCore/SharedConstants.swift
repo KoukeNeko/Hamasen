@@ -72,6 +72,10 @@ public enum SharedConstants {
     /// Directories whose contents the system has to be told about again.
     public static let directoryRefreshQueueFileName = "directory-refresh-queue.json"
 
+    /// When each local copy was last opened or downloaded. See
+    /// `ItemUsageStore`.
+    public static let itemUsageFileName = "item-usage.json"
+
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar
     /// label comes from the app's localized display name (哈瑪星 / Hamasen);
