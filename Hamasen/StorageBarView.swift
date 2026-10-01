@@ -35,8 +35,7 @@ struct StorageBarView: View {
     private static let minimumWidthForLabel: CGFloat = 56
 
     private var isOverAllowance: Bool {
-        guard let allowance else { return false }
-        return usage.totalBytes > allowance
+        usage.exceeds(allowance)
     }
 
     /// What the bar is drawn against: the allowance when there is one, and
@@ -68,8 +67,7 @@ struct StorageBarView: View {
     }
 
     private var headlineTotals: String {
-        guard let allowance else { return Self.formatted(usage.totalBytes) }
-        return "\(Self.formatted(usage.totalBytes)) / \(Self.formatted(allowance))"
+        usage.summary(against: allowance)
     }
 
     private var bar: some View {

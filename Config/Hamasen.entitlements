@@ -6,6 +6,11 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Signing in to a cloud drive ends with the browser being sent back
+	     to a loopback address the app listens on, bound to the loopback
+	     interface only. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	<!-- Private keys and bookmarks are read from outside the container, and
 	     a configuration backup is written to it; the panels grant neither
 	     without this. Read-write rather than a second entry: it covers both.

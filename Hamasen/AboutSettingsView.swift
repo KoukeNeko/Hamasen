@@ -64,13 +64,19 @@ struct AboutSettingsView: View {
                 contributorsContent
             } header: {
                 Text("貢獻者")
-            } footer: {
-                // Said plainly: this page is the only thing in the app that
-                // talks to anywhere but your own servers.
-                Text("這份名單在開啟這個頁面時向 GitHub 取得，是這個 App 唯一一處連往自家伺服器以外的地方。")
-                    .font(.caption)
+            }
+
+            Section {
+                Text("Google 雲端硬碟是 Google LLC 的商標。OneDrive 是 Microsoft 集團的商標。Dropbox 是 Dropbox, Inc. 的商標。其他名稱為各自所有者的商標。\(AppInfo.displayName) 與上述公司無關，也未獲其背書。")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                LabeledContent("服務標誌") {
+                    Link(destination: URL(string: "https://thesvg.org")!) {
+                        Text(verbatim: "thesvg.org")
+                    }
+                }
+            } header: {
+                Text("商標")
             }
         }
         .formStyle(.grouped)
@@ -79,37 +85,31 @@ struct AboutSettingsView: View {
 
     // MARK: - Identity
 
+    /// The app as About This Mac presents the Mac: its icon, its name, its
+    /// version, centred at the top.
     private var identity: some View {
-        HStack(spacing: 14) {
+        VStack(spacing: 6) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 64, height: 64)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(Self.applicationName)
-                    .font(.headline)
-                Text(Self.versionSummary)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                Text("把遠端伺服器掛進 Finder")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
+                .frame(width: 80, height: 80)
+            Text(AppInfo.displayName)
+                .font(.title2.bold())
+            Text("把 NAS、伺服器和雲端硬碟放進 Finder")
+                .foregroundStyle(.secondary)
+            Text(Self.versionSummary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .textSelection(.enabled)
         }
-        .padding(.vertical, 4)
-    }
-
-    private static var applicationName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Hamasen"
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
     }
 
     /// Marketing version with the build behind it, which is what a bug report
     /// needs to name one build apart from another that shares its number.
     private static var versionSummary: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
-        return "\(version) (\(build))"
+        "\(AppInfo.version) (\(AppInfo.build))"
     }
 
     // MARK: - Contributors

@@ -106,6 +106,9 @@ actor CacheEvictor {
         let folderNames = Dictionary(
             servers.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }
         )
+        // When each copy was last wanted, with the copies seen for the first
+        // time noted as of now and the ones gone forgotten, in one write.
+        let usage = (try? ItemUsageStore().reconcile(present: Set(items.map(\.identifier)))) ?? [:]
         return items.map { item in
             guard let folder = folderNames[item.serverID],
                   case .item(_, let path)? = ItemIdentifierMapper.entity(for: .init(item.identifier))
@@ -122,17 +125,30 @@ actor CacheEvictor {
                 identifier: item.identifier,
                 serverID: item.serverID,
                 byteCount: Int64(allocated ?? 0),
-                modifiedAt: item.modifiedAt
+                modifiedAt: item.modifiedAt,
+                lastUsedAt: usage[item.identifier]?.latest
             )
         }
     }
 
+    /// What a pass is asked to drop.
+    enum Scope {
+        /// What each server's own allowance and the shared policy call for.
+        case policies(AutoCleanPolicy?)
+        /// Every copy that can go: "remove all downloads".
+        case everything
+    }
+
     @discardableResult
-    func evictContent(for servers: [ServerConfig]) async -> Outcome {
+    func evictContent(for servers: [ServerConfig], scope: Scope) async -> Outcome {
         let policies = Dictionary(
             servers.map { ($0.id, $0.cachePolicy) }, uniquingKeysWith: { first, _ in first }
         )
-        let isManaged = policies.values.contains { $0 != .unlimited }
+        let isManaged: Bool
+        switch scope {
+        case .policies(let autoClean): isManaged = autoClean != nil || policies.values.contains { $0 != .unlimited }
+        case .everything: isManaged = true
+        }
         guard isManaged, !isRunning else { return Outcome() }
         isRunning = true
         defer { isRunning = false }
@@ -158,9 +174,21 @@ actor CacheEvictor {
                 ),
                 usage: CacheEvictionPlan.usage(of: cached, pinned: pinned)
             )
-            let candidates = CacheEvictionPlan.itemsToEvict(
-                from: cached, policies: policies, pinned: pinned, limit: Self.maximumPerPass
-            ).map(NSFileProviderItemIdentifier.init(rawValue:))
+            let planned: [String]
+            switch scope {
+            case .policies(let autoClean):
+                var combined = CacheEvictionPlan.itemsToEvict(
+                    from: cached, policies: policies, pinned: pinned, limit: Self.maximumPerPass)
+                if let autoClean {
+                    let shared = CacheEvictionPlan.itemsToClean(
+                        from: cached, policy: autoClean, pinned: pinned, limit: Self.maximumPerPass)
+                    combined += shared.filter { !combined.contains($0) }
+                }
+                planned = Array(combined.prefix(Self.maximumPerPass))
+            case .everything:
+                planned = CacheEvictionPlan.allEvictable(from: cached, pinned: pinned)
+            }
+            let candidates = planned.map(NSFileProviderItemIdentifier.init(rawValue:))
             guard !candidates.isEmpty else {
                 // Reported rather than returned in silence: "nothing to free"
                 // and "the filter matched nothing" look identical from

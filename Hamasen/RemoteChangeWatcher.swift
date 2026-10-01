@@ -35,69 +35,86 @@ import UserNotifications
 @Observable
 final class RemoteChangeWatcher {
     private static let log = HamasenLog(category: "changes")
+    /// How often the schedule looks for a server whose check is due. The
+    /// shortest interval offered is thirty seconds, so this is fine enough.
+    private static let tick = Duration.seconds(5)
 
     private var poll: Task<Void, Never>?
     private var mountedServers: @MainActor () -> [ServerConfig] = { [] }
+    private var observe: @MainActor (ServerHealth, UUID) -> Void = { _, _ in }
+    /// When each server was last checked.
+    private var lastChecked: [UUID: Date] = [:]
+    private var isChecking = false
 
-    private(set) var isPolling = false
-
-    func start(servers: @escaping @MainActor () -> [ServerConfig]) {
+    /// - Parameters:
+    ///   - servers: the servers to watch, asked again on every tick, so
+    ///     mounting, pausing and interval changes need no restart.
+    ///   - observing: told how each server answered.
+    func start(
+        servers: @escaping @MainActor () -> [ServerConfig],
+        observing: @escaping @MainActor (ServerHealth, UUID) -> Void
+    ) {
         mountedServers = servers
-        restart()
-    }
-
-    /// Called when the interval setting changes. Mounting and unmounting need
-    /// no restart: each round asks for the mounted servers again.
-    func restart() {
-        poll?.cancel()
-        poll = nil
-        isPolling = false
-
-        guard let interval = AppSettings.remoteChangePollInterval() else { return }
-        isPolling = true
+        observe = observing
+        guard poll == nil else { return }
         poll = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(interval))
+                try? await Task.sleep(for: Self.tick)
                 guard !Task.isCancelled else { return }
-                await self?.check()
+                await self?.checkDueServers()
             }
         }
+    }
+
+    /// Checks one server straight away, for a connection just resumed or
+    /// edited.
+    func checkSoon(_ serverID: UUID) {
+        lastChecked[serverID] = nil
     }
 
     func stop() {
         poll?.cancel()
         poll = nil
-        isPolling = false
     }
 
     // MARK: - One round
 
-    private func check() async {
-        let servers = mountedServers()
-        guard !servers.isEmpty, let manager = try? FinderDomain.manager() else { return }
+    private func checkDueServers() async {
+        guard !isChecking else { return }
+        let now = Date()
+        let due = mountedServers().filter { server in
+            let interval = server.effectiveRemoteChangeIntervalSeconds
+            guard interval > 0 else { return false }
+            return (lastChecked[server.id] ?? .distantPast).addingTimeInterval(TimeInterval(interval)) <= now
+        }
+        guard !due.isEmpty else { return }
+        isChecking = true
+        defer { isChecking = false }
+        for server in due { lastChecked[server.id] = now }
+        await check(due)
+    }
+
+    private func check(_ servers: [ServerConfig]) async {
+        guard let manager = try? FinderDomain.manager() else { return }
         guard let store = try? RemoteDirectorySnapshotStore() else { return }
 
-        guard let materialized = try? await MaterializedItems.all(from: manager) else {
-            // The set is unavailable while the extension is being restarted,
-            // which is ordinary and not worth reporting.
-            return
-        }
-
+        // The set is unavailable while the extension is being restarted,
+        // which is ordinary: the servers are still checked for reachability.
+        let materialized = (try? await MaterializedItems.all(from: manager)) ?? []
         let byServer = Self.directoriesToCheck(materialized)
-        guard !byServer.isEmpty else { return }
 
         // Anything unmounted since the last round would otherwise be reported
         // as wholly deleted when it comes back.
         do {
-            try store.keepOnly(serverIDs: Set(servers.map(\.id)))
+            try store.keepOnly(serverIDs: Set(mountedServers().map(\.id)))
         } catch {
             Self.log.error("Could not drop the record of unmounted servers: \(error.localizedDescription)")
         }
 
         for server in servers {
-            guard let paths = byServer[server.id] else { continue }
-            let changes = await Self.changes(
-                on: server, directoryPaths: paths, store: store)
+            let (health, changes) = await Self.changes(
+                on: server, directoryPaths: byServer[server.id] ?? [], store: store)
+            observe(health, server.id)
             guard let summary = RemoteChangeSummary(serverName: server.name, changes: changes)
             else { continue }
             Self.log.notice("\(server.name): \(summary.message)")
@@ -124,7 +141,7 @@ final class RemoteChangeWatcher {
                 // delays Finder rather than losing the change.
                 Self.log.error("Could not signal the working set: \(error.localizedDescription)")
             }
-            await Self.notify(summary)
+            AppNotifier.remoteChanges(summary)
         }
     }
 
@@ -151,17 +168,21 @@ final class RemoteChangeWatcher {
         return byServer
     }
 
+    /// Connects, re-lists the directories somebody has open, and says how
+    /// the server answered along with what changed.
     private static func changes(
         on server: ServerConfig,
         directoryPaths: Set<String>,
         store: RemoteDirectorySnapshotStore
-    ) async -> [RemoteDirectorySnapshot.Change] {
-        guard let credentials = try? KeychainCredentialStore().loadCredentials(for: server)
-        else { return [] }
-        let service = RemoteFileServiceFactory.makeService(for: server, credentials: credentials)
-        guard (try? await service.connect()) != nil else {
+    ) async -> (ServerHealth, [RemoteDirectorySnapshot.Change]) {
+        let service: any RemoteFileService
+        do {
+            let credentials = try KeychainCredentialStore().loadCredentials(for: server)
+            service = try RemoteFileServiceFactory.makeService(for: server, credentials: credentials)
+            try await service.connect()
+        } catch {
             // A server that is down is not a server whose files all vanished.
-            return []
+            return (health(after: error), [])
         }
         defer { Task { try? await service.disconnect() } }
 
@@ -181,23 +202,21 @@ final class RemoteChangeWatcher {
                 Self.log.error("Could not compare \(path) on \(server.name): \(error.localizedDescription)")
             }
         }
-        return changes
+        return (ServerHealth(state: .reachable), changes)
     }
 
-    // MARK: - Telling the user
-
-    private static func notify(_ summary: RemoteChangeSummary) async {
-        let center = UNUserNotificationCenter.current()
-        guard let granted = try? await center.requestAuthorization(options: [.alert]), granted
-        else { return }
-
-        let content = UNMutableNotificationContent()
-        content.title = summary.title
-        content.body = summary.message
-
-        // Delivered now: a trigger of nil means immediately, and a change
-        // already found has nothing to wait for.
-        try? await center.add(UNNotificationRequest(
-            identifier: UUID().uuidString, content: content, trigger: nil))
+    /// A refused credential needs the person; anything else is the network
+    /// or the server, which the next round tries again.
+    private static func health(after error: Error) -> ServerHealth {
+        switch error {
+        case RemoteFileServiceError.authenticationFailed,
+             RemoteFileServiceError.hostKeyChanged,
+             RemoteFileServiceError.privateKeyPassphraseRequired,
+             RemoteFileServiceError.privateKeyUnreadable,
+             is KeychainCredentialStore.KeychainError:
+            return ServerHealth(state: .signInRequired, message: error.localizedDescription)
+        default:
+            return ServerHealth(state: .unreachable, message: error.localizedDescription)
+        }
     }
 }

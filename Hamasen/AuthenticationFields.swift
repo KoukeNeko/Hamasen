@@ -43,7 +43,7 @@ struct AuthenticationFields: View {
         Section("登入") {
             if allowsPrivateKey {
                 Picker("認證方式", selection: $method) {
-                    ForEach(ServerConfig.AuthenticationMethod.allCases, id: \.self) { method in
+                    ForEach([ServerConfig.AuthenticationMethod.password, .privateKey], id: \.self) { method in
                         Text(method.displayName).tag(method)
                     }
                 }
@@ -57,7 +57,7 @@ struct AuthenticationFields: View {
                     text: $password,
                     prompt: allowsBlankPassword ? Text("留空表示不變更") : nil
                 )
-            case .privateKey:
+            case .privateKey, .oauth:
                 keyRow
                 if importedKey?.info.isEncrypted ?? true {
                     SecureField(
