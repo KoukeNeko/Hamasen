@@ -185,7 +185,15 @@ public struct S3Endpoint: Sendable, Equatable {
                 ? host : "\(object.bucket).\(host)"
             signingPath = RemotePath.root + object.key
         case .path:
-            requestHost = host
+            // A dotted bucket is sent path-style over HTTPS, and Amazon's
+            // certificate covers one label in front of the endpoint, not the
+            // bucket's several; a host typed with the bucket in it loses it
+            // here. Only on Amazon, where the host is known to be the bucket
+            // plus the endpoint — elsewhere it may simply be a name.
+            requestHost = host.lowercased().hasSuffix(Self.amazonSuffix)
+                && host.lowercased().hasPrefix("\(object.bucket.lowercased()).")
+                ? String(host.dropFirst(object.bucket.count + 1))
+                : host
             signingPath = object.absolutePath
         }
 

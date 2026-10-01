@@ -241,4 +241,22 @@ struct S3EndpointTests {
         #expect(address.hostHeader == "photos.s3.us-west-2.amazonaws.com")
         #expect(address.url.absoluteString == "https://photos.s3.us-west-2.amazonaws.com/x")
     }
+
+    /// A dotted bucket goes path-style over HTTPS; a host typed with that
+    /// bucket in it must lose it, or the certificate cannot match.
+    @Test
+    func aDottedBucketInTheHostIsStrippedForPathStyle() throws {
+        let typed = endpoint(host: "my.bucket.s3.us-east-1.amazonaws.com")
+        let address = try #require(typed.address(for: S3ObjectKey(bucket: "my.bucket", key: "x")))
+        #expect(address.hostHeader == "s3.us-east-1.amazonaws.com")
+        #expect(address.url.absoluteString == "https://s3.us-east-1.amazonaws.com/my.bucket/x")
+    }
+
+    /// Off Amazon a host that starts like the bucket is just a name.
+    @Test
+    func aCustomHostIsNeverStripped() throws {
+        let custom = endpoint(host: "photos.example.com")
+        let address = try #require(custom.address(for: S3ObjectKey(bucket: "photos", key: "x")))
+        #expect(address.hostHeader == "photos.example.com")
+    }
 }

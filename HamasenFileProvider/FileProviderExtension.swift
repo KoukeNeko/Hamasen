@@ -881,8 +881,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         var files: [String: String] = [:]
         /// Source path of each directory to the names it held when listed.
         var directories: [String: Set<String>] = [:]
-        /// Whether the destination is this operation's to remove on failure.
-        var createdDestination = false
+        /// Destination files this copy wrote, with the version each had once
+        /// written (nil when it could not be read back), in creation order.
+        var createdFiles: [(path: String, version: String?)] = []
+        /// Destination folders this copy created, in creation order.
+        var createdDirectories: [String] = []
     }
 
     /// Whether a creation got as far as writing to the server. A repeat
@@ -945,11 +948,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             } else {
                 // Every byte moves twice, down and then up.
                 progress.beginTransfer(byteCount: sourceInfo.size * 2, operation: .copying)
-                copied.createdDestination = true
-                try await copyFile(
+                let version = try await copyFile(
                     sourceInfo, using: sourceService,
                     to: destinationPath, using: destinationService,
                     domain: domain, byteProgress: progress)
+                copied.createdFiles.append((destinationPath, version))
                 copied.files[sourceInfo.path] = sourceInfo.contentVersionToken
             }
             // The copy took time, and the source may have moved on meanwhile:
@@ -959,19 +962,10 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 throw SourceChangedDuringMove()
             }
         } catch {
-            // Only what this operation created is its to remove: a
-            // destination that was already there is someone else's.
             // Detached from cancellation, or the cleanup of a cancelled copy
             // would be cancelled itself.
-            if copied.createdDestination {
-                await Task {
-                    if sourceInfo.isDirectory {
-                        try? await destinationService.deleteDirectory(at: destinationPath)
-                    } else {
-                        try? await destinationService.deleteFile(at: destinationPath)
-                    }
-                }.value
-            }
+            let copiedSoFar = copied
+            await Task { await rollBack(copiedSoFar, on: destinationService) }.value
             throw error
         }
 
@@ -1019,8 +1013,42 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         return true
     }
 
+    /// Removes what a failed move copied, and only that.
+    ///
+    /// Someone may have written to the destination since the copy: a file
+    /// that is no longer the version the copy wrote is theirs and stays, and
+    /// a folder that is not empty once this copy's files are gone holds
+    /// something of theirs and stays too. No protocol here can delete on a
+    /// condition, so a write landing between the check and the delete can
+    /// still be lost; the check narrows that to a moment.
+    private static func rollBack(_ copied: CopiedTree, on service: any RemoteFileService) async {
+        var kept = 0
+        for file in copied.createdFiles.reversed() {
+            guard let version = file.version,
+                  let current = try? await service.itemInfo(at: file.path),
+                  current.contentVersionToken == version
+            else {
+                kept += 1
+                continue
+            }
+            try? await service.deleteFile(at: file.path)
+        }
+        for directory in copied.createdDirectories.reversed() {
+            guard (try? await service.listDirectoryWithoutFollowingLinks(at: directory))?.isEmpty == true else {
+                kept += 1
+                continue
+            }
+            try? await service.deleteDirectory(at: directory)
+        }
+        if kept > 0 {
+            Self.log.notice("Undoing a move left \(kept) items that had changed since they were copied")
+        }
+    }
+
     /// Copies one file through a temporary file. With `byteProgress`, its
     /// units are bytes over two passes: the download first, the upload after.
+    /// Returns the copy's content version as the destination reports it, so a
+    /// rollback can tell it from a later write; nil when it cannot be read.
     private static func copyFile(
         _ item: RemoteItem,
         using sourceService: any RemoteFileService,
@@ -1028,7 +1056,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         using destinationService: any RemoteFileService,
         domain: NSFileProviderDomain,
         byteProgress: Progress?
-    ) async throws {
+    ) async throws -> String? {
         let temporaryURL = try makeTemporaryFileURL(for: domain)
         defer { try? FileManager.default.removeItem(at: temporaryURL) }
 
@@ -1043,6 +1071,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         try await onDestination {
             try await destinationService.uploadFile(from: temporaryURL, to: destinationPath, progress: uploaded)
         }
+        return try? await destinationService.itemInfo(at: destinationPath).contentVersionToken
     }
 
     /// Copies a tree. Units are entries, added as directories are listed,
@@ -1057,7 +1086,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         copied: inout CopiedTree
     ) async throws {
         try await onDestination { try await destinationService.createDirectory(at: destinationPath) }
-        copied.createdDestination = true
+        copied.createdDirectories.append(destinationPath)
         // Links as links: followed, a link to a directory would be copied as
         // the directory, and one to an ancestor would never end.
         let children = try await sourceService.listDirectoryWithoutFollowingLinks(at: sourcePath)
@@ -1075,10 +1104,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                     to: childDestination, using: destinationService,
                     domain: domain, progress: progress, copied: &copied)
             case .file:
-                try await copyFile(
+                let version = try await copyFile(
                     child, using: sourceService,
                     to: childDestination, using: destinationService,
                     domain: domain, byteProgress: nil)
+                copied.createdFiles.append((childDestination, version))
                 copied.files[child.path] = child.contentVersionToken
                 progress.completedUnitCount += 1
             case .symlink:
