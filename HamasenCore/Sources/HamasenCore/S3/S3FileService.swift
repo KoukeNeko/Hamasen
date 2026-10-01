@@ -493,9 +493,11 @@ public actor S3FileService: RemoteFileService {
             await rollBack(copies: copies, in: destination.bucket, path: newPath)
             throw Self.sourceChanged(path: oldPath)
         }
-        // Each key goes only if it still has the ETag that was copied.
-        try await delete(
-            keys: objects.map(\.key), tags: objects.map(\.contentTag), bucket: source.bucket, path: oldPath)
+        // Each key goes only if it still has the ETag that was copied; every
+        // object has one, which was checked before anything was copied.
+        try await deleteEach(
+            objects.compactMap { object in object.contentTag.map { (object.key, $0) } },
+            bucket: source.bucket, path: oldPath)
     }
 
     // MARK: - Writing helpers
@@ -662,7 +664,7 @@ public actor S3FileService: RemoteFileService {
         }
         guard !known.isEmpty else { return }
         do {
-            try await delete(keys: known.map(\.0), tags: known.map(\.1), bucket: bucket, path: path)
+            try await deleteEach(known, bucket: bucket, path: path)
         } catch {
             Self.log.error("Could not undo the copies of a move at \(path): \(String(describing: error))")
         }
@@ -877,16 +879,11 @@ public actor S3FileService: RemoteFileService {
         return found
     }
 
-    /// - Parameter tags: when given, one per key: that key is deleted only
-    ///   if it still has this ETag, so a write since it was read survives.
-    private func delete(keys: [String], tags: [String?]? = nil, bucket: String, path: String) async throws {
+    private func delete(keys: [String], bucket: String, path: String) async throws {
         for batch in stride(from: 0, to: keys.count, by: Batch.deleteLimit) {
-            let range = batch..<min(batch + Batch.deleteLimit, keys.count)
+            let slice = Array(keys[batch..<min(batch + Batch.deleteLimit, keys.count)])
             let body = Data(("<Delete>"
-                + range.map { index in
-                    let tag = tags?[index].map { "<ETag>\(Self.escaped("\"\($0)\""))</ETag>" } ?? ""
-                    return "<Object><Key>\(Self.escaped(keys[index]))</Key>\(tag)</Object>"
-                }.joined()
+                + slice.map { "<Object><Key>\(Self.escaped($0))</Key></Object>" }.joined()
                 + "</Delete>").utf8)
             let response = try await send(
                 method: Method.post, object: S3ObjectKey(bucket: bucket, key: ""),
@@ -905,7 +902,45 @@ public actor S3FileService: RemoteFileService {
                     status: Status.ok, parsed: refused,
                     operation: Self.deleteOperation, path: path)
             }
+            // Not quiet mode, so every key comes back as deleted or as an
+            // error. A 200 that does not account for them all — an empty
+            // body, a proxy's page — says nothing was deleted.
+            guard let answered = Self.keysAnswered(in: response.data),
+                  answered.isSuperset(of: slice) else {
+                throw RemoteFileServiceError.operationFailed(
+                    operation: Self.deleteOperation, path: path, underlying: "伺服器的回應不完整")
+            }
         }
+    }
+
+    /// Deletes each key only while it still has the given ETag, one request
+    /// apiece: a write since the ETag was read fails that delete with 412
+    /// and survives. DeleteObjects would be one request per thousand, but
+    /// Amazon honours per-key ETags there only on directory buckets.
+    private func deleteEach(_ keys: [(key: String, tag: String)], bucket: String, path: String) async throws {
+        for entry in keys {
+            try Task.checkCancellation()
+            do {
+                _ = try await send(
+                    method: Method.delete, object: S3ObjectKey(bucket: bucket, key: entry.key),
+                    headers: ["If-Match": "\"\(entry.tag)\""],
+                    operation: Self.deleteOperation, path: path)
+            } catch RemoteFileServiceError.itemNotFound {
+                // Already gone, which is what was asked for.
+            }
+        }
+    }
+
+    /// Every key a DeleteResult names, deleted or refused; nil when the body
+    /// is not a DeleteResult.
+    private static func keysAnswered(in data: Data) -> Set<String>? {
+        guard firstValue(ofElement: "deleteresult", in: data) != nil else { return nil }
+        let delegate = ElementValuesDelegate(elementName: "key")
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldProcessNamespaces = true
+        guard parser.parse() else { return nil }
+        return Set(delegate.values)
     }
 
     private static func fileSize(of url: URL) throws -> Int64 {
@@ -1239,6 +1274,36 @@ public actor S3FileService: RemoteFileService {
 
 /// Reads the first element with a given local name, for the one value a
 /// multipart upload needs out of an otherwise uninteresting document.
+/// Collects the text of every element with one name, wherever it appears.
+private final class ElementValuesDelegate: NSObject, XMLParserDelegate {
+    private let elementName: String
+    private(set) var values: [String] = []
+    private var text = ""
+
+    init(elementName: String) {
+        self.elementName = elementName
+    }
+
+    func parser(
+        _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+        qualifiedName: String?, attributes: [String: String]
+    ) {
+        text = ""
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        text += string
+    }
+
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+        qualifiedName: String?
+    ) {
+        if elementName.lowercased() == self.elementName { values.append(text) }
+        text = ""
+    }
+}
+
 private final class SingleElementDelegate: NSObject, XMLParserDelegate {
     private let elementName: String
     private(set) var value: String?

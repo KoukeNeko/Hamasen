@@ -38,6 +38,16 @@ public struct DirectoryRefreshQueue: Sendable {
         }
     }
 
+    /// Each entry with the generation it was last queued at. A directory
+    /// queued again while its earlier request is being reported gets a new
+    /// generation, and removing the reported one leaves it queued.
+    public typealias Snapshot = [Entry: UInt64]
+
+    private struct Stored: Codable {
+        var generations: Snapshot = [:]
+        var lastGeneration: UInt64 = 0
+    }
+
     private let fileURL: URL
     private let lock: FileLock
 
@@ -57,55 +67,75 @@ public struct DirectoryRefreshQueue: Sendable {
 
     public func enqueue(_ entries: some Sequence<Entry>) throws {
         try lock.withLock {
-            var queued = try load()
-            queued.formUnion(entries)
-            try store(queued)
+            var stored = try load()
+            for entry in entries {
+                stored.lastGeneration += 1
+                stored.generations[entry] = stored.lastGeneration
+            }
+            try store(stored)
         }
     }
 
     /// What is queued, leaving it there.
     public func pending() throws -> Set<Entry> {
-        try lock.withLock { try load() }
+        Set(try snapshot().keys)
     }
 
-    /// Takes reported entries off the queue. Anything enqueued since
-    /// `pending()` was read stays.
+    /// What is queued, with the generation each was queued at, for a caller
+    /// that will report them and then `remove(reported:)` what it reported.
+    public func snapshot() throws -> Snapshot {
+        try lock.withLock { try load().generations }
+    }
+
+    /// Takes reported entries off the queue — each only if it has not been
+    /// queued again since the snapshot it was reported from.
+    public func remove(reported: Snapshot) throws {
+        try lock.withLock {
+            var stored = try load()
+            for (entry, generation) in reported where stored.generations[entry] == generation {
+                stored.generations[entry] = nil
+            }
+            try store(stored)
+        }
+    }
+
+    /// Takes entries off the queue, however recently they were queued.
     public func remove(_ entries: some Sequence<Entry>) throws {
         try lock.withLock {
-            var queued = try load()
-            queued.subtract(entries)
-            try store(queued)
+            var stored = try load()
+            for entry in entries { stored.generations[entry] = nil }
+            try store(stored)
         }
     }
 
     /// Takes everything queued, leaving the queue empty.
     public func drain() throws -> Set<Entry> {
         try lock.withLock {
-            let queued = try load()
-            try store([])
-            return queued
+            let stored = try load()
+            try store(Stored())
+            return Set(stored.generations.keys)
         }
     }
 
-    private func store(_ queued: Set<Entry>) throws {
-        if queued.isEmpty {
+    private func store(_ stored: Stored) throws {
+        if stored.generations.isEmpty {
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 try FileManager.default.removeItem(at: fileURL)
             }
         } else {
-            try JSONEncoder().encode(queued).write(to: fileURL, options: .atomic)
+            try JSONEncoder().encode(stored).write(to: fileURL, options: .atomic)
         }
     }
 
-    private func load() throws -> Set<Entry> {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
+    private func load() throws -> Stored {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return Stored() }
         do {
-            return try JSONDecoder().decode(Set<Entry>.self, from: Data(contentsOf: fileURL))
+            return try JSONDecoder().decode(Stored.self, from: Data(contentsOf: fileURL))
         } catch is DecodingError {
             // A queue nobody can read would block every later refresh for
             // good. What it held was a set of hints that whatever noticed
             // them notices again.
-            return []
+            return Stored()
         }
     }
 }

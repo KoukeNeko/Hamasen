@@ -156,12 +156,12 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         }
 
         let queue = try? DirectoryRefreshQueue()
-        let queued: Set<DirectoryRefreshQueue.Entry>
+        let queued: DirectoryRefreshQueue.Snapshot
         do {
-            queued = try queue?.pending() ?? []
+            queued = try queue?.snapshot() ?? [:]
         } catch {
             Self.log.error("Could not read the refresh queue: \(error.localizedDescription)")
-            queued = []
+            queued = [:]
         }
 
         let walkStore = try? WorkingSetWalkStore()
@@ -176,12 +176,12 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         let registry = registry
         let serverList = serverList
         Task {
-            var reported: Set<DirectoryRefreshQueue.Entry> = []
-            for refresh in queued.sorted(by: { $0.path < $1.path }) {
+            var reported: DirectoryRefreshQueue.Snapshot = [:]
+            for (refresh, generation) in queued.sorted(by: { $0.key.path < $1.key.path }) {
                 do {
                     try await DirectoryRefresh.report(
                         serverID: refresh.serverID, directoryPath: refresh.path, registry: registry, to: observer)
-                    reported.insert(refresh)
+                    reported[refresh] = generation
                     await registry.reportReachable(refresh.serverID)
                 } catch {
                     // Stays queued: the change is not lost with the server
@@ -198,7 +198,7 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             var clearedRefreshes = false
             if !reported.isEmpty {
                 do {
-                    try queue?.remove(reported)
+                    try queue?.remove(reported: reported)
                     clearedRefreshes = true
                 } catch {
                     // Reported again next time, which is harmless — but not

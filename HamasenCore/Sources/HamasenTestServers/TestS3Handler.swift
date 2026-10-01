@@ -120,7 +120,7 @@ final class S3Handler: ChannelInboundHandler {
         case (.POST, false):
             postObject(target, context: context)
         case (.DELETE, false):
-            deleteObject(target, context: context)
+            deleteObject(target, ifMatch: head.headers.first(name: "If-Match"), context: context)
         default:
             send(error: "MethodNotAllowed", message: "\(head.method) \(head.uri)",
                  status: .methodNotAllowed, context: context)
@@ -382,10 +382,22 @@ final class S3Handler: ChannelInboundHandler {
         send(status: .ok, body: Data(xml.utf8), contentType: "application/xml", context: context)
     }
 
-    private func deleteObject(_ target: Target, context: ChannelHandlerContext) {
+    private func deleteObject(_ target: Target, ifMatch: String?, context: ChannelHandlerContext) {
         if let uploadID = target.query["uploadId"] {
             _ = store.abortUpload(uploadID)
             send(status: .noContent, context: context)
+            return
+        }
+        if behaviour.deleteRefusedKeys.contains(target.key) {
+            send(error: "AccessDenied", message: "Access Denied", status: .forbidden, context: context)
+            return
+        }
+        // As S3 does: a delete conditional on an ETag the object no longer
+        // has is refused, and the object stays.
+        if let ifMatch, let stored = store.object(forKey: target.key),
+           ifMatch != "\"\(Self.entityTag(for: stored.data))\"" {
+            send(error: "PreconditionFailed", message: "If-Match: \(ifMatch)",
+                 status: .preconditionFailed, context: context)
             return
         }
         // S3 answers 204 whether or not the key was there, so a delete is

@@ -105,8 +105,25 @@ public struct S3Endpoint: Sendable, Equatable {
     /// Amazon writes the region into its own hostnames, so a user pointing at
     /// AWS should not have to type it twice. Everything else reports
     /// `regionlessRegion`, which R2 and MinIO accept.
+    /// Wasabi and Backblaze B2 also write the region into their hostnames,
+    /// and sign with it: `auto` is refused there. Wasabi's original endpoint
+    /// names none and means us-east-1.
+    private static func providerRegion(forHost lowered: String) -> String? {
+        let labels = lowered.split(separator: ".").map(String.init)
+        guard let s3Index = labels.firstIndex(of: s3Label) else { return nil }
+        let after = labels[(s3Index + 1)...]
+        if lowered.hasSuffix(".wasabisys.com") {
+            return after.count > 2 ? after.first : "us-east-1"
+        }
+        if lowered.hasSuffix(".backblazeb2.com"), after.count > 2 {
+            return after.first
+        }
+        return nil
+    }
+
     public static func inferredRegion(forHost host: String) -> String {
         let lowered = host.lowercased()
+        if let region = providerRegion(forHost: lowered) { return region }
         guard lowered.hasSuffix(amazonSuffix) else { return regionlessRegion }
 
         var labels = lowered.dropLast(amazonSuffix.count).split(separator: ".").map(String.init)

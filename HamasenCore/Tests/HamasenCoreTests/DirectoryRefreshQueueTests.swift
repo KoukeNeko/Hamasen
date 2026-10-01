@@ -103,4 +103,17 @@ struct DirectoryRefreshQueueTests {
         try queue.enqueue([.init(serverID: server, path: "/a")])
         #expect(try queue.pending().count == 1)
     }
+
+    /// A directory queued again while its earlier request is being reported
+    /// is a second change; removing the first must leave it queued.
+    @Test
+    func aRefreshQueuedAgainWhileReportedStays() throws {
+        let queue = makeQueue()
+        let entry = DirectoryRefreshQueue.Entry(serverID: server, path: "/a")
+        try queue.enqueue([entry])
+        let reported = try queue.snapshot()
+        try queue.enqueue([entry])
+        try queue.remove(reported: reported)
+        #expect(try queue.pending() == [entry])
+    }
 }

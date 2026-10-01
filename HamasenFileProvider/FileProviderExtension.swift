@@ -971,6 +971,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
         }
 
         var copied = CopiedTree()
+        var detached: String?
         do {
             if sourceInfo.isDirectory {
                 progress.totalUnitCount = 1
@@ -989,24 +990,43 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 copied.createdFiles.append((destinationPath, version))
                 copied.files[sourceInfo.path] = sourceInfo.contentVersionToken
             }
-            // The copy took time, and the source may have moved on meanwhile:
-            // an edit, a file added to the tree. Deleting it then would lose
-            // that.
-            guard try await isUnchanged(copied, on: sourceService) else {
+            // The copy took time, and the source may have moved on. It is
+            // first moved out of everyone's way, to a name of its own, and
+            // checked there: a write to the old path after that lands beside
+            // it rather than in what is about to be deleted, and anything
+            // that changed before is found by the check.
+            let staging = RemotePath.temporaryUploadPath(for: source.path)
+            try await sourceService.moveItem(from: source.path, to: staging)
+            detached = staging
+            guard try await isUnchanged(copied, on: sourceService, at: staging, originallyAt: source.path) else {
                 throw SourceChangedDuringMove()
             }
         } catch {
             // Detached from cancellation, or the cleanup of a cancelled copy
             // would be cancelled itself.
             let copiedSoFar = copied
-            await Task { await rollBack(copiedSoFar, on: destinationService) }.value
+            let detachedSource = detached
+            await Task {
+                if let detachedSource {
+                    do {
+                        try await sourceService.moveItem(from: detachedSource, to: source.path)
+                    } catch {
+                        Self.log.error(
+                            "A move could not put its source back: \(source.path) is at \(detachedSource): "
+                            + "\(error.localizedDescription)")
+                    }
+                }
+                await rollBack(copiedSoFar, on: destinationService)
+            }.value
             throw error
         }
 
-        if sourceInfo.isDirectory {
-            try await sourceService.deleteDirectory(at: source.path)
-        } else {
-            try await sourceService.deleteFile(at: source.path)
+        if let detached {
+            if sourceInfo.isDirectory {
+                try await sourceService.deleteDirectory(at: detached)
+            } else {
+                try await sourceService.deleteFile(at: detached)
+            }
         }
         return RemoteFileItem(
             serverID: parent.serverID,
@@ -1030,18 +1050,24 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
     /// Whether the source still holds exactly what was copied from it: the
     /// same names in every directory, the same content version on every
     /// file.
+    ///
+    /// Asked of the source after it was moved from `original` to `root`,
+    /// which is where it is looked for; the record is by original path.
     private static func isUnchanged(
-        _ copied: CopiedTree, on service: any RemoteFileService
+        _ copied: CopiedTree, on service: any RemoteFileService, at root: String, originallyAt original: String
     ) async throws -> Bool {
+        func relocated(_ path: String) -> String { root + path.dropFirst(original.count) }
+        func originalPath(_ path: String) -> String { original + path.dropFirst(root.count) }
+
         guard !copied.directories.isEmpty else {
             guard let (path, token) = copied.files.first else { return true }
-            return try await service.itemInfo(at: path).contentVersionToken == token
+            return try await service.itemInfo(at: relocated(path)).contentVersionToken == token
         }
         for (path, names) in copied.directories {
-            let listing = try await service.listDirectoryWithoutFollowingLinks(at: path)
+            let listing = try await service.listDirectoryWithoutFollowingLinks(at: relocated(path))
             guard Set(listing.map(\.name)) == names else { return false }
             for item in listing where item.kind == .file {
-                guard copied.files[item.path] == item.contentVersionToken else { return false }
+                guard copied.files[originalPath(item.path)] == item.contentVersionToken else { return false }
             }
         }
         return true

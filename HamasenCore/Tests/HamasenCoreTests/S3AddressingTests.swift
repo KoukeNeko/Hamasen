@@ -110,7 +110,11 @@ struct S3EndpointTests {
         ("s3.dualstack.ap-northeast-1.amazonaws.com", "ap-northeast-1"),
         ("my-bucket.s3.us-west-2.amazonaws.com", "us-west-2"),
         ("abc123.r2.cloudflarestorage.com", "auto"),
-        ("s3.wasabisys.com", "auto"),
+        ("s3.wasabisys.com", "us-east-1"),
+        ("s3.eu-central-1.wasabisys.com", "eu-central-1"),
+        ("bucket.s3.ap-northeast-1.wasabisys.com", "ap-northeast-1"),
+        ("s3.us-west-004.backblazeb2.com", "us-west-004"),
+        ("minio.example.com", "auto"),
         ("127.0.0.1", "auto"),
     ])
     func readsTheRegionOutOfAnAmazonHostname(host: String, region: String) {

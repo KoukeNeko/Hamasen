@@ -63,7 +63,8 @@ public final class TestS3Server {
         /// Answer CopyObject with 200 and an empty body, copying nothing — a
         /// proxy's idea of success.
         public var copyAnswersEmptyOK = false
-        /// Keys DeleteObjects reports as `<Error>` entries inside a 200.
+        /// Keys DeleteObjects reports as `<Error>` entries inside a 200, and
+        /// a single DELETE refuses with 403.
         public var deleteRefusedKeys: Set<String> = []
         /// Answer a ranged GET with the whole object and status 200.
         public var ignoresRange = false
