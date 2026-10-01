@@ -36,6 +36,7 @@ public final class TestFTPServer {
     public let rootDirectory: URL
     private let channel: Channel
     private let transferred: TransferredBytes
+    private let receivedListings: ReceivedCommands
     /// Ways to make the server misbehave, for the tests of how a client copes.
     public let behavior: FTPServerBehavior
 
@@ -46,17 +47,23 @@ public final class TestFTPServer {
     /// read everything and discarded the rest.
     public var bytesSentInLastDownload: Int { transferred.count }
 
+    /// Every LIST the server has been sent, in order and as sent, so a test
+    /// can tell which form of the command a listing took and how many.
+    public var listCommands: [String] { receivedListings.lines }
+
     private init(
         port: Int,
         rootDirectory: URL,
         channel: Channel,
         transferred: TransferredBytes,
+        receivedListings: ReceivedCommands,
         behavior: FTPServerBehavior
     ) {
         self.port = port
         self.rootDirectory = rootDirectory
         self.channel = channel
         self.transferred = transferred
+        self.receivedListings = receivedListings
         self.behavior = behavior
     }
 
@@ -73,6 +80,7 @@ public final class TestFTPServer {
         try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
 
         let transferred = TransferredBytes()
+        let receivedListings = ReceivedCommands()
         let behavior = FTPServerBehavior()
         var lastError: Error?
         for _ in 0..<maxBindAttempts {
@@ -89,6 +97,7 @@ public final class TestFTPServer {
                                     advertisesMLSD: advertisingMLSD,
                                     advertisesMLST: advertisingMLST,
                                     transferred: transferred,
+                                    receivedListings: receivedListings,
                                     behavior: behavior
                                 ),
                             ])
@@ -101,6 +110,7 @@ public final class TestFTPServer {
                     rootDirectory: rootDirectory,
                     channel: channel,
                     transferred: transferred,
+                    receivedListings: receivedListings,
                     behavior: behavior
                 )
             } catch {
@@ -126,6 +136,7 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
     private let advertisesMLSD: Bool
     private let advertisesMLST: Bool
     private let transferred: TransferredBytes
+    private let receivedListings: ReceivedCommands
     private let behavior: FTPServerBehavior
     private var isAuthenticated = false
     private var workingDirectory = "/"
@@ -142,12 +153,14 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
         advertisesMLSD: Bool,
         advertisesMLST: Bool,
         transferred: TransferredBytes,
+        receivedListings: ReceivedCommands,
         behavior: FTPServerBehavior
     ) {
         self.root = root
         self.advertisesMLSD = advertisesMLSD
         self.advertisesMLST = advertisesMLST
         self.transferred = transferred
+        self.receivedListings = receivedListings
         self.behavior = behavior
     }
 
@@ -165,6 +178,7 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
         let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
         let command = String(parts.first ?? "").uppercased()
         let argument = parts.count > 1 ? String(parts[1]) : ""
+        if command == "LIST" { receivedListings.append(line) }
 
         // Says nothing, as a server that has hung would.
         if behavior.unresponsiveCommands.contains(command) { return }
@@ -236,8 +250,22 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
         case "REST":
             restartOffset = Int64(argument) ?? 0
             reply(context, 350, "Restarting at \(restartOffset)")
-        case "MLSD", "LIST":
-            sendListing(argument, machineReadable: command == "MLSD", context)
+        case "MLSD":
+            sendListing(argument, machineReadable: true, showingDotFiles: true, context)
+        case "LIST":
+            // Options come before the path, as most servers take them; one
+            // that takes none reads "-a" as part of a name and finds nothing.
+            if argument.hasPrefix("-"), behavior.takeListOptionFailure() {
+                return reply(context, 450, "Try again later")
+            }
+            var path = argument
+            var showsDotFiles = !behavior.hidesDotFiles
+            if !behavior.refusesListOptions, argument.hasPrefix("-") {
+                let parts = argument.split(separator: " ", maxSplits: 1)
+                if parts[0].contains("a") { showsDotFiles = true }
+                path = parts.count > 1 ? String(parts[1]) : ""
+            }
+            sendListing(path, machineReadable: false, showingDotFiles: showsDotFiles, context)
         case "RETR":
             sendFile(argument, context)
         case "STOR":
@@ -252,7 +280,13 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
                 )
             }
         case "RMD":
-            perform(context) { try FileManager.default.removeItem(at: self.localURL(for: argument)) }
+            // rmdir(2), as a real server calls it: a directory with anything
+            // left in it stays.
+            if rmdir(localURL(for: argument).path) == 0 {
+                reply(context, 250, "OK")
+            } else {
+                fail(context, "Remove directory operation failed")
+            }
         case "RNFR":
             guard describe(localURL(for: argument)) != nil else { return fail(context, "No such file") }
             renameSource = argument
@@ -411,12 +445,20 @@ private final class FTPSessionHandler: ChannelInboundHandler, @unchecked Sendabl
         return "type=\(type);size=\(entry.size);modify=\(Self.timestampFormatter.string(from: entry.modified));"
     }
 
-    private func sendListing(_ argument: String, machineReadable: Bool, _ context: ChannelHandlerContext) {
+    private func sendListing(
+        _ argument: String, machineReadable: Bool, showingDotFiles: Bool, _ context: ChannelHandlerContext
+    ) {
         let directory = localURL(for: argument)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
-            return fail(context, "No such directory")
+            guard !machineReadable else { return fail(context, "No such directory") }
+            switch behavior.missingListingAnswer {
+            case .notFound: return fail(context, "No such directory")
+            case .transientFailure: return reply(context, 450, "No such directory")
+            case .emptyListing: return sendOverDataConnection(Data(), context)
+            }
         }
         let body = names.sorted().compactMap { name -> String? in
+            if !showingDotFiles, name.hasPrefix(".") { return nil }
             guard let entry = describe(directory.appendingPathComponent(name)) else { return nil }
             if machineReadable {
                 return "\(machineFacts(entry)) \(name)"
@@ -584,6 +626,19 @@ final class TransferredBytes: @unchecked Sendable {
     }
 }
 
+/// Commands as the client sent them, recorded on the event loop that reads
+/// them and read by the test afterwards.
+final class ReceivedCommands: @unchecked Sendable {
+    private let lock = NSLock()
+    private var received: [String] = []
+
+    var lines: [String] { lock.withLock { received } }
+
+    func append(_ line: String) {
+        lock.withLock { received.append(line) }
+    }
+}
+
 /// Faults a test can switch on while a server is running.
 public final class FTPServerBehavior: @unchecked Sendable {
     private let lock = NSLock()
@@ -596,6 +651,21 @@ public final class FTPServerBehavior: @unchecked Sendable {
     private var rejectsRenames = false
     private var repliesLate = false
     private var storeReply: (code: Int, text: String)?
+    private var hidesDots = false
+    private var refusesOptions = false
+    private var optionFailures = 0
+    private var missingListing = MissingListingAnswer.notFound
+
+    /// What LIST says about a directory that is not there.
+    public enum MissingListingAnswer: Sendable {
+        /// 550, as most servers answer.
+        case notFound
+        /// 450, as though the failure would pass.
+        case transientFailure
+        /// An empty listing closed with 226, from servers that take the
+        /// argument for a pattern that matched nothing.
+        case emptyListing
+    }
 
     /// Commands the server reads and never answers.
     public var unresponsiveCommands: Set<String> {
@@ -650,5 +720,41 @@ public final class FTPServerBehavior: @unchecked Sendable {
     public var storeRefusal: (code: Int, text: String)? {
         get { lock.withLock { storeReply } }
         set { lock.withLock { storeReply = newValue } }
+    }
+
+    /// LIST leaves out names that start with a dot unless given -a, as
+    /// vsftpd does.
+    public var hidesDotFiles: Bool {
+        get { lock.withLock { hidesDots } }
+        set { lock.withLock { hidesDots = newValue } }
+    }
+
+    /// LIST takes no options, so "LIST -a /path" names a directory that is
+    /// not there.
+    public var refusesListOptions: Bool {
+        get { lock.withLock { refusesOptions } }
+        set { lock.withLock { refusesOptions = newValue } }
+    }
+
+    /// LIST commands with options to answer with a 450 before taking them,
+    /// as a server that supports -a but was briefly busy does.
+    public var listOptionFailures: Int {
+        get { lock.withLock { optionFailures } }
+        set { lock.withLock { optionFailures = newValue } }
+    }
+
+    func takeListOptionFailure() -> Bool {
+        lock.withLock {
+            guard optionFailures > 0 else { return false }
+            optionFailures -= 1
+            return true
+        }
+    }
+
+    /// How LIST answers for a directory that is not there — which, with
+    /// `refusesListOptions`, is also how it answers "LIST -a /path".
+    public var missingListingAnswer: MissingListingAnswer {
+        get { lock.withLock { missingListing } }
+        set { lock.withLock { missingListing = newValue } }
     }
 }

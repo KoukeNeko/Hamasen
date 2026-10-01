@@ -561,6 +561,113 @@ struct FTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    /// vsftpd, like most servers, leaves names that start with a dot out of
+    /// LIST unless asked with -a. A folder holding one — a .gitignore, or an
+    /// upload cut off with its connection — then looked empty and could not
+    /// be deleted.
+    @Test("LIST 預設隱藏點開頭的名稱時，仍會列出並能刪除含有它們的目錄")
+    func listsAndDeletesDotFilesOnServersThatHideThem() async throws {
+        let (service, server) = try await Self.makeConnectedService(advertisingMLSD: false, advertisingMLST: false)
+        server.behavior.hidesDotFiles = true
+        let folder = server.rootDirectory.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        try Data("x".utf8).write(to: folder.appendingPathComponent(".gitignore"))
+        let temporaryName = RemotePath.name(of: RemotePath.temporaryUploadPath(for: "/project/report.txt"))
+        try Data("partial".utf8).write(to: folder.appendingPathComponent(temporaryName))
+
+        #expect(try await service.listDirectory(at: "/project").map(\.name) == [".gitignore"])
+        #expect(try await service.itemInfo(at: "/project/.gitignore").size == 1)
+        try await service.deleteDirectory(at: "/project")
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("伺服器不接受 LIST 的選項時改用不帶選項的 LIST")
+    func listsWithoutOptionsWhenTheServerRefusesThem() async throws {
+        let (service, server) = try await Self.makeConnectedService(advertisingMLSD: false, advertisingMLST: false)
+        server.behavior.refusesListOptions = true
+        try Self.write("hello", to: "notes.txt", in: server)
+
+        #expect(try await service.listDirectory(at: "/").map(\.name) == ["notes.txt"])
+        #expect(try await service.listDirectory(at: "/").map(\.name) == ["notes.txt"])
+        #expect(server.listCommands == ["LIST -a /", "LIST /", "LIST /"])
+        await #expect(throws: RemoteFileServiceError.itemNotFound(path: "/missing")) {
+            try await service.listDirectory(at: "/missing")
+        }
+        #expect(await service.isConnected)
+        try await Self.tearDown(service, server)
+    }
+
+    /// A server that reads "-a" as part of the name may call that name
+    /// missing with a 450. Without MLSD every listing went through LIST -a,
+    /// so every one of them failed.
+    @Test("LIST -a 被以 4xx 拒絕時改用不帶選項的 LIST，之後不再嘗試")
+    func listsWithoutOptionsWhenTheServerRefusesThemTransiently() async throws {
+        let (service, server) = try await Self.makeConnectedService(advertisingMLSD: false, advertisingMLST: false)
+        server.behavior.refusesListOptions = true
+        server.behavior.missingListingAnswer = .transientFailure
+        try Self.write("hello", to: "notes.txt", in: server)
+
+        #expect(try await service.listDirectory(at: "/").map(\.name) == ["notes.txt"])
+        #expect(try await service.listDirectory(at: "/").map(\.name) == ["notes.txt"])
+        #expect(server.listCommands == ["LIST -a /", "LIST /", "LIST /"])
+        try await Self.tearDown(service, server)
+    }
+
+    /// One that lists "-a /path" as a pattern matching nothing answers 226
+    /// with no entries. Every folder then looked empty, and the extension
+    /// reported everything in it as deleted.
+    @Test("LIST -a 列出空清單而 LIST 列得出項目時改用不帶選項的 LIST")
+    func listsWithoutOptionsWhenTheyListNothing() async throws {
+        let (service, server) = try await Self.makeConnectedService(advertisingMLSD: false, advertisingMLST: false)
+        server.behavior.refusesListOptions = true
+        server.behavior.missingListingAnswer = .emptyListing
+        try Self.write("hello", to: "notes.txt", in: server)
+
+        #expect(try await service.listDirectory(at: "/").map(\.name) == ["notes.txt"])
+        #expect(try await service.listDirectory(at: "/").map(\.name) == ["notes.txt"])
+        #expect(server.listCommands == ["LIST -a /", "LIST /", "LIST /"])
+        try await Self.tearDown(service, server)
+    }
+
+    /// A server that supports -a can still turn one LIST -a away. A plain
+    /// LIST that then lists an empty folder says nothing about the option;
+    /// settling on it would hide dot-files from then on, stranded uploads
+    /// among them, and leave their folders impossible to delete.
+    @Test("LIST -a 一時失敗而空目錄的 LIST 成功時，不就此停用 -a")
+    func keepsTheOptionAfterARefusalOverAnEmptyFolder() async throws {
+        let (service, server) = try await Self.makeConnectedService(advertisingMLSD: false, advertisingMLST: false)
+        server.behavior.hidesDotFiles = true
+        server.behavior.listOptionFailures = 1
+        try FileManager.default.createDirectory(
+            at: server.rootDirectory.appendingPathComponent("empty"), withIntermediateDirectories: false
+        )
+        let project = server.rootDirectory.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+        try Data("x".utf8).write(to: project.appendingPathComponent(".gitignore"))
+
+        #expect(try await service.listDirectory(at: "/empty").isEmpty)
+        #expect(try await service.listDirectory(at: "/project").map(\.name) == [".gitignore"])
+        try await Self.tearDown(service, server)
+    }
+
+    /// An empty answer to LIST -a is checked against a plain LIST only until
+    /// the option has listed something; after that an empty folder is empty.
+    @Test("確認伺服器接受 LIST -a 後，空目錄只列一次")
+    func listsAnEmptyFolderOnceTheOptionIsKnownToWork() async throws {
+        let (service, server) = try await Self.makeConnectedService(advertisingMLSD: false, advertisingMLST: false)
+        server.behavior.hidesDotFiles = true
+        try Self.write("hello", to: "notes.txt", in: server)
+        try FileManager.default.createDirectory(
+            at: server.rootDirectory.appendingPathComponent("empty"), withIntermediateDirectories: false
+        )
+
+        #expect(try await service.listDirectory(at: "/").map(\.name).sorted() == ["empty", "notes.txt"])
+        #expect(try await service.listDirectory(at: "/empty").isEmpty)
+        #expect(server.listCommands == ["LIST -a /", "LIST -a /empty"])
+        try await Self.tearDown(service, server)
+    }
+
     // MARK: - Error classification
 
     /// A server's 550 text is its own wording, often not English, so a missing

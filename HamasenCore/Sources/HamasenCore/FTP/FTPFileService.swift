@@ -37,6 +37,10 @@ public actor FTPFileService: RemoteFileService {
     /// Set once PROT P has been agreed, and used for every data connection
     /// after that.
     private var dataProtection: FTPDataProtection = .clear
+    /// Whether LIST takes "-a": nil until a listing has shown it either way,
+    /// then kept across sessions, since that is the server's and not the
+    /// session's.
+    private var listTakesAllOption: Bool?
 
     /// The operation lock. Ownership is handed straight to the next waiter on
     /// release, which keeps the order first come, first served.
@@ -260,8 +264,58 @@ public actor FTPFileService: RemoteFileService {
             let body = try await transferIn(command: "MLSD \(remotePath)", on: connection)
             return FTPListing.parseMachineListing(body, directory: directory)
         }
-        let body = try await transferIn(command: "LIST \(remotePath)", on: connection)
-        return FTPListing.parseUnixListing(body, directory: directory)
+        return try await unixEntries(inServerDirectory: remotePath, reportedAs: directory, on: connection)
+    }
+
+    /// LIST, asked for every name. Most servers — vsftpd among them — leave
+    /// out names that start with a dot unless given -a, which hides them
+    /// from Finder and leaves a folder holding one impossible to delete: RMD
+    /// finds it not empty after a walk that saw nothing in it.
+    ///
+    /// A server that takes no options reads -a as part of the name, and
+    /// either refuses it — with a 5xx or a 4xx — or lists nothing, which
+    /// would have the folder's contents reported as deleted. Until a listing
+    /// has settled which kind of server this is, both answers are checked
+    /// with a plain LIST. Only one that works, and finds something, puts it
+    /// down to the option; one that fails as well, or finds nothing too, is
+    /// about the directory.
+    private func unixEntries(
+        inServerDirectory remotePath: String, reportedAs directory: String, on connection: FTPControlConnection
+    ) async throws -> [RemoteItem] {
+        func list(_ command: String) async throws -> [RemoteItem] {
+            FTPListing.parseUnixListing(try await transferIn(command: command, on: connection), directory: directory)
+        }
+        let plainCommand = "LIST \(remotePath)"
+        guard listTakesAllOption != false else { return try await list(plainCommand) }
+
+        let entries: [RemoteItem]
+        do {
+            entries = try await list("LIST -a \(remotePath)")
+        } catch let error as FTPError where listTakesAllOption == nil && !error.isConnectionLevel {
+            // A connection that failed under the command says nothing about
+            // the option, and a plain LIST that then got through would
+            // settle the question wrongly for good.
+            guard case .commandFailed("LIST", let response) = error else { throw error }
+            let plain = try await list(plainCommand)
+            if !plain.isEmpty {
+                Self.log.notice("LIST -a refused with \(response.code), listing without it from now on")
+                listTakesAllOption = false
+            }
+            return plain
+        }
+        if !entries.isEmpty {
+            listTakesAllOption = true
+            return entries
+        }
+        // Once the option has listed something, an empty answer is an empty
+        // folder.
+        guard listTakesAllOption == nil else { return entries }
+        let plain = try await list(plainCommand)
+        if !plain.isEmpty {
+            Self.log.notice("LIST -a listed nothing where LIST did not, listing without it from now on")
+            listTakesAllOption = false
+        }
+        return plain
     }
 
     /// Reports each symlink as whatever it points at.
