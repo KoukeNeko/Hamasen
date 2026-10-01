@@ -48,6 +48,23 @@ final class TestWebDAVServer {
         /// Answer MKCOL on an existing collection with 201 and change
         /// nothing, as rclone does, instead of RFC 4918's 405.
         var createsExistingCollection = false
+        /// Close the connection once this many bytes of a PUT's body have
+        /// arrived — the link dropping mid-upload — and keep what did arrive
+        /// under the name the PUT was for, as rclone serve webdav does.
+        var dropsPutsAfterBytes: Int?
+        /// Declare the ownCloud and Nextcloud namespaces on every PROPFIND
+        /// answer, as Nextcloud does whether or not any of their properties
+        /// were asked for. Nextcloud's PUT writing over a file in place, and
+        /// its MOVE deleting the file it lands on first, are what this server
+        /// does already.
+        var behavesLikeNextcloud = false
+        /// Store a PUT's body but never answer it, so the client is still
+        /// waiting, with the file already on the server, when it gives up.
+        var neverAnswersPuts = false
+        /// Answer a MOVE that overwrites with 500 after deleting what was at
+        /// the destination, as a server that deletes first and renames
+        /// second does when the rename fails.
+        var failsMoveAfterDeletingDestination = false
 
         static let wellBehaved = Behaviour()
     }
@@ -171,6 +188,11 @@ private final class WebDAVHandler: ChannelInboundHandler {
             if let bytes = buffer.readBytes(length: buffer.readableBytes) {
                 body.append(contentsOf: bytes)
             }
+            if let limit = behaviour.dropsPutsAfterBytes, let head, head.method == .PUT, body.count >= limit {
+                try? body.prefix(limit).write(to: localURL(for: decodedPath(head.uri)))
+                self.head = nil
+                context.close(promise: nil)
+            }
         case .end:
             guard let head else { return }
             respond(to: head, body: body, context: context)
@@ -269,9 +291,12 @@ private final class WebDAVHandler: ChannelInboundHandler {
             }
         }
 
+        let namespaces = behaviour.behavesLikeNextcloud
+            ? #" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns""#
+            : ""
         let xml = """
         <?xml version="1.0" encoding="utf-8"?>
-        <D:multistatus xmlns:D="DAV:">
+        <D:multistatus xmlns:D="DAV:"\(namespaces)>
         \(responses.joined(separator: "\n"))
         </D:multistatus>
         """
@@ -376,6 +401,7 @@ private final class WebDAVHandler: ChannelInboundHandler {
     private func handlePut(target: URL, body: Data, context: ChannelHandlerContext) {
         do {
             try body.write(to: target)
+            guard !behaviour.neverAnswersPuts else { return }
             send(status: .created, context: context)
         } catch {
             send(status: .conflict, context: context)
@@ -442,6 +468,10 @@ private final class WebDAVHandler: ChannelInboundHandler {
                     return
                 }
                 try FileManager.default.removeItem(at: destinationURL)
+                if behaviour.failsMoveAfterDeletingDestination {
+                    send(status: .internalServerError, context: context)
+                    return
+                }
             }
             try FileManager.default.moveItem(at: target, to: destinationURL)
             send(status: .created, context: context)

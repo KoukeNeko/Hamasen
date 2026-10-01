@@ -127,6 +127,9 @@ public actor WebDAVFileService: RemoteFileService {
     /// MOVE must fail rather than replace an existing destination, matching
     /// SFTP's rename and letting Finder offer its own replace prompt.
     private static let refuseOverwrite = "F"
+    /// Except for the MOVE that puts a finished upload in place, which is
+    /// the replacing the caller asked for.
+    private static let allowOverwrite = "T"
 
     /// Only the properties the app maps onto NSFileProviderItem.
     private static let propfindBody = Data("""
@@ -140,6 +143,12 @@ public actor WebDAVFileService: RemoteFileService {
       </D:prop>
     </D:propfind>
     """.utf8)
+
+    /// Declared on every PROPFIND answer by Nextcloud, ownCloud and
+    /// ownCloud Infinite Scale; see `uploadsInPlace`.
+    private static let ownCloudNamespace = Data("http://owncloud.org/ns".utf8)
+
+    private static let listOperation = "列出目錄"
 
     private static let log = HamasenLog(category: "webdav")
 
@@ -166,6 +175,22 @@ public actor WebDAVFileService: RemoteFileService {
     private var requestsInFlight = 0
     private var isTearingDown = false
     private var cachedBody: CachedBody?
+    /// Whether uploads are PUT straight to their name. Nextcloud and
+    /// ownCloud delete the file a MOVE lands on before moving, and with it
+    /// the file id that its versions, shares, public links, comments and
+    /// tags hang on; they hold a PUT in a part file of their own until it is
+    /// complete, so writing to the name is safe there.
+    ///
+    /// Told apart by the ownCloud namespace in the connect probe's answer,
+    /// at no cost in requests. Nextcloud, ownCloud and Infinite Scale declare
+    /// it on every multistatus whether or not any of its properties were
+    /// asked for — sabre writes out the whole namespace map their file
+    /// plugins add it to, and Infinite Scale writes it as a fixed attribute —
+    /// while the probe asks only for DAV: properties, so no other server has
+    /// cause to name it. The headers that mark these servers (OC-FileId,
+    /// OC-ETag) only arrive on the PUT and MOVE being chosen between, and a
+    /// proxy can put the /remote.php/ endpoint behind any path.
+    private var uploadsInPlace = false
 
     public init(
         config: ServerConfig,
@@ -199,7 +224,9 @@ public actor WebDAVFileService: RemoteFileService {
         // connect() cannot observe success before the credentials are checked.
         let candidate = makeSession()
         do {
-            _ = try await propfind(at: RemotePath.root, depth: .itemOnly, using: candidate)
+            let document = try await propfindDocument(at: RemotePath.root, depth: .itemOnly, using: candidate)
+            _ = try Self.parseMultiStatus(document, path: RemotePath.root)
+            uploadsInPlace = document.range(of: Self.ownCloudNamespace) != nil
         } catch {
             candidate.invalidateAndCancel()
             throw error
@@ -276,6 +303,8 @@ public actor WebDAVFileService: RemoteFileService {
             // A depth-1 PROPFIND also describes the directory itself; it is
             // matched by path rather than position, which servers vary on.
             guard RemotePath.withoutTrailingSeparator(entryPath) != directoryPath else { return nil }
+            // Uploads in flight are not part of the folder yet.
+            guard !RemotePath.isTemporaryUpload(name: RemotePath.name(of: entryPath)) else { return nil }
             return Self.makeRemoteItem(path: entryPath, entry: entry)
         }
     }
@@ -395,22 +424,105 @@ public actor WebDAVFileService: RemoteFileService {
         }
     }
 
+    /// Written beside the file and moved over it once complete, except on
+    /// Nextcloud and ownCloud (see `uploadsInPlace`). Servers such as rclone
+    /// keep whatever arrived of a PUT that was cut off, under the name it
+    /// was sent to, so a connection lost halfway through a PUT to the real
+    /// name leaves half of the new file where the old one was.
     public func uploadFile(from localURL: URL, to path: String, progress: TransferProgress?) async throws {
-        let request = try makeRequest(method: .put, path: path)
-        let (body, response) = try await withSession { session in
-            do {
-                return try await session.upload(
-                    for: request, fromFile: localURL,
-                    delegate: Self.progressDelegate(progress, session: session))
-            } catch {
-                throw Self.mapTransportError(error, operation: String(localized: "上傳", bundle: .module), path: path)
+        let operation = String(localized: "上傳", bundle: .module)
+        let temporaryPath = uploadsInPlace ? nil : RemotePath.temporaryUploadPath(for: path)
+        var isMoving = false
+        do {
+            let request = try makeRequest(method: .put, path: temporaryPath ?? path)
+            let (body, response) = try await withSession { session in
+                do {
+                    return try await session.upload(
+                        for: request, fromFile: localURL,
+                        delegate: Self.progressDelegate(progress, session: session))
+                } catch {
+                    throw Self.mapTransportError(error, operation: operation, path: path)
+                }
             }
+            try Self.validate(response, body: body, method: .put, operation: operation, path: path)
+            if let temporaryPath {
+                try await refuseFolder(at: path)
+                isMoving = true
+                try await moveUpload(from: temporaryPath, to: path, operation: operation)
+            }
+        } catch {
+            if let temporaryPath {
+                if isMoving {
+                    await settleFailedMove(of: temporaryPath, to: path)
+                } else {
+                    await discardTemporaryUpload(at: temporaryPath)
+                }
+            }
+            throw error
         }
-        try Self.validate(response, body: body, method: .put, operation: String(localized: "上傳", bundle: .module), path: path)
         discardCachedBody(forPath: path)
         if let progress, let size = try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
             progress(Int64(size))
         }
+    }
+
+    /// MOVE with Overwrite: T deletes whatever is at the destination first,
+    /// folder and all, so a folder that appeared under the name while the
+    /// upload ran is refused rather than replaced.
+    private func refuseFolder(at path: String) async throws {
+        do {
+            if try await itemInfo(at: path).isDirectory {
+                throw RemoteFileServiceError.alreadyExists(path: path)
+            }
+        } catch RemoteFileServiceError.itemNotFound {
+        }
+    }
+
+    private func moveUpload(from temporaryPath: String, to path: String, operation: String) async throws {
+        var request = try makeRequest(method: .move, path: temporaryPath)
+        request.setValue(try absoluteURL(for: path).absoluteString, forHTTPHeaderField: "Destination")
+        request.setValue(Self.allowOverwrite, forHTTPHeaderField: "Overwrite")
+        let (body, response) = try await withSession { session in
+            do {
+                return try await session.data(for: request)
+            } catch {
+                throw Self.mapTransportError(error, operation: operation, path: path)
+            }
+        }
+        try Self.validate(response, body: body, method: .move, operation: operation, path: path)
+    }
+
+    /// A MOVE can fail after the server has already deleted the destination
+    /// — servers that overwrite by deleting first and renaming second do —
+    /// and then the upload under its temporary name is the only copy of the
+    /// file left. It is removed only once the destination is seen to be there;
+    /// otherwise it stays, hidden from listings, and where it is gets logged.
+    private func settleFailedMove(of temporaryPath: String, to path: String) async {
+        let destinationExists = await Task { (try? await self.itemInfo(at: path)) != nil }.value
+        if destinationExists {
+            await discardTemporaryUpload(at: temporaryPath)
+        } else {
+            Self.log.error("upload to \(path) could not be moved into place and nothing is there now; kept at \(temporaryPath)")
+        }
+    }
+
+    /// Best effort: the upload has already failed, and this only tidies up
+    /// after it. Over a connection that is gone it fails as well, and the
+    /// listings hide what it leaves.
+    ///
+    /// Sent from a task of its own, because the upload's may have been
+    /// cancelled and URLSession cancels a request made from a cancelled task
+    /// before it is sent.
+    private func discardTemporaryUpload(at temporaryPath: String) async {
+        await Task {
+            do {
+                try await self.perform(
+                    method: .delete, path: temporaryPath, operation: String(localized: "刪除檔案", bundle: .module))
+            } catch RemoteFileServiceError.itemNotFound {
+            } catch {
+                Self.log.notice("could not remove temporary upload \(temporaryPath): \(String(describing: error))")
+            }
+        }.value
     }
 
     public func createDirectory(at path: String) async throws {
@@ -470,17 +582,23 @@ public actor WebDAVFileService: RemoteFileService {
 
     // MARK: - Requests
 
-    private func propfind(
+    private func propfind(at path: String, depth: Depth) async throws -> [PropfindResponseParser.Entry] {
+        try Self.parseMultiStatus(await propfindDocument(at: path, depth: depth), path: path)
+    }
+
+    /// The multistatus as the server sent it, for connect(), which reads
+    /// more of it than the parsed entries carry.
+    private func propfindDocument(
         at path: String,
         depth: Depth,
         using probeSession: URLSession? = nil
-    ) async throws -> [PropfindResponseParser.Entry] {
+    ) async throws -> Data {
         var request = try makeRequest(method: .propfind, path: path)
         request.setValue(depth.rawValue, forHTTPHeaderField: "Depth")
         request.setValue("application/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.httpBody = Self.propfindBody
 
-        let operation = "列出目錄"
+        let operation = Self.listOperation
         let fetch: (URLSession) async throws -> (Data, URLResponse) = { session in
             do {
                 return try await session.data(for: request)
@@ -497,12 +615,15 @@ public actor WebDAVFileService: RemoteFileService {
             (data, response) = try await withSession(fetch)
         }
         try Self.validate(response, method: .propfind, operation: operation, path: path)
+        return data
+    }
 
+    private static func parseMultiStatus(_ document: Data, path: String) throws -> [PropfindResponseParser.Entry] {
         do {
-            return try PropfindResponseParser.parse(data)
+            return try PropfindResponseParser.parse(document)
         } catch {
             throw RemoteFileServiceError.operationFailed(
-                operation: operation, path: path, underlying: String(describing: error)
+                operation: listOperation, path: path, underlying: String(describing: error)
             )
         }
     }

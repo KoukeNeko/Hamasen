@@ -190,6 +190,91 @@ struct WebDAVReliabilityTests {
         }
     }
 
+    // MARK: - Interrupted uploads
+
+    /// rclone keeps whatever arrived of a PUT that was cut off, under the
+    /// name it was sent to; written in place, that is half of the new file
+    /// where the old one was.
+    @Test("上傳中途斷線時，原本的檔案保持原樣")
+    func anInterruptedUploadLeavesTheOldFile() async throws {
+        try await Self.withService(behaviour: .init(dropsPutsAfterBytes: 1_000)) { service, server in
+            let target = server.rootDirectory.appendingPathComponent("doc.txt")
+            try Data("old contents".utf8).write(to: target)
+            let source = try temporaryFile(Data(repeating: 7, count: 100_000))
+            defer { try? FileManager.default.removeItem(at: source) }
+
+            await #expect(throws: RemoteFileServiceError.self) {
+                try await service.uploadFile(from: source, to: "/doc.txt")
+            }
+            #expect(try Data(contentsOf: target) == Data("old contents".utf8))
+            #expect(try await service.listDirectory(at: RemotePath.root).map(\.name) == ["doc.txt"])
+        }
+    }
+
+    /// A cancelled upload's task cannot send anything more, so the request
+    /// that removes its temporary file has to go out from one of its own.
+    @Test("取消的上傳不會在伺服器上留下暫存檔")
+    func aCancelledUploadRemovesItsTemporaryFile() async throws {
+        try await Self.withService(behaviour: .init(neverAnswersPuts: true)) { service, server in
+            let source = try temporaryFile(Data("new contents".utf8))
+            defer { try? FileManager.default.removeItem(at: source) }
+            let names = { (try? FileManager.default.contentsOfDirectory(atPath: server.rootDirectory.path)) ?? [] }
+
+            let upload = Task { try await service.uploadFile(from: source, to: "/doc.txt") }
+            // Cancelled once the temporary file is on the server, so there is
+            // something to remove.
+            while !names().contains(where: { RemotePath.isTemporaryUpload(name: $0) }) {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            upload.cancel()
+            await #expect(throws: CancellationError.self) { try await upload.value }
+            #expect(names().isEmpty)
+        }
+    }
+
+    /// A server that deletes the destination before renaming can fail the
+    /// rename with the old file already gone; the upload under its temporary
+    /// name is then the only copy left, and deleting it would lose both.
+    @Test("移入原位失敗且舊檔已刪時，保留上傳的暫存檔")
+    func aFailedMoveKeepsTheOnlyCopy() async throws {
+        try await Self.withService(behaviour: .init(failsMoveAfterDeletingDestination: true)) { service, server in
+            try Data("old contents".utf8).write(to: server.rootDirectory.appendingPathComponent("doc.txt"))
+            let source = try temporaryFile(Data("new contents".utf8))
+            defer { try? FileManager.default.removeItem(at: source) }
+
+            await #expect(throws: RemoteFileServiceError.self) {
+                try await service.uploadFile(from: source, to: "/doc.txt")
+            }
+            let kept = try FileManager.default.contentsOfDirectory(atPath: server.rootDirectory.path)
+                .filter { RemotePath.isTemporaryUpload(name: $0) }
+            #expect(kept.count == 1)
+            #expect(try kept.first.map { try Data(contentsOf: server.rootDirectory.appendingPathComponent($0)) }
+                == Data("new contents".utf8))
+        }
+    }
+
+    /// Putting a finished upload in place replaces what is there, and a
+    /// folder that appeared under the name is not a file to replace. Where
+    /// the upload is written to the name directly, the server refuses it.
+    @Test("上傳到資料夾所在的名稱時拒絕，資料夾保留", arguments: [false, true])
+    func anUploadDoesNotReplaceAFolder(behavesLikeNextcloud: Bool) async throws {
+        var behaviour = TestWebDAVServer.Behaviour.wellBehaved
+        behaviour.behavesLikeNextcloud = behavesLikeNextcloud
+        try await Self.withService(behaviour: behaviour) { service, server in
+            let folder = server.rootDirectory.appendingPathComponent("taken")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+            try Data("inside".utf8).write(to: folder.appendingPathComponent("inside.txt"))
+            let source = try temporaryFile(Data("new".utf8))
+            defer { try? FileManager.default.removeItem(at: source) }
+
+            await #expect(throws: RemoteFileServiceError.self) {
+                try await service.uploadFile(from: source, to: "/taken")
+            }
+            #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("inside.txt").path))
+            #expect(try await service.listDirectory(at: RemotePath.root).map(\.name) == ["taken"])
+        }
+    }
+
     // MARK: - Error classification
 
     @Test("403 是權限錯誤")
