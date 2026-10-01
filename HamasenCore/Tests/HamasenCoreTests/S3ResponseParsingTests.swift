@@ -121,6 +121,8 @@ struct S3ListResponseParserTests {
         #expect(try parse(Self.minio).commonPrefixes == ["docs/2026/"])
     }
 
+    /// The token is opaque and not among the fields `encoding-type=url`
+    /// applies to, so it goes back exactly as it came.
     @Test
     func carriesTheContinuationTokenOfATruncatedListing() throws {
         let listing = try parse("""
@@ -133,7 +135,7 @@ struct S3ListResponseParserTests {
             </ListBucketResult>
             """)
         #expect(listing.isTruncated)
-        #expect(listing.nextContinuationToken == "1ueGcxLPRx1Tr/")
+        #expect(listing.nextContinuationToken == "1ueGcxLPRx1Tr%2F")
     }
 
     /// EncodingType can arrive after the keys it applies to, so decoding

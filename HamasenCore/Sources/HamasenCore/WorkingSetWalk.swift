@@ -39,13 +39,26 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
         public let serverID: UUID
         public let path: String
         public let depth: Int
+        /// Times the server could not be reached for this directory.
+        public let attempts: Int
+        /// Not to be listed before this, after a server that could not be
+        /// reached; nil for a directory that has not failed.
+        public let notBefore: Date?
 
-        public init(serverID: UUID, path: String, depth: Int) {
+        public init(serverID: UUID, path: String, depth: Int, attempts: Int = 0, notBefore: Date? = nil) {
             self.serverID = serverID
             self.path = path
             self.depth = depth
+            self.attempts = attempts
+            self.notBefore = notBefore
         }
     }
+
+    /// How often a directory whose server could not be reached is tried
+    /// again before it is left for the next walk.
+    public static let maximumAttempts = 3
+    /// The wait before the first retry, doubled for each one after.
+    private static let retryDelay: TimeInterval = 5 * 60
 
     /// Limits that keep the walk from becoming the server's whole day, or
     /// this Mac's.
@@ -111,10 +124,27 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
         now.timeIntervalSince(completedAt ?? startedAt) >= Self.repeatInterval
     }
 
-    /// The directory to list next, or nil when the walk is over.
-    public var current: Pending? { queue.first }
+    /// The directory to list next, or nil when the walk is over or every
+    /// directory left is waiting out a retry delay.
+    public var current: Pending? { current(at: Date()) }
 
-    public var isFinished: Bool { current == nil }
+    public func current(at now: Date) -> Pending? {
+        queue.first { ($0.notBefore ?? .distantPast) <= now }
+    }
+
+    public var isFinished: Bool { queue.isEmpty }
+
+    /// Directories are left, but none can be listed yet: the walk pauses
+    /// until a later batch, rather than asking the system to call again at
+    /// once and failing against the same unreachable server.
+    public func isWaiting(at now: Date = Date()) -> Bool {
+        !isFinished && current(at: now) == nil
+    }
+
+    /// How many more items the walk may report for this server.
+    public func remainingItems(for serverID: UUID) -> Int {
+        max(limits.maximumItems - itemsListedPerServer[serverID, default: 0], 0)
+    }
 
     /// Records that `current` was listed, held `itemCount` entries, and
     /// found these subdirectories among them.
@@ -125,8 +155,8 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
     /// directory, and a home directory's `.cache` and `.vscode-server` can
     /// take the whole budget on their own — 2,862 of one server's 2,000
     /// listings went there before this check existed.
-    public mutating func advance(itemCount: Int, subdirectories: [String]) {
-        guard let listed = queue.first else { return }
+    public mutating func advance(itemCount: Int, subdirectories: [String], at now: Date = Date()) {
+        guard let listed = current(at: now) else { return }
         guard countListing(of: listed, itemCount: itemCount), listed.depth < limits.maximumDepth else { return }
         queue += subdirectories.filter { !Self.isHidden($0) }.sorted().map {
             Pending(serverID: listed.serverID, path: RemotePath.join(listed.path, $0), depth: listed.depth + 1)
@@ -142,16 +172,33 @@ public struct WorkingSetWalk: Equatable, Sendable, Codable {
     /// Records that `current` could not be listed. The branch is dropped and
     /// the walk goes on; one unreadable directory is not a reason to index
     /// nothing else.
-    public mutating func skipCurrent() {
-        guard let skipped = queue.first else { return }
+    public mutating func skipCurrent(at now: Date = Date()) {
+        guard let skipped = current(at: now) else { return }
         _ = countListing(of: skipped, itemCount: 0)
+    }
+
+    /// Records that `current` failed because its server could not be
+    /// reached. Unlike a directory it may not read, that says nothing about
+    /// the directory: it goes to the back of the queue to be tried again
+    /// later, and only after the last attempt is its branch dropped.
+    public mutating func postponeCurrent(at now: Date = Date()) {
+        guard let pending = current(at: now), let index = queue.firstIndex(of: pending) else { return }
+        guard pending.attempts + 1 < Self.maximumAttempts else {
+            skipCurrent(at: now)
+            return
+        }
+        queue.remove(at: index)
+        let delay = Self.retryDelay * pow(2, Double(pending.attempts))
+        queue.append(Pending(
+            serverID: pending.serverID, path: pending.path, depth: pending.depth,
+            attempts: pending.attempts + 1, notBefore: now.addingTimeInterval(delay)))
     }
 
     /// Takes `pending` off the queue and charges it to its server. Returns
     /// whether that server has budget left; when it has not, whatever else
     /// was queued for it goes too, so the other servers' entries come up.
     private mutating func countListing(of pending: Pending, itemCount: Int) -> Bool {
-        queue.removeFirst()
+        if let index = queue.firstIndex(of: pending) { queue.remove(at: index) }
         directoriesListed += 1
         let directoriesOnServer = directoriesListedPerServer[pending.serverID, default: 0] + 1
         let itemsOnServer = itemsListedPerServer[pending.serverID, default: 0] + itemCount

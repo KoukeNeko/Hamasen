@@ -36,6 +36,10 @@ public struct RemoteItem: Sendable, Equatable, Identifiable {
     /// ETag — when it has one. nil for protocols that only report size and
     /// modification time.
     public let contentTag: String?
+    /// A symbolic link reported as what it points at. Its kind is the
+    /// target's, so anything that walks a tree checks this before going
+    /// inside: a link to an ancestor never ends.
+    public let isResolvedLink: Bool
 
     public var id: String { path }
     public var isDirectory: Bool { kind == .directory }
@@ -48,7 +52,8 @@ public struct RemoteItem: Sendable, Equatable, Identifiable {
         modificationDate: Date? = nil,
         creationDate: Date? = nil,
         permissions: UInt16? = nil,
-        contentTag: String? = nil
+        contentTag: String? = nil,
+        isResolvedLink: Bool = false
     ) {
         self.path = path
         self.name = name
@@ -58,6 +63,7 @@ public struct RemoteItem: Sendable, Equatable, Identifiable {
         self.creationDate = creationDate
         self.permissions = permissions
         self.contentTag = contentTag
+        self.isResolvedLink = isResolvedLink
     }
 
     /// What identifies this item's content, for deciding whether it changed.

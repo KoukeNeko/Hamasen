@@ -200,7 +200,7 @@ public actor SFTPFileService: RemoteFileService {
         guard let target = try? await session.run({ try await sftp.getAttributes(at: linkPath) }) else {
             return item
         }
-        return Self.makeRemoteItem(path: item.path, name: item.name, attributes: target)
+        return Self.makeRemoteItem(path: item.path, name: item.name, attributes: target, isResolvedLink: true)
     }
 
     public func itemInfo(at path: String) async throws -> RemoteItem {
@@ -859,7 +859,8 @@ public actor SFTPFileService: RemoteFileService {
     private static func makeRemoteItem(
         path: String,
         name: String,
-        attributes: SFTPFileAttributes
+        attributes: SFTPFileAttributes,
+        isResolvedLink: Bool = false
     ) -> RemoteItem {
         RemoteItem(
             path: path,
@@ -868,7 +869,8 @@ public actor SFTPFileService: RemoteFileService {
             size: Int64(attributes.size ?? 0),
             modificationDate: attributes.accessModificationTime?.modificationTime,
             creationDate: nil,
-            permissions: attributes.permissions.map { UInt16($0 & 0o7777) }
+            permissions: attributes.permissions.map { UInt16($0 & 0o7777) },
+            isResolvedLink: isResolvedLink
         )
     }
 

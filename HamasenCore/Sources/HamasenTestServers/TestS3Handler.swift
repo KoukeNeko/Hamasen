@@ -369,6 +369,10 @@ final class S3Handler: ChannelInboundHandler {
                  context: context)
             return
         }
+        if behaviour.copyAnswersEmptyOK {
+            send(status: .ok, context: context)
+            return
+        }
         store.put(stored.data, forKey: key)
         let xml = """
             <?xml version="1.0" encoding="UTF-8"?>

@@ -153,7 +153,34 @@ struct S3ReliabilityTests {
         try await server.stop()
     }
 
+    // MARK: - Copy results
+
+    /// A 200 that is neither an error nor a copy result proves nothing was
+    /// copied, and the source must outlive it.
+    @Test
+    func aMoveWhoseCopyAnswersEmptyKeepsTheSource() async throws {
+        try await withService(behaviour: .init(copyAnswersEmptyOK: true)) { service, server in
+            server.store.put(Data("keep".utf8), forKey: "a.txt")
+            await #expect(throws: RemoteFileServiceError.self) {
+                try await service.moveItem(from: "/a.txt", to: "/b.txt")
+            }
+            #expect(server.store.object(forKey: "a.txt")?.data == Data("keep".utf8))
+        }
+    }
+
     // MARK: - Search
+
+    /// An object and a prefix can share a name; a listing shows the object,
+    /// and search must not offer both under one path.
+    @Test
+    func searchDoesNotReportAFolderWhereAFileHasThePath() async throws {
+        try await withService { service, server in
+            server.store.put(Data("1".utf8), forKey: "assets")
+            server.store.put(Data("2".utf8), forKey: "assets/b.png")
+            let found = try await service.searchItems(matching: "assets", under: "/", limit: 10)
+            #expect(found.filter { $0.path == "/assets" }.map(\.isDirectory) == [false])
+        }
+    }
 
     /// A folder exists on S3 only as the start of its keys, so a search by a
     /// folder's name has to find it there.

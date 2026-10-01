@@ -438,7 +438,7 @@ public actor S3FileService: RemoteFileService {
             // Without an ETag nothing can pin the copy and the delete to one
             // version, and a same-size write in between would be lost.
             guard let tag = state.tag else { throw Self.unversioned(path: oldPath) }
-            try await copy(from: source, to: destination, size: state.size, tag: tag, path: oldPath)
+            let copiedTag = try await copy(from: source, to: destination, size: state.size, tag: tag, path: oldPath)
             do {
                 // Only the version that was copied may go: a write to the
                 // source after the copy fails this with 412.
@@ -446,8 +446,7 @@ public actor S3FileService: RemoteFileService {
                     method: Method.delete, object: source, headers: ["If-Match": "\"\(tag)\""],
                     operation: Self.moveOperation, path: oldPath)
             } catch {
-                _ = try? await send(
-                    method: Method.delete, object: destination, operation: Self.moveOperation, path: newPath)
+                await rollBack(copies: [(destination.key, copiedTag)], in: destination.bucket, path: newPath)
                 throw error
             }
             return
@@ -458,20 +457,21 @@ public actor S3FileService: RemoteFileService {
         guard objects.allSatisfy({ $0.contentTag != nil }) else { throw Self.unversioned(path: oldPath) }
 
         let sourcePrefix = source.directoryPrefix
+        var copies: [(key: String, tag: String?)] = []
         for entry in objects {
             let suffix = String(entry.key.dropFirst(sourcePrefix.count))
-            try await copy(
+            let copyKey = destination.directoryPrefix + suffix
+            let copiedTag = try await copy(
                 from: S3ObjectKey(bucket: source.bucket, key: entry.key),
-                to: S3ObjectKey(bucket: destination.bucket,
-                                key: destination.directoryPrefix + suffix),
+                to: S3ObjectKey(bucket: destination.bucket, key: copyKey),
                 size: entry.size, tag: entry.contentTag, path: oldPath)
+            copies.append((copyKey, copiedTag))
         }
         // Anything written under the source after it was listed — a changed
         // object, a new one — would be lost with it.
         let current = try await objectsUnder(source, path: oldPath, operation: Self.moveOperation)
         guard Self.versions(of: current) == Self.versions(of: objects) else {
-            let copiedKeys = objects.map { destination.directoryPrefix + String($0.key.dropFirst(sourcePrefix.count)) }
-            try? await delete(keys: copiedKeys, bucket: destination.bucket, path: newPath)
+            await rollBack(copies: copies, in: destination.bucket, path: newPath)
             throw Self.sourceChanged(path: oldPath)
         }
         // Each key goes only if it still has the ETag that was copied.
@@ -548,22 +548,25 @@ public actor S3FileService: RemoteFileService {
         return uploadID
     }
 
+    /// Returns the assembled object's ETag, when the server names it.
+    @discardableResult
     private func completeUpload(
         _ uploadID: String, parts: [UploadedPart], object: S3ObjectKey,
         operation: String, path: String
-    ) async throws {
+    ) async throws -> String? {
         let body = "<CompleteMultipartUpload>"
             + parts.map {
                 "<Part><PartNumber>\($0.number)</PartNumber><ETag>\(Self.escaped($0.tag))</ETag></Part>"
             }.joined()
             + "</CompleteMultipartUpload>"
-        _ = try await send(
+        let response = try await send(
             method: Method.post, object: object,
             queryItems: [URLQueryItem(name: "uploadId", value: uploadID)],
             body: Data(body.utf8), operation: operation, path: path,
             // Assembling a large object can outlast the response headers, so
             // the service sends 200 first and reports a failure in the body.
-            failsOnEmbeddedError: true)
+            failsOnEmbeddedError: true, expectingResult: "CompleteMultipartUploadResult")
+        return Self.firstValue(ofElement: "etag", in: response.data).flatMap(HTTPTransfer.normalizedETag)
     }
 
     /// Runs in its own task because the usual reason to abandon an upload is
@@ -578,8 +581,10 @@ public actor S3FileService: RemoteFileService {
         }.value
     }
 
+    /// Returns the ETag of the copy, which is what a rollback may delete.
+    @discardableResult
     private func copy(from source: S3ObjectKey, to destination: S3ObjectKey,
-                      size: Int64, tag: String?, path: String) async throws {
+                      size: Int64, tag: String?, path: String) async throws -> String? {
         // The header names the source the way a URL path would, so the same
         // encoder the signature uses produces it.
         let reference = AWSSignatureV4.canonicalURI(for: source.absolutePath)
@@ -589,16 +594,16 @@ public actor S3FileService: RemoteFileService {
         var sourceHeaders = ["x-amz-copy-source": reference]
         if let tag { sourceHeaders["x-amz-copy-source-if-match"] = "\"\(tag)\"" }
         guard size > singleCopyLimitBytes else {
-            _ = try await send(
+            let response = try await send(
                 method: Method.put, object: destination,
                 headers: sourceHeaders,
                 operation: Self.moveOperation, path: path,
                 // Large copies are answered 200 before they finish, and a
                 // failure after that arrives as an <Error> document.
-                failsOnEmbeddedError: true)
-            return
+                failsOnEmbeddedError: true, expectingResult: "CopyObjectResult")
+            return Self.firstValue(ofElement: "etag", in: response.data).flatMap(HTTPTransfer.normalizedETag)
         }
-        try await copyInParts(sourceHeaders: sourceHeaders, to: destination, size: size, path: path)
+        return try await copyInParts(sourceHeaders: sourceHeaders, to: destination, size: size, path: path)
     }
 
     /// What identifies one version of an object: its size and, when the
@@ -627,6 +632,23 @@ public actor S3FileService: RemoteFileService {
             uniquingKeysWith: { first, _ in first })
     }
 
+    /// Undoes copies a move made, deleting each only while it is still the
+    /// version the copy produced: someone may have written to that name
+    /// since, and that write is theirs. A copy whose ETag is unknown is left
+    /// in place — a stray duplicate costs less than someone else's data.
+    private func rollBack(copies: [(key: String, tag: String?)], in bucket: String, path: String) async {
+        let known = copies.compactMap { copy in copy.tag.map { (copy.key, $0) } }
+        if known.count < copies.count {
+            Self.log.notice("Left \(copies.count - known.count) copied objects of an undone move at \(path)")
+        }
+        guard !known.isEmpty else { return }
+        do {
+            try await delete(keys: known.map(\.0), tags: known.map(\.1), bucket: bucket, path: path)
+        } catch {
+            Self.log.error("Could not undo the copies of a move at \(path): \(String(describing: error))")
+        }
+    }
+
     private static func unversioned(path: String) -> Error {
         RemoteFileServiceError.operationFailed(
             operation: moveOperation, path: path, underlying: "伺服器沒有提供 ETag，無法安全移動")
@@ -640,7 +662,7 @@ public actor S3FileService: RemoteFileService {
     /// UploadPartCopy, for a source too large for a single CopyObject.
     private func copyInParts(
         sourceHeaders: [String: String], to destination: S3ObjectKey, size: Int64, path: String
-    ) async throws {
+    ) async throws -> String? {
         let partSize = max(
             copyPartSizeBytes, (size + Int64(Upload.maximumParts) - 1) / Int64(Upload.maximumParts))
         let uploadID = try await beginUpload(destination, path: path, operation: Self.moveOperation)
@@ -659,7 +681,7 @@ public actor S3FileService: RemoteFileService {
                     headers: sourceHeaders.merging(
                         ["x-amz-copy-source-range": "bytes=\(start)-\(end)"], uniquingKeysWith: { $1 }),
                     operation: Self.moveOperation, path: path,
-                    failsOnEmbeddedError: true)
+                    failsOnEmbeddedError: true, expectingResult: "CopyPartResult")
                 guard let tag = Self.firstValue(ofElement: "etag", in: response.data) else {
                     throw RemoteFileServiceError.operationFailed(
                         operation: Self.moveOperation, path: path,
@@ -668,8 +690,8 @@ public actor S3FileService: RemoteFileService {
                 copied.append(UploadedPart(number: number, tag: tag))
                 start = end + 1
             }
-            try await completeUpload(uploadID, parts: copied, object: destination,
-                                     operation: Self.moveOperation, path: path)
+            return try await completeUpload(uploadID, parts: copied, object: destination,
+                                            operation: Self.moveOperation, path: path)
         } catch {
             await abandonUpload(uploadID, object: destination, path: path)
             throw error
@@ -764,6 +786,9 @@ public actor S3FileService: RemoteFileService {
         let prefix = object.directoryPrefix
         var found: [RemoteItem] = []
         var directoriesSeen: Set<String> = []
+        // An object and a prefix may share a name ("a" and "a/b"); a listing
+        // shows the object, so search does too, and never both under one path.
+        var filesFound: Set<String> = []
 
         try await forEachObject(under: object, path: path, operation: Self.searchOperation) { entry in
             let suffix = String(entry.key.dropFirst(prefix.count))
@@ -777,7 +802,7 @@ public actor S3FileService: RemoteFileService {
             let folderCount = isMarker ? components.count : components.count - 1
             for depth in 0..<max(folderCount, 0) {
                 let folder = components[0...depth].joined(separator: RemotePath.separator)
-                guard directoriesSeen.insert(folder).inserted,
+                guard directoriesSeen.insert(folder).inserted, !filesFound.contains(folder),
                       components[depth].localizedStandardContains(query) else { continue }
                 found.append(RemoteItem(
                     path: RemotePath.join(path, folder), name: components[depth], kind: .directory, size: 0))
@@ -785,6 +810,7 @@ public actor S3FileService: RemoteFileService {
             }
 
             guard !isMarker else { return .continue }
+            filesFound.insert(suffix)
             let name = RemotePath.name(of: RemotePath.root + suffix)
             guard name.localizedStandardContains(query) else { return .continue }
             found.append(RemoteItem(
@@ -966,6 +992,7 @@ public actor S3FileService: RemoteFileService {
         path: String,
         acceptableStatuses: Set<Int>? = nil,
         failsOnEmbeddedError: Bool = false,
+        expectingResult resultElement: String? = nil,
         forbiddenMeansCredentials: Bool = false,
         using explicitSession: URLSession? = nil
     ) async throws -> Response {
@@ -1001,6 +1028,13 @@ public actor S3FileService: RemoteFileService {
             if failsOnEmbeddedError, let failure = S3ErrorResponse.embeddedErrors(in: data).first {
                 throw S3ErrorResponse.remoteError(
                     status: http.statusCode, parsed: failure, operation: operation, path: path)
+            }
+            // A 200 with neither an error nor the result document — an empty
+            // body, a proxy's page — proves nothing was done, and a move
+            // would delete its source on the strength of it.
+            if let resultElement, Self.firstValue(ofElement: resultElement.lowercased(), in: data) == nil {
+                throw RemoteFileServiceError.operationFailed(
+                    operation: operation, path: path, underlying: "伺服器的回應不完整")
             }
             return Response(data: data, http: http)
         }

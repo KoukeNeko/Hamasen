@@ -77,10 +77,12 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             observer.didEnumerate(configs.map(ServerFolderItem.init))
         }
 
-        guard let pending = walk.current else {
-            // Nothing to list because every server opted out. Still a walk
-            // that ran, or it would be due again on every signal.
-            walk.markCompleted()
+        guard walk.current != nil else {
+            // Nothing to list: every server opted out, which is still a walk
+            // that ran, or it would be due again on every signal — or what is
+            // left waits for an unreachable server, and a later change batch
+            // resumes it.
+            if walk.isFinished { walk.markCompleted() }
             try? store.save(walk)
             observer.finishEnumerating(upTo: nil)
             return
@@ -88,20 +90,8 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
 
         let registry = registry
         Task {
-            do {
-                let service = try await registry.service(for: pending.serverID)
-                let items = try await service.listDirectory(at: pending.path)
-                Self.log.debug("Walked \(pending.path) on \(pending.serverID): \(items.count) items")
-                observer.didEnumerate(items.map { RemoteFileItem(serverID: pending.serverID, remoteItem: $0) })
-                walk.advance(itemCount: items.count, subdirectories: items.filter(\.isDirectory).map(\.name))
-            } catch {
-                // One directory the account cannot read, or one server that
-                // is down, must not end the walk for every other server.
-                Self.log.notice("Skipping \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
-                if FileProviderErrorMapper.isConnectionFailure(error) {
-                    await registry.reportUnreachable(pending.serverID)
-                }
-                walk.skipCurrent()
+            if let listed = await Self.listCurrent(of: &walk, registry: registry) {
+                observer.didEnumerate(listed.items.map { RemoteFileItem(serverID: listed.serverID, remoteItem: $0) })
             }
 
             if walk.isFinished {
@@ -120,7 +110,7 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 return
             }
 
-            if walk.isFinished {
+            if walk.isFinished || walk.isWaiting() {
                 observer.finishEnumerating(upTo: nil)
             } else {
                 observer.finishEnumerating(upTo: NSFileProviderPage(WorkingSetWalk.encode(walk.token)))
@@ -240,47 +230,82 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                     changes, to: observer, walk: changes.previousWalk, batch: ServerListEnumerator.newBatch())
                 return
             }
+            // A walk waiting on an unreachable server pauses here; the probe
+            // that sees it back signals, and the next batch resumes it.
             serverList.report(
                 changes, to: observer, walk: walk.token, batch: ServerListEnumerator.newBatch(),
-                moreComing: !walk.isFinished)
+                moreComing: !walk.isFinished && !walk.isWaiting())
         }
     }
 
-    /// Lists the walk's current directory and reports it, or skips it.
+    /// Reports the walk's current directory as part of a change batch.
     ///
-    /// What the last opening recorded is compared but not replaced, so names
-    /// gone since are reported deleted while the poll's baseline stays where
-    /// it was.
+    /// Names gone since the last opening or the last walk are reported
+    /// deleted; the notification baseline stays where the last opening put
+    /// it (see `RemoteDirectoryRecord.removedNames`).
     private static func step(
         _ walk: inout WorkingSetWalk, registry: ConnectionRegistry, to observer: NSFileProviderChangeObserver
     ) async {
-        if let pending = walk.current {
-            do {
-                let service = try await registry.service(for: pending.serverID)
-                let items = try await service.listDirectory(at: pending.path)
-                Self.log.debug("Walked \(pending.path) on \(pending.serverID): \(items.count) items")
-                observer.didUpdate(items.map { RemoteFileItem(serverID: pending.serverID, remoteItem: $0) })
-                let removed = DirectoryRefresh.identifiers(
-                    ofRemoved: RemoteDirectoryRecord.removedNames(
-                        from: items, serverID: pending.serverID, directoryPath: pending.path),
-                    serverID: pending.serverID, directoryPath: pending.path)
-                if !removed.isEmpty {
-                    observer.didDeleteItems(withIdentifiers: removed)
-                }
-                walk.advance(itemCount: items.count, subdirectories: items.filter(\.isDirectory).map(\.name))
-            } catch {
-                // One directory the account cannot read, or one server that
-                // is down, must not end the walk for every other server.
-                Self.log.notice("Skipping \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
-                if FileProviderErrorMapper.isConnectionFailure(error) {
-                    await registry.reportUnreachable(pending.serverID)
-                }
-                walk.skipCurrent()
+        if let listed = await listCurrent(of: &walk, registry: registry) {
+            observer.didUpdate(listed.items.map { RemoteFileItem(serverID: listed.serverID, remoteItem: $0) })
+            let removed = DirectoryRefresh.identifiers(
+                ofRemoved: RemoteDirectoryRecord.removedNames(
+                    from: listed.allItems, serverID: listed.serverID, directoryPath: listed.path),
+                serverID: listed.serverID, directoryPath: listed.path)
+            if !removed.isEmpty {
+                observer.didDeleteItems(withIdentifiers: removed)
             }
         }
         if walk.isFinished {
             walk.markCompleted()
             Self.log.notice("Walk finished after \(walk.directoriesListed) directories")
+        }
+    }
+
+    /// One directory the walk listed: what to report, and the whole listing
+    /// for telling what went.
+    private struct Listed {
+        let serverID: UUID
+        let path: String
+        let items: [RemoteItem]
+        let allItems: [RemoteItem]
+    }
+
+    /// Lists the walk's current directory and moves the walk on, for both
+    /// the first import's pages and the change batches.
+    ///
+    /// - Only as many items are reported as the server's budget has left:
+    ///   one folder with hundreds of thousands of entries would otherwise
+    ///   create every placeholder before the budget was even checked.
+    /// - A link is reported but not walked into, whatever it points at — a
+    ///   link to an ancestor would otherwise expand without end.
+    /// - A server that cannot be reached postpones the directory rather
+    ///   than dropping its branch; one it refuses is skipped.
+    private static func listCurrent(
+        of walk: inout WorkingSetWalk, registry: ConnectionRegistry
+    ) async -> Listed? {
+        guard let pending = walk.current else { return nil }
+        do {
+            let service = try await registry.service(for: pending.serverID)
+            let items = try await service.listDirectory(at: pending.path)
+            Self.log.debug("Walked \(pending.path) on \(pending.serverID): \(items.count) items")
+            let reported = Array(items.prefix(walk.remainingItems(for: pending.serverID)))
+            walk.advance(
+                itemCount: items.count,
+                subdirectories: reported.filter { $0.isDirectory && !$0.isResolvedLink }.map(\.name))
+            return Listed(serverID: pending.serverID, path: pending.path, items: reported, allItems: items)
+        } catch {
+            if FileProviderErrorMapper.isConnectionFailure(error) {
+                Self.log.notice("Postponing \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
+                await registry.reportUnreachable(pending.serverID)
+                walk.postponeCurrent()
+            } else {
+                // One directory the account cannot read must not end the walk
+                // for every other one.
+                Self.log.notice("Skipping \(pending.path) on \(pending.serverID): \(error.localizedDescription)")
+                walk.skipCurrent()
+            }
+            return nil
         }
     }
 

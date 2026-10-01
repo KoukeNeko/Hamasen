@@ -294,7 +294,8 @@ public actor FTPFileService: RemoteFileService {
                     name: link.name,
                     kind: .directory,
                     size: 0,
-                    modificationDate: try? await modificationDate(of: remotePath, on: connection)
+                    modificationDate: try? await modificationDate(of: remotePath, on: connection),
+                    isResolvedLink: true
                 )
             }
             let size = try await self.size(of: remotePath, on: connection)
@@ -303,7 +304,8 @@ public actor FTPFileService: RemoteFileService {
                 name: link.name,
                 kind: .file,
                 size: size,
-                modificationDate: try? await modificationDate(of: remotePath, on: connection)
+                modificationDate: try? await modificationDate(of: remotePath, on: connection),
+                isResolvedLink: true
             )
         } catch let error as FTPError where !error.isConnectionLevel {
             // A link that points nowhere stays a link, which is what it is.

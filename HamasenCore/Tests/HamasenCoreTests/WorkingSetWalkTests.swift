@@ -275,6 +275,42 @@ struct WorkingSetWalkTests {
         #expect(relimited != walk)
     }
 
+    /// A server that cannot be reached says nothing about the directory: it
+    /// is tried again later instead of losing its branch for the day, and
+    /// the walk pauses rather than spinning while it waits.
+    @Test
+    func anUnreachableDirectoryIsRetriedLaterNotDropped() {
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        walk.postponeCurrent(at: start)
+        #expect(!walk.isFinished)
+        #expect(walk.isWaiting(at: start))
+        let retried = walk.current(at: start + oneHour)
+        #expect(retried?.path == "/")
+        #expect(retried?.attempts == 1)
+    }
+
+    @Test
+    func aDirectoryUnreachableEveryTimeIsEventuallyDropped() {
+        var walk = WorkingSetWalk(serverIDs: [a], startedAt: start)
+        var now = start
+        for _ in 0..<WorkingSetWalk.maximumAttempts {
+            walk.postponeCurrent(at: now)
+            now += oneHour * 24
+        }
+        #expect(walk.isFinished)
+    }
+
+    /// One directory with more entries than the budget must not be reported
+    /// whole; the walk exposes what is left to report.
+    @Test
+    func theItemAllowanceShrinksWithWhatWasListed() {
+        let limits = WorkingSetWalk.Limits(maximumDepth: 3, maximumDirectories: 10, maximumItems: 100)
+        var walk = WorkingSetWalk(serverIDs: [a], limits: limits, startedAt: start)
+        #expect(walk.remainingItems(for: a) == 100)
+        walk.advance(itemCount: 40, subdirectories: ["x"])
+        #expect(walk.remainingItems(for: a) == 60)
+    }
+
     /// A server mounted since the last walk would otherwise wait out that
     /// walk's day before it is indexed at all.
     @Test

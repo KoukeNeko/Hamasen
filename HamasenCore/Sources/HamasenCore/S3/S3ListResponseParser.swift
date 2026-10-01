@@ -120,7 +120,9 @@ private final class ListBucketResultDelegate: NSObject, XMLParserDelegate {
             },
             commonPrefixes: rawPrefixes.map(decoded),
             isTruncated: isTruncated,
-            nextContinuationToken: nextContinuationToken.map(decoded))
+            // Opaque, and not one of the fields encoding-type applies to:
+            // decoding it would send back a different token.
+            nextContinuationToken: nextContinuationToken)
     }
 
     /// Percent-decoding is applied only when the server said it encoded, so a

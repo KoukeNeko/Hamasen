@@ -60,6 +60,9 @@ public final class TestS3Server {
         public var copyFailsWithStatusOK = false
         /// Same, for CompleteMultipartUpload.
         public var completeFailsWithStatusOK = false
+        /// Answer CopyObject with 200 and an empty body, copying nothing — a
+        /// proxy's idea of success.
+        public var copyAnswersEmptyOK = false
         /// Keys DeleteObjects reports as `<Error>` entries inside a 200.
         public var deleteRefusedKeys: Set<String> = []
         /// Answer a ranged GET with the whole object and status 200.
@@ -75,6 +78,7 @@ public final class TestS3Server {
             maxCopySourceBytes: Int? = nil,
             copyFailsWithStatusOK: Bool = false,
             completeFailsWithStatusOK: Bool = false,
+            copyAnswersEmptyOK: Bool = false,
             deleteRefusedKeys: Set<String> = [],
             ignoresRange: Bool = false
         ) {
@@ -85,6 +89,7 @@ public final class TestS3Server {
             self.maxCopySourceBytes = maxCopySourceBytes
             self.copyFailsWithStatusOK = copyFailsWithStatusOK
             self.completeFailsWithStatusOK = completeFailsWithStatusOK
+            self.copyAnswersEmptyOK = copyAnswersEmptyOK
             self.deleteRefusedKeys = deleteRefusedKeys
             self.ignoresRange = ignoresRange
         }
