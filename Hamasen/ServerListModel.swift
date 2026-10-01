@@ -358,6 +358,7 @@ final class ServerListModel {
         // Its directories would be reported as new when it comes back. A miss
         // is reclaimed by the poll's next `keepOnly` or by pruning.
         try? RemoteDirectorySnapshotStore().forget(serverID: config.id)
+        try? RemoteDirectorySnapshotStore.walkRecord().forget(serverID: config.id)
         await syncDomainRegistration()
     }
 

@@ -52,13 +52,27 @@ enum RemoteDirectoryRecord {
     /// recording anything. For the walk, which reports what it finds but
     /// leaves the baseline where the last opening put it. Empty for a
     /// directory with no record: nothing is known to have gone.
+    ///
+    /// The walk also keeps its own record (`walkRecord`), which it does
+    /// replace: a folder only the walk has seen still gets its removals
+    /// reported, from one walk to the next. Reporting a name twice is
+    /// harmless; missing one leaves a deleted file in Finder and Spotlight.
     static func removedNames(from items: [RemoteItem], serverID: UUID, directoryPath: String) -> [String] {
-        guard let previous = try? RemoteDirectorySnapshotStore()
-            .snapshot(serverID: serverID, directoryPath: directoryPath)
-        else { return [] }
-        return RemoteDirectorySnapshot.change(
-            from: previous, to: RemoteDirectorySnapshot(path: directoryPath, items: items), serverID: serverID
-        ).removedNames
+        var removed: Set<String> = []
+        if let previous = try? RemoteDirectorySnapshotStore()
+            .snapshot(serverID: serverID, directoryPath: directoryPath) {
+            removed.formUnion(RemoteDirectorySnapshot.change(
+                from: previous, to: RemoteDirectorySnapshot(path: directoryPath, items: items), serverID: serverID
+            ).removedNames)
+        }
+        do {
+            let walkChange = try RemoteDirectorySnapshotStore.walkRecord()
+                .record(items, serverID: serverID, directoryPath: directoryPath)
+            removed.formUnion(walkChange.removedNames)
+        } catch {
+            log.error("Could not record the walk of \(directoryPath) on \(serverID): \(error.localizedDescription)")
+        }
+        return removed.sorted()
     }
 
     private static func recordNow(

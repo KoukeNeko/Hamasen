@@ -909,8 +909,13 @@ public actor S3FileService: RemoteFileService {
                 URLQueryItem(name: "max-keys", value: "1"),
             ],
             operation: Self.infoOperation, path: path)
-        let listing = try? S3ListResponseParser.parse(response.data)
-        return !(listing?.objects.isEmpty ?? true) || !(listing?.commonPrefixes.isEmpty ?? true)
+        // An answer that cannot be read is not "nothing there": a move takes
+        // that to mean the name is free and copies over whatever holds it.
+        guard let listing = try? S3ListResponseParser.parse(response.data) else {
+            throw RemoteFileServiceError.operationFailed(
+                operation: Self.infoOperation, path: path, underlying: "無法解讀伺服器的列舉回應")
+        }
+        return !listing.objects.isEmpty || !listing.commonPrefixes.isEmpty
     }
 
     // MARK: - Paths

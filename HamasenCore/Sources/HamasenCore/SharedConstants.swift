@@ -59,6 +59,9 @@ public enum SharedConstants {
     /// so a later listing can be told apart from it. See
     /// `RemoteDirectorySnapshotStore`.
     public static let remoteDirectoriesDirectoryName = "remote-directories"
+
+    /// The background walk's own per-directory record.
+    public static let walkDirectoriesDirectoryName = "walk-directories"
     /// The single file that held all of the above before it was split.
     /// Only ever deleted.
     public static let legacyRemoteDirectorySnapshotFileName = "remote-directories.json"

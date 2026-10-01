@@ -65,6 +65,23 @@ public struct RemoteDirectorySnapshotStore: Sendable {
         self.rootURL = directoryURL
     }
 
+    /// The background walk's own record, apart from the one notifications
+    /// compare against. The walk reaches folders nobody opened, which have no
+    /// record there, and recording its listings there would move the
+    /// notification baseline daily; kept here, each walk can still tell what
+    /// went since the last.
+    public static func walkRecord(
+        appGroupIdentifier: String = SharedConstants.appGroupIdentifier
+    ) throws -> RemoteDirectorySnapshotStore {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupIdentifier
+        ) else {
+            throw ServerConfigStore.StoreError.appGroupContainerUnavailable(groupIdentifier: appGroupIdentifier)
+        }
+        return RemoteDirectorySnapshotStore(
+            directoryURL: containerURL.appendingPathComponent(SharedConstants.walkDirectoriesDirectoryName))
+    }
+
     /// The single-file record this replaced. Its contents are not converted:
     /// a directory recorded afresh reports no changes, which is all losing
     /// the old baselines costs.
