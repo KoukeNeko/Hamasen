@@ -27,6 +27,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
         // FTPS wraps the FTP connections in TLS; NIOSSL is what does that.
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.27.0"),
+        // SMB 2/3 in Swift, MIT. Pinned past 0.3.1 to the fixes for crashes
+        // on partial headers and for large downloads stalling, which are not
+        // in a release yet.
+        .package(url: "https://github.com/kishikawakatsumi/SMBClient.git", revision: "66eafaa6d17e034e8036dee4b3ebc1b52cb53919"),
     ],
     targets: [
         // Citadel's SSHClient is not marked Sendable yet, which trips Swift 6
@@ -37,6 +41,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Citadel", package: "Citadel"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "SMBClient", package: "SMBClient"),
             ],
             resources: [.process("Localizable.xcstrings")],
             swiftSettings: [.swiftLanguageMode(.v5)]

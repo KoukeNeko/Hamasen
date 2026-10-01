@@ -53,6 +53,12 @@ public enum RemoteFileServiceFactory {
                     (AppSettings.s3MultipartThresholdBytes(), AppSettings.s3PartSizeBytes())
                 }
             )
+        case .smb:
+            return SMBFileService(
+                config: config,
+                credentials: credentials,
+                connectTimeoutSeconds: connectTimeoutSeconds
+            )
         }
     }
 

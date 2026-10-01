@@ -161,3 +161,34 @@ struct ActivityStoreTests {
         #expect(try store.load().servers.isEmpty)
     }
 }
+
+@Suite("SMB addressing")
+struct SMBAddressingTests {
+    @Test("路徑的第一段是分享資料夾")
+    func readsTheShare() {
+        #expect(SMBFileService.location(of: "/Public/Photos/2026")
+            == SMBFileService.Location(share: "Public", directory: "Photos/2026"))
+        #expect(SMBFileService.location(of: "/") == nil)
+    }
+
+    @Test("分享內的路徑以反斜線串接")
+    func buildsSharePaths() {
+        #expect(SMBFileService.sharePath("/a/b.txt", under: "Photos") == "Photos\\a\\b.txt")
+        #expect(SMBFileService.sharePath("/", under: "") == "")
+        #expect(SMBFileService.sharePath("/x", under: "") == "x")
+    }
+
+    @Test("網域帳號拆成網域與使用者")
+    func splitsDomainAccounts() {
+        #expect(SMBFileService.account(from: "WORKGROUP\\alice") == ("alice", "WORKGROUP"))
+        #expect(SMBFileService.account(from: "bob").domain == nil)
+    }
+
+    @Test("沒有分享資料夾時說明原因")
+    func explainsAMissingShare() async {
+        let service = SMBFileService(
+            config: ServerConfig(name: "NAS", transferProtocol: .smb, host: "127.0.0.1", port: 445, username: "u"),
+            credentials: .password("p"))
+        await #expect(throws: RemoteFileServiceError.self) { try await service.connect() }
+    }
+}

@@ -26,6 +26,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         /// Every S3-compatible service: Cloudflare R2, Amazon, MinIO,
         /// Backblaze, Wasabi. One API and one signature serve all of them.
         case s3
+        /// SMB 2 and 3: Windows shares and most NAS boxes on a local network.
+        case smb
 
         public var displayName: String {
             switch self {
@@ -35,6 +37,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .ftp: return "FTP"
             case .ftps: return "FTPS"
             case .s3: return "S3"
+            case .smb: return "SMB"
             }
         }
 
@@ -45,6 +48,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .webdavs: return 443
             case .ftp, .ftps: return 21
             case .s3: return 443
+            case .smb: return 445
             }
         }
 
@@ -55,7 +59,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .sftp: return nil
             case .webdav: return "http"
             case .webdavs: return "https"
-            case .ftp, .ftps: return nil
+            case .ftp, .ftps, .smb: return nil
             case .s3: return "https"
             }
         }
@@ -67,7 +71,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         public var defaultRemoteChangeIntervalSeconds: Int {
             switch self {
             case .s3: return 0
-            case .sftp, .webdav, .webdavs, .ftp, .ftps: return 30
+            case .sftp, .webdav, .webdavs, .ftp, .ftps, .smb: return 30
             }
         }
 
