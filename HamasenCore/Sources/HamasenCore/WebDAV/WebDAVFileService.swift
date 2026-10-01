@@ -717,9 +717,9 @@ public actor WebDAVFileService: RemoteFileService {
         if let domainError = error as? RemoteFileServiceError { return domainError }
 
         let urlError = error as? URLError
-        if let code = urlError?.code, HTTPTransfer.isTransportFailure(code) {
+        if let urlError, HTTPTransfer.isTransportFailure(urlError.code) {
             log.error("\(operation) at \(path) unreachable: \(String(describing: error))")
-            return RemoteFileServiceError.connectionFailed(underlying: error.localizedDescription)
+            return HTTPTransfer.connectionFailure(urlError)
         }
         switch urlError?.code {
         case .cancelled:

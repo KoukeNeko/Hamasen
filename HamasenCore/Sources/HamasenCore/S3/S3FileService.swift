@@ -1177,7 +1177,7 @@ public actor S3FileService: RemoteFileService {
         guard let urlError = error as? URLError else { return error }
         if HTTPTransfer.isTransportFailure(urlError.code) {
             log.error("\(operation) at \(path) unreachable: \(String(describing: error))")
-            return RemoteFileServiceError.connectionFailed(underlying: urlError.localizedDescription)
+            return HTTPTransfer.connectionFailure(urlError)
         }
         if urlError.code == .cancelled { return CancellationError() }
         log.error("\(operation) at \(path) failed: \(String(describing: error))")

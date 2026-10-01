@@ -269,7 +269,10 @@ struct WebDAVReliabilityTests {
         do {
             try await service.connect()
             Issue.record("expected the connection to fail")
-        } catch RemoteFileServiceError.connectionFailed {
+        } catch RemoteFileServiceError.connectionFailed(let underlying) {
+            // The system's text for a refused connection only repeats the
+            // error's own, so the message carries no detail after it.
+            #expect(underlying.isEmpty)
         }
     }
 }

@@ -205,6 +205,7 @@ extension RemoteFileServiceError: LocalizedError {
         case .notConnected:
             return String(localized: "尚未連線到伺服器", bundle: .module)
         case .connectionFailed(let underlying):
+            if underlying.isEmpty { return String(localized: "無法連線到伺服器", bundle: .module) }
             return String(localized: "無法連線到伺服器：\(underlying)", bundle: .module)
         case .authenticationFailed:
             return String(localized: "認證失敗，請檢查帳號與密碼", bundle: .module)

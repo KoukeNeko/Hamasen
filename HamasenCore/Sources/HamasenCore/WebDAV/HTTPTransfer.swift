@@ -54,6 +54,13 @@ enum HTTPTransfer {
             return false
         }
     }
+
+    /// A transport failure as the connection failure it is. The system's
+    /// text for a refused connection says only what the error's own does,
+    /// and quoted after it would read the same sentence twice.
+    static func connectionFailure(_ error: URLError) -> RemoteFileServiceError {
+        .connectionFailed(underlying: error.code == .cannotConnectToHost ? "" : error.localizedDescription)
+    }
 }
 
 /// Reports upload and download progress for one URLSession task.
