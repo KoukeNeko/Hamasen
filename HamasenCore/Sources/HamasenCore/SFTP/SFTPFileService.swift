@@ -416,6 +416,12 @@ public actor SFTPFileService: RemoteFileService {
         do {
             try await session.run { try await sftp.createDirectory(atPath: remotePath) }
         } catch {
+            // As with a rename, an existing name comes back as the same
+            // generic failure as anything else.
+            if let status = error as? SFTPMessage.Status, status.errorCode == .failure,
+               await itemExists(remotePath, session: session) {
+                throw RemoteFileServiceError.alreadyExists(path: path)
+            }
             throw session.mapError(error, operation: String(localized: "建立目錄", bundle: .module), path: path)
         }
     }
