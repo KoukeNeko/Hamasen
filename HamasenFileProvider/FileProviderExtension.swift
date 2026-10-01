@@ -43,6 +43,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
         super.init()
+        Task { await ActivityRecorder.shared.clearTransfers() }
         if #available(macOS 26, *) {
             Self.log.notice(
                 "Extension started for \(domain.identifier.rawValue); "
@@ -306,9 +307,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             return Self.answered()
         }
 
+        let container = Self.containerLocation(of: itemTemplate.parentItemIdentifier)
         return performing(
             "createItem \(filename)",
-            at: Self.containerLocation(of: itemTemplate.parentItemIdentifier),
+            at: container,
+            transferPath: container.map { RemotePath.join($0.path, filename) },
             kind: .write,
             retriesOnFreshSession: true
         ) { context in
@@ -442,9 +445,19 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
         let registry = registry
         let domain = domain
+        let source = Self.location(of: item.itemIdentifier)
+        // A move to another server is recorded where the file ends up, so
+        // the app's 在 Finder 中顯示 finds it there rather than where it was.
+        var destination: ItemLocation?
+        if changedFields.contains(.parentItemIdentifier), let source,
+           let parent = Self.containerLocation(of: item.parentItemIdentifier), parent.serverID != source.serverID {
+            let name = changedFields.contains(.filename) ? item.filename : RemotePath.name(of: source.path)
+            destination = ItemLocation(serverID: parent.serverID, path: RemotePath.join(parent.path, name))
+        }
         return performing(
             "modifyItem \(changedFields)",
-            at: Self.location(of: item.itemIdentifier),
+            at: source,
+            transferLocation: destination,
             kind: .write
         ) { context in
             let service = context.service
@@ -704,6 +717,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
     private func performing<Success>(
         _ operation: String,
         at location: ItemLocation?,
+        transferPath: String? = nil,
+        transferLocation: ItemLocation? = nil,
         kind: FileProviderErrorMapper.Operation = .read,
         retriesOnFreshSession: Bool = false,
         work: @escaping (WorkContext) async throws -> Success,
@@ -721,6 +736,12 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                 return
             }
             Self.log.debug("\(operation) \(location.path) on \(location.serverID)")
+            // Listed in the app's transfers if the work turns out to move
+            // bytes; metadata calls never rescale the progress and never
+            // appear.
+            let watch = TransferWatch(
+                progress: progress, serverID: transferLocation?.serverID ?? location.serverID,
+                path: transferLocation?.path ?? transferPath ?? location.path)
 
             let outcome: Result<Success, Error>
             do {
@@ -743,13 +764,20 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
             switch outcome {
             case .success(let value):
+                watch.finish(failure: nil)
                 answer(.success(value))
                 await registry.reportReachable(location.serverID)
+                await ActivityRecorder.shared.recordHealth(ServerHealth(state: .reachable), for: location.serverID)
             case .failure(let error):
                 if error is CancellationError || Task.isCancelled {
                     Self.log.debug("\(operation) \(location.path) cancelled")
+                    watch.finish(failure: nil)
                     answer(.failure(CocoaError(.userCancelled)))
                     return
+                }
+                watch.finish(failure: error.localizedDescription)
+                if let health = FileProviderErrorMapper.health(after: error) {
+                    await ActivityRecorder.shared.recordHealth(health, for: location.serverID)
                 }
                 // The system retries a few times and then gives up on the
                 // item for good, so a failure here is the last chance to
@@ -895,6 +923,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
         try await service.uploadFile(from: localURL, to: copyPath, progress: progress.byteReporter)
         Self.log.notice("Kept a conflicting edit as \(copyPath) on \(serverID)")
+        await ActivityRecorder.shared.recordConflict(ConflictRecord(
+            serverID: serverID, path: RemotePath.join(directory, name), copyName: RemotePath.name(of: copyPath)))
 
         do {
             try DirectoryRefreshQueue().enqueue([.init(serverID: serverID, path: directory)])
@@ -981,7 +1011,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
                     to: destinationPath, using: destinationService,
                     domain: domain, progress: progress, copied: &copied)
             } else {
-                // Every byte moves twice, down and then up.
+                // Every byte moves twice, down and then up. The activity
+                // record halves it again (`TransferWatch`).
                 progress.beginTransfer(byteCount: sourceInfo.size * 2, operation: .copying)
                 let version = try await copyFile(
                     sourceInfo, using: sourceService,

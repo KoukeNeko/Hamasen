@@ -248,6 +248,18 @@ enum FileProviderErrorMapper {
         ])
     }
 
+    /// How the server answered, as the app shows it; nil when the outcome
+    /// says nothing about the server — a cancellation, a missing file.
+    static func health(after error: Error) -> ServerHealth? {
+        if isConnectionFailure(error) {
+            return ServerHealth(state: .unreachable, message: error.localizedDescription)
+        }
+        if isAuthenticationFailure(error) {
+            return ServerHealth(state: .signInRequired, message: error.localizedDescription)
+        }
+        return nil
+    }
+
     /// The stored credential or identity cannot be used, and retrying will
     /// not help until the person acts in the app. A changed host key counts:
     /// only clearing it there lets the connection through.
