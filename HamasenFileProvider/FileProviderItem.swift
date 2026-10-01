@@ -65,7 +65,7 @@ final class TrashItem: NSObject, NSFileProviderItem {
 
 /// A server's top-level folder (named after the server). Managed from the
 /// app, so Finder cannot rename, move, or delete it.
-final class ServerFolderItem: NSObject, NSFileProviderItem {
+final class ServerFolderItem: NSObject, NSFileProviderItem, NSFileProviderItemDecorating {
     private let config: ServerConfig
 
     init(config: ServerConfig) {
@@ -88,6 +88,12 @@ final class ServerFolderItem: NSObject, NSFileProviderItem {
     /// inherits, so one value governs the whole server.
     var contentPolicy: NSFileProviderContentPolicy {
         config.storageMode.contentPolicy
+    }
+
+    /// "Paused" beside the folder's name, so a server whose files stopped
+    /// syncing says so where they are.
+    var decorations: [NSFileProviderItemDecorationIdentifier]? {
+        config.isPaused ? [.paused] : nil
     }
 
     var itemVersion: NSFileProviderItemVersion {
@@ -216,4 +222,5 @@ final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDeco
 /// The badges declared in the extension's Info.plist, by identifier.
 extension NSFileProviderItemDecorationIdentifier {
     static let pinned = NSFileProviderItemDecorationIdentifier("dev.hamasen.decoration.pinned")
+    static let paused = NSFileProviderItemDecorationIdentifier("dev.hamasen.decoration.paused")
 }

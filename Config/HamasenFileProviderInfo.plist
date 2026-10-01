@@ -128,6 +128,20 @@
 					<string>DECORATION_PINNED</string>
 				</dict>
 			</dict>
+			<!-- A label beside the server folder's name rather than a badge:
+			     the system has no paused badge, and a warning one would read
+			     as something having gone wrong. -->
+			<dict>
+				<key>Identifier</key>
+				<string>dev.hamasen.decoration.paused</string>
+				<key>Category</key>
+				<string>Sharing</string>
+				<key>Label</key>
+				<dict>
+					<key>NSStringFormat</key>
+					<string>DECORATION_PAUSED</string>
+				</dict>
+			</dict>
 		</array>
 	</dict>
 </dict>

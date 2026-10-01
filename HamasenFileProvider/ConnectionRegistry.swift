@@ -69,6 +69,13 @@ actor ConnectionRegistry {
         // entry is checked, and looked up again after each suspension, since
         // what was cached when the wait began may not be what is cached now.
         let config = try Self.config(for: serverID)
+        if config.isPaused {
+            // A paused server keeps no session open behind the user's back.
+            if let cached = connections[serverID], let service = try? await cached.task.value {
+                retire(serverID: serverID, id: cached.id, service: service)
+            }
+            throw RemoteFileServiceError.paused(serverName: config.name)
+        }
         while let cached = connections[serverID] {
             if cached.config != config {
                 if let stale = try? await cached.task.value {
@@ -214,6 +221,9 @@ enum FileProviderErrorMapper {
             return NSFileProviderError(.noSuchItem)
         case RemoteFileServiceError.alreadyExists:
             return NSFileProviderError(.filenameCollision)
+        case RemoteFileServiceError.paused:
+            // Pausing one server must leave every other one working.
+            return retriedForTheItem(error)
         case RemoteFileServiceError.permissionDenied:
             return CocoaError(operation == .read ? .fileReadNoPermission : .fileWriteNoPermission)
         case _ where isAuthenticationFailure(error):

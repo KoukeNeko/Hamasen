@@ -62,7 +62,8 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
             return
         }
 
-        let indexable = configs.filter(\.indexesInBackground).map(\.id)
+        // A paused server is not walked: nothing goes to it until resumed.
+        let indexable = configs.filter { $0.indexesInBackground && !$0.isPaused }.map(\.id)
         var walk = store.walk(for: token, serverIDs: indexable, limits: AppSettings.indexingLimits())
         if token == nil {
             Self.log.notice(
@@ -165,7 +166,7 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         }
 
         let walkStore = try? WorkingSetWalkStore()
-        let indexable = changes.configs.filter(\.indexesInBackground).map(\.id)
+        let indexable = changes.configs.filter { $0.indexesInBackground && !$0.isPaused }.map(\.id)
         let limits = AppSettings.indexingLimits()
         let nextWalk = walkStore?.walkForChangeBatch(
             after: changes.previousWalk, serverIDs: indexable, limits: limits)
