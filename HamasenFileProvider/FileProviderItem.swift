@@ -207,7 +207,7 @@ final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDeco
                 .allowsDeleting,
             ]
         case .file, .symlink:
-            return [
+            var capabilities: NSFileProviderItemCapabilities = [
                 .allowsReading,
                 .allowsWriting,
                 .allowsRenaming,
@@ -215,6 +215,13 @@ final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDeco
                 .allowsDeleting,
                 .legacyEvictionPermission,
             ]
+            // A file the server says cannot be written — a Google document
+            // exported as Office, a read-only file on a share — opens as a
+            // locked document instead of failing on save.
+            if let permissions = remoteItem.permissions, permissions & 0o222 == 0 {
+                capabilities.remove(.allowsWriting)
+            }
+            return capabilities
         }
     }
 }
