@@ -71,6 +71,14 @@ public final class TestS3Server {
         /// Mark a cut-short listing as truncated without naming the next
         /// page, as a broken S3-compatible server can.
         public var omitsContinuationToken = false
+        /// Answer CopyObject from a folder marker (a key ending in "/") with
+        /// NoSuchKey, though HEAD finds it — SeaweedFS keeps folders as
+        /// directories, not objects.
+        public var refusesToCopyFolderMarkers = false
+        /// Answer a delete of a folder marker with success but keep it while
+        /// anything is still under it, as SeaweedFS does with a directory
+        /// that is not empty.
+        public var keepsNonEmptyFolderMarkers = false
 
         public static let wellBehaved = Behaviour()
 

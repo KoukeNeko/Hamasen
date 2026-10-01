@@ -368,6 +368,40 @@ struct S3FileServiceTests {
         }
     }
 
+    /// A marker is empty, so writing a new one is copying it; and some
+    /// servers will not copy one at all.
+    @Test
+    func movesAFolderWhoseMarkerCannotBeCopied() async throws {
+        var behaviour = TestS3Server.Behaviour.wellBehaved
+        behaviour.refusesToCopyFolderMarkers = true
+        try await withService(behaviour: behaviour) { service, server in
+            seed(server)
+            server.store.put(Data(), forKey: "photos/")
+            try await service.moveItem(from: "/photos", to: "/pictures")
+            #expect(server.store.object(forKey: "pictures/")?.data.isEmpty == true)
+            #expect(server.store.object(forKey: "pictures/raw/3.dng") != nil)
+            #expect(server.store.object(forKey: "photos/") == nil)
+        }
+    }
+
+    /// A server that keeps folders as directories skips one that still has
+    /// something in it, and says nothing; markers sent before their contents
+    /// would stay behind as empty folders.
+    @Test
+    func deletesAndMovesFoldersWhereMarkersOutliveTheirContents() async throws {
+        var behaviour = TestS3Server.Behaviour.wellBehaved
+        behaviour.keepsNonEmptyFolderMarkers = true
+        try await withService(behaviour: behaviour) { service, server in
+            for key in ["photos/", "photos/raw/", "photos/raw/3.dng", "photos/1.jpg", "notes/"] {
+                server.store.put(key.hasSuffix("/") ? Data() : Data(key.utf8), forKey: key)
+            }
+            try await service.moveItem(from: "/photos", to: "/pictures")
+            #expect(server.store.sortedKeys().filter { $0.hasPrefix("photos") }.isEmpty)
+            try await service.deleteDirectory(at: "/pictures")
+            #expect(server.store.sortedKeys() == ["notes/"])
+        }
+    }
+
     @Test
     func movingSomethingMissingIsReportedRatherThanSilentlyDoingNothing() async throws {
         try await withService { service, _ in

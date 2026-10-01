@@ -414,18 +414,40 @@ public actor S3FileService: RemoteFileService {
         // million keys is a million names, and holding them all first could
         // take the extension's memory with it.
         var batch: [String] = []
+        // The marker is not returned by a prefix listing when the prefix is
+        // the marker's own key, so it is removed by name as well. Markers go
+        // after everything else: see `deletionOrder`.
+        var markers = [object.folderMarkerKey]
         try await forEachObject(under: object, path: path, operation: Self.deleteOperation) { entry in
-            batch.append(entry.key)
+            if Self.isFolderMarker(entry.key) {
+                markers.append(entry.key)
+            } else {
+                batch.append(entry.key)
+            }
             return .continue
         } afterEachPage: {
             guard batch.count >= Batch.deleteLimit else { return }
             try await self.delete(keys: batch, bucket: object.bucket, path: path)
             batch.removeAll()
         }
-        // The marker is not returned by a prefix listing when the prefix is
-        // the marker's own key, so it is removed by name as well.
-        try await delete(keys: batch + [object.folderMarkerKey],
-                         bucket: object.bucket, path: path)
+        if !batch.isEmpty {
+            try await delete(keys: batch, bucket: object.bucket, path: path)
+        }
+        try await delete(keys: Self.deletionOrder(markers, key: { $0 }), bucket: object.bucket, path: path)
+    }
+
+    private static func isFolderMarker(_ key: String) -> Bool {
+        key.hasSuffix("/")
+    }
+
+    /// Objects first, then folder markers deepest first. A server that keeps
+    /// folders as directories — SeaweedFS — skips deleting one that still
+    /// has something in it and reports it deleted all the same, so a marker
+    /// sent before its contents would stay behind as an empty folder.
+    /// Reverse order puts every key before the shorter keys it extends.
+    private static func deletionOrder<Entry>(_ entries: [Entry], key: (Entry) -> String) -> [Entry] {
+        entries.filter { !isFolderMarker(key($0)) }
+            + entries.filter { isFolderMarker(key($0)) }.sorted { key($0) > key($1) }
     }
 
     /// The root lookup is answered without a request, so this makes the one
@@ -488,10 +510,21 @@ public actor S3FileService: RemoteFileService {
         for entry in objects {
             let suffix = String(entry.key.dropFirst(sourcePrefix.count))
             let copyKey = destination.directoryPrefix + suffix
-            let copiedTag = try await copy(
-                from: S3ObjectKey(bucket: source.bucket, key: entry.key),
-                to: S3ObjectKey(bucket: destination.bucket, key: copyKey),
-                size: entry.size, tag: entry.contentTag, path: oldPath)
+            let copiedTag: String?
+            if entry.key.hasSuffix("/"), entry.size == 0 {
+                // A folder marker holds nothing, so a new empty one is its
+                // copy — and servers that keep folders as directories,
+                // SeaweedFS among them, refuse to copy one at all.
+                let response = try await send(
+                    method: Method.put, object: S3ObjectKey(bucket: destination.bucket, key: copyKey),
+                    operation: Self.moveOperation, path: oldPath)
+                copiedTag = response.http.value(forHTTPHeaderField: "ETag").flatMap(HTTPTransfer.normalizedETag)
+            } else {
+                copiedTag = try await copy(
+                    from: S3ObjectKey(bucket: source.bucket, key: entry.key),
+                    to: S3ObjectKey(bucket: destination.bucket, key: copyKey),
+                    size: entry.size, tag: entry.contentTag, path: oldPath)
+            }
             copies.append((copyKey, copiedTag))
         }
         // Anything written under the source after it was listed — a changed
@@ -926,7 +959,7 @@ public actor S3FileService: RemoteFileService {
     /// and survives. DeleteObjects would be one request per thousand, but
     /// Amazon honours per-key ETags there only on directory buckets.
     private func deleteEach(_ keys: [(key: String, tag: String)], bucket: String, path: String) async throws {
-        for entry in keys {
+        for entry in Self.deletionOrder(keys, key: \.key) {
             try Task.checkCancellation()
             do {
                 _ = try await send(

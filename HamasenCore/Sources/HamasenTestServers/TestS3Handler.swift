@@ -314,7 +314,8 @@ final class S3Handler: ChannelInboundHandler {
             return nil
         }
         let sourceKey = String(trimmed[trimmed.index(after: slash)...])
-        guard let stored = store.object(forKey: sourceKey) else {
+        guard let stored = store.object(forKey: sourceKey),
+              !(behaviour.refusesToCopyFolderMarkers && sourceKey.hasSuffix("/")) else {
             send(error: "NoSuchKey", message: "no such key: \(sourceKey)",
                  status: .notFound, context: context)
             return nil
@@ -402,14 +403,22 @@ final class S3Handler: ChannelInboundHandler {
         }
         // S3 answers 204 whether or not the key was there, so a delete is
         // safe to repeat.
-        store.remove(key: target.key)
+        removeUnlessKeptAsFolder(target.key)
         send(status: .noContent, context: context)
+    }
+
+    private func removeUnlessKeptAsFolder(_ key: String) {
+        if behaviour.keepsNonEmptyFolderMarkers, key.hasSuffix("/"),
+           store.sortedKeys().contains(where: { $0 != key && $0.hasPrefix(key) }) {
+            return
+        }
+        store.remove(key: key)
     }
 
     private func deleteObjects(context: ChannelHandlerContext) {
         let keys = Self.values(ofElement: "key", in: body)
         let refused = keys.filter(behaviour.deleteRefusedKeys.contains)
-        for key in keys where !refused.contains(key) { store.remove(key: key) }
+        for key in keys where !refused.contains(key) { removeUnlessKeptAsFolder(key) }
         let deleted = keys.filter { !refused.contains($0) }
             .map { "<Deleted><Key>\(escaped($0))</Key></Deleted>" }
             .joined(separator: "\n")
