@@ -27,12 +27,14 @@ import Security
 /// a mount that stops working until someone types their login password would
 /// look broken rather than locked.
 public struct KeychainCredentialStore: Sendable {
-    /// The kinds of secret a server can have. A server uses either a
-    /// password or a private key (plus its passphrase when encrypted).
+    /// The kinds of secret a server can have. A server uses a password, a
+    /// private key (plus its passphrase when encrypted), or a cloud drive's
+    /// sign-in token.
     public enum CredentialKind: String, Sendable, CaseIterable {
         case password
         case privateKey
         case keyPassphrase
+        case oauthToken
     }
 
     public enum KeychainError: LocalizedError, Equatable {
@@ -137,6 +139,23 @@ public struct KeychainCredentialStore: Sendable {
             let openSSHKey = try load(kind: .privateKey, for: config.id)
             let passphrase = try? load(kind: .keyPassphrase, for: config.id)
             return .privateKey(openSSHKey: openSSHKey, passphrase: passphrase)
+        case .oauth:
+            return .oauth(try loadOAuthToken(for: config.id))
+        }
+    }
+
+    // MARK: - Sign-in tokens
+
+    public func saveOAuthToken(_ token: OAuthToken, for serverID: UUID) throws {
+        try save(try token.encoded(), kind: .oauthToken, for: serverID)
+    }
+
+    public func loadOAuthToken(for serverID: UUID) throws -> OAuthToken {
+        let text = try load(kind: .oauthToken, for: serverID)
+        do {
+            return try OAuthToken.decoded(from: text)
+        } catch {
+            throw KeychainError.unexpectedData
         }
     }
 
@@ -151,7 +170,7 @@ public struct KeychainCredentialStore: Sendable {
         switch kind {
         case .password:
             return serverID.uuidString
-        case .privateKey, .keyPassphrase:
+        case .privateKey, .keyPassphrase, .oauthToken:
             return "\(serverID.uuidString).\(kind.rawValue)"
         }
     }

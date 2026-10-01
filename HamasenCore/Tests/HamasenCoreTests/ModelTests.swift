@@ -242,4 +242,14 @@ struct PauseAndChangeCheckTests {
         config.isPaused = true
         #expect(config.finderItemToken != running)
     }
+
+    @Test("雲端硬碟使用 OAuth 且沒有使用者自訂的主機")
+    func describesCloudDrives() {
+        #expect(ServerConfig.TransferProtocol.googleDrive.oauthProvider == .google)
+        #expect(ServerConfig.TransferProtocol.oneDrive.oauthProvider == .microsoft)
+        #expect(ServerConfig.TransferProtocol.dropbox.oauthProvider == .dropbox)
+        #expect(!ServerConfig.TransferProtocol.dropbox.hasUserChosenHost)
+        #expect(ServerConfig.TransferProtocol.smb.hasUserChosenHost)
+        #expect(ServerConfig.TransferProtocol.smb.defaultPort == 445)
+    }
 }

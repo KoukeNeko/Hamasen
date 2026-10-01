@@ -18,11 +18,14 @@ import Foundation
 /// protocol-to-implementation mapping lives, so the app and the File Provider
 /// extension can never disagree about it.
 public enum RemoteFileServiceFactory {
+    /// Throws only when the credentials are of a kind the protocol cannot
+    /// use at all — a password handed to a cloud drive — which the forms
+    /// never produce but a restored backup could.
     public static func makeService(
         for config: ServerConfig,
         credentials: ServerCredentials,
         connectTimeoutSeconds: Int = AppSettings.connectTimeoutSeconds()
-    ) -> any RemoteFileService {
+    ) throws -> any RemoteFileService {
         switch config.transferProtocol {
         case .sftp:
             return SFTPFileService(
@@ -59,6 +62,15 @@ public enum RemoteFileServiceFactory {
                 credentials: credentials,
                 connectTimeoutSeconds: connectTimeoutSeconds
             )
+        case .dropbox:
+            return try DropboxFileService(
+                config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds)
+        case .oneDrive:
+            return try OneDriveFileService(
+                config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds)
+        case .googleDrive:
+            return try GoogleDriveFileService(
+                config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds)
         }
     }
 

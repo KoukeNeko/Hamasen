@@ -14,15 +14,19 @@
 
 import Foundation
 
-/// What the WebDAV and S3 clients share because both are plain HTTP over
-/// URLSession: how an ETag is compared, which URLSession failures mean the
-/// server could not be reached, which answers say to try again and when,
-/// and how bytes moved are reported.
+/// What the WebDAV, S3 and cloud drive clients share because all are plain
+/// HTTP over URLSession: how an ETag is compared, which URLSession failures
+/// mean the server could not be reached, which answers say to try again and
+/// when, and how bytes moved are reported.
 enum HTTPTransfer {
     /// The service failing rather than the request: 500, 503 from one that
     /// is overloaded — S3's SlowDown among them — and a gateway in front of
     /// it saying the same. Every service here documents them as "try again".
     static let serviceFailureStatuses: Set<Int> = [500, 502, 503, 504]
+
+    /// Too Many Requests, which the cloud drives answer a rate-limited
+    /// account with. S3 documents 503 SlowDown for that instead.
+    static let tooManyRequestsStatus = 429
 
     /// A Retry-After longer than this is not waited out inside one request;
     /// the operation fails and the system retries the item later.

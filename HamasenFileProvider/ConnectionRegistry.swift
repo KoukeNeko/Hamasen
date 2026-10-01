@@ -95,7 +95,7 @@ actor ConnectionRegistry {
 
         let connection = Connection(config: config, task: Task { () throws -> any RemoteFileService in
             let credentials = try KeychainCredentialStore().loadCredentials(for: config)
-            let service = RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
+            let service = try RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
             try await service.connect()
             return service
         })

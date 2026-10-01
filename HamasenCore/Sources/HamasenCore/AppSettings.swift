@@ -43,6 +43,11 @@ public enum AppSettings {
         public static let autoCleanEnabled = "autoCleanEnabled"
         public static let autoCleanUnusedDays = "autoCleanUnusedDays"
         public static let autoCleanTotalLimitBytes = "autoCleanTotalLimitBytes"
+
+        /// Where the client entered in Settings for a cloud drive is kept.
+        public static func oauthClient(_ provider: OAuthProvider) -> (id: String, secret: String) {
+            ("oauth.\(provider.rawValue).clientID", "oauth.\(provider.rawValue).clientSecret")
+        }
     }
 
     public static let defaultConnectTimeoutSeconds = 30

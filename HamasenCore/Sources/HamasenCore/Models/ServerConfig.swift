@@ -28,6 +28,12 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         case s3
         /// SMB 2 and 3: Windows shares and most NAS boxes on a local network.
         case smb
+        /// Cloud drives, signed in to through the browser. None of them has a
+        /// host to type: the host stored for them is their API's, and the
+        /// username is the account that signed in.
+        case googleDrive
+        case oneDrive
+        case dropbox
 
         public var displayName: String {
             switch self {
@@ -38,6 +44,9 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .ftps: return "FTPS"
             case .s3: return "S3"
             case .smb: return "SMB"
+            case .googleDrive: return String(localized: "Google 雲端硬碟", bundle: .module)
+            case .oneDrive: return "OneDrive"
+            case .dropbox: return "Dropbox"
             }
         }
 
@@ -49,6 +58,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .ftp, .ftps: return 21
             case .s3: return 443
             case .smb: return 445
+            case .googleDrive, .oneDrive, .dropbox: return 443
             }
         }
 
@@ -60,17 +70,34 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
             case .webdav: return "http"
             case .webdavs: return "https"
             case .ftp, .ftps, .smb: return nil
-            case .s3: return "https"
+            case .s3, .googleDrive, .oneDrive, .dropbox: return "https"
             }
         }
+
+        /// The provider a cloud drive signs in with, or nil for a protocol
+        /// that authenticates with a typed secret.
+        public var oauthProvider: OAuthProvider? {
+            switch self {
+            case .googleDrive: return .google
+            case .oneDrive: return .microsoft
+            case .dropbox: return .dropbox
+            case .sftp, .webdav, .webdavs, .ftp, .ftps, .s3, .smb: return nil
+            }
+        }
+
+        /// Whether connections are made to a host the user names. Cloud
+        /// drives have one fixed API host, which the form never shows.
+        public var hasUserChosenHost: Bool { oauthProvider == nil }
 
         /// How often a new connection asks the server what changed.
         ///
         /// Off for S3, where every listing is billed and the person paying
-        /// should be the one to switch it on.
+        /// should be the one to switch it on. A minute for the cloud drives,
+        /// whose APIs ration requests per account.
         public var defaultRemoteChangeIntervalSeconds: Int {
             switch self {
             case .s3: return 0
+            case .googleDrive, .oneDrive, .dropbox: return 60
             case .sftp, .webdav, .webdavs, .ftp, .ftps, .smb: return 30
             }
         }
@@ -94,11 +121,14 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     public enum AuthenticationMethod: String, Codable, Sendable, CaseIterable {
         case password
         case privateKey
+        /// A token from signing in through the browser; cloud drives only.
+        case oauth
 
         public var displayName: String {
             switch self {
             case .password: return String(localized: "密碼", bundle: .module)
             case .privateKey: return String(localized: "SSH 金鑰", bundle: .module)
+            case .oauth: return String(localized: "瀏覽器登入", bundle: .module)
             }
         }
     }
@@ -284,4 +314,6 @@ public enum ServerCredentials: Sendable {
     case password(String)
     /// An OpenSSH private key file, with the passphrase when it is encrypted.
     case privateKey(openSSHKey: String, passphrase: String?)
+    /// What signing in to a cloud drive left behind, refreshed as it expires.
+    case oauth(OAuthToken)
 }

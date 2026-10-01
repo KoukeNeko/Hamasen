@@ -825,6 +825,8 @@ public actor SFTPFileService: RemoteFileService {
                 passphrase: passphrase,
                 username: config.username
             )
+        case .oauth:
+            throw RemoteFileServiceError.unsupportedCredentials(protocolName: config.transferProtocol.displayName)
         }
     }
 
