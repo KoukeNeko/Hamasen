@@ -247,7 +247,23 @@ public actor OAuthSession {
         let task = Task { try await OAuthTokenEndpoint.refresh(current, using: session) }
         renewal = task
         defer { renewal = nil }
-        let renewed = try await task.value
+        let renewed: OAuthToken
+        do {
+            renewed = try await task.value
+        } catch RemoteFileServiceError.authenticationFailed {
+            // The app and the extension share one stored token, and a
+            // provider that rotates refresh tokens accepts each one once:
+            // when both renew at the same moment, the loser is refused while
+            // the winner's replacement is already in the store.
+            if let serverID,
+               let stored = try? store.loadOAuthToken(for: serverID),
+               stored.refreshToken != current.refreshToken,
+               !stored.needsRefresh() {
+                token = stored
+                return
+            }
+            throw RemoteFileServiceError.authenticationFailed
+        }
         token = renewed
         if let serverID {
             // A renewal that cannot be stored still works for this process;

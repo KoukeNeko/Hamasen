@@ -53,14 +53,17 @@ struct SMBFileServiceTests {
     func queuedCallOutlastsTheDeadlineWhileTheSessionMoves() async throws {
         let liveness = Liveness()
         let abandoned = Flag()
-        async let transfer: Void = answering(within: 1, on: liveness, abandon: { abandoned.raise() }) {
+        // The queued call waits longer than its own deadline in total, while
+        // the longest silence is a fraction of it: wide enough apart that a
+        // slow CI runner's scheduling stalls cannot pass for a dead link.
+        async let transfer: Void = answering(within: 2, on: liveness, abandon: { abandoned.raise() }) {
             for _ in 0..<10 {
-                try await Task.sleep(for: .milliseconds(200))
+                try await Task.sleep(for: .milliseconds(250))
                 liveness.touch()
             }
         }
-        async let queued: Void = answering(within: 1, on: liveness, abandon: { abandoned.raise() }) {
-            try await Task.sleep(for: .milliseconds(2_200))
+        async let queued: Void = answering(within: 2, on: liveness, abandon: { abandoned.raise() }) {
+            try await Task.sleep(for: .milliseconds(2_800))
         }
         _ = try await (transfer, queued)
         #expect(!abandoned.isRaised)

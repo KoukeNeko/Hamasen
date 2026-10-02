@@ -482,9 +482,10 @@ public actor WebDAVFileService: RemoteFileService {
             }
             try Self.validate(response, body: body, method: .put, operation: operation, path: path)
             if let temporaryPath {
-                try await refuseFolder(at: path)
+                let replacesFile = try await refuseFolder(at: path)
                 isMoving = true
-                try await moveUpload(from: temporaryPath, to: path, operation: operation)
+                try await moveUpload(
+                    from: temporaryPath, to: path, overwriting: replacesFile, operation: operation)
             }
         } catch {
             if let temporaryPath {
@@ -504,20 +505,29 @@ public actor WebDAVFileService: RemoteFileService {
 
     /// MOVE with Overwrite: T deletes whatever is at the destination first,
     /// folder and all, so a folder that appeared under the name while the
-    /// upload ran is refused rather than replaced.
-    private func refuseFolder(at path: String) async throws {
+    /// upload ran is refused rather than replaced. Returns whether a file is
+    /// there to be replaced.
+    private func refuseFolder(at path: String) async throws -> Bool {
         do {
             if try await itemInfo(at: path).isDirectory {
                 throw RemoteFileServiceError.alreadyExists(path: path)
             }
+            return true
         } catch RemoteFileServiceError.itemNotFound {
+            return false
         }
     }
 
-    private func moveUpload(from temporaryPath: String, to path: String, operation: String) async throws {
+    /// - Parameter overwriting: whether a file was at the destination when
+    ///   it was looked at. When nothing was, the MOVE refuses to overwrite:
+    ///   a file someone else created there since is theirs, and the server
+    ///   answers 412 instead of replacing it.
+    private func moveUpload(
+        from temporaryPath: String, to path: String, overwriting: Bool, operation: String
+    ) async throws {
         var request = try makeRequest(method: .move, path: temporaryPath)
         request.setValue(try absoluteURL(for: path).absoluteString, forHTTPHeaderField: "Destination")
-        request.setValue(Self.allowOverwrite, forHTTPHeaderField: "Overwrite")
+        request.setValue(overwriting ? Self.allowOverwrite : Self.refuseOverwrite, forHTTPHeaderField: "Overwrite")
         let (body, response) = try await withSession { session in
             do {
                 return try await session.data(for: request)

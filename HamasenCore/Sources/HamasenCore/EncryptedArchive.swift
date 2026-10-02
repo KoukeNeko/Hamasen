@@ -75,8 +75,16 @@ public struct EncryptedArchive: Codable, Equatable, Sendable {
         )
     }
 
+    /// The work factors an archive may name. The count comes from the file,
+    /// and opening a crafted one with a count in the billions — or a negative
+    /// one, which becomes one when handed to CommonCrypto — would hold a CPU
+    /// for hours before failing. An archive written at a lower count than
+    /// today's still opens, as it always has.
+    static let acceptedIterations = 1...10_000_000
+
     public func opened(passphrase: String) throws -> Data {
-        guard keyDerivation == Self.keyDerivation, cipher == Self.cipher else {
+        guard keyDerivation == Self.keyDerivation, cipher == Self.cipher,
+              Self.acceptedIterations.contains(iterations) else {
             throw ArchiveError.unsupportedFormat
         }
         let key = try Self.deriveKey(passphrase: passphrase, salt: salt, iterations: iterations)

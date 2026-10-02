@@ -181,7 +181,9 @@ extension ServerConfig {
             cacheLimitBytes: cacheLimitBytes,
             s3Region: s3Region,
             s3AddressingStyle: s3AddressingStyle,
-            indexesInBackground: indexesInBackground
+            indexesInBackground: indexesInBackground,
+            isPaused: isPaused,
+            remoteChangeIntervalSeconds: remoteChangeIntervalSeconds
         )
     }
 }
