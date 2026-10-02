@@ -54,16 +54,20 @@ struct SMBFileServiceTests {
         let liveness = Liveness()
         let abandoned = Flag()
         // The queued call waits longer than its own deadline in total, while
-        // the longest silence is a fraction of it: wide enough apart that a
-        // slow CI runner's scheduling stalls cannot pass for a dead link.
-        async let transfer: Void = answering(within: 2, on: liveness, abandon: { abandoned.raise() }) {
-            for _ in 0..<10 {
-                try await Task.sleep(for: .milliseconds(250))
+        // the transfer keeps showing progress until it is done. The deadline
+        // is real time and the tests run in parallel, so the transfer's
+        // progress can be held up by a busy thread pool: only a stall longer
+        // than the whole deadline may count as a dead link.
+        let queuedDone = Flag()
+        async let transfer: Void = answering(within: 5, on: liveness, abandon: { abandoned.raise() }) {
+            while !queuedDone.isRaised {
+                try await Task.sleep(for: .milliseconds(100))
                 liveness.touch()
             }
         }
-        async let queued: Void = answering(within: 2, on: liveness, abandon: { abandoned.raise() }) {
-            try await Task.sleep(for: .milliseconds(2_800))
+        async let queued: Void = answering(within: 5, on: liveness, abandon: { abandoned.raise() }) {
+            try await Task.sleep(for: .milliseconds(5_500))
+            queuedDone.raise()
         }
         _ = try await (transfer, queued)
         #expect(!abandoned.isRaised)

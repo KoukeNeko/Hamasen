@@ -47,6 +47,7 @@ public struct S3Endpoint: Sendable, Equatable {
     private static let amazonDefaultRegion = "us-east-1"
     private static let s3Label = "s3"
     private static let dualStackLabel = "dualstack"
+    private static let fipsLabel = "s3-fips"
 
     public let scheme: String
     public let host: String
@@ -134,11 +135,16 @@ public struct S3Endpoint: Sendable, Equatable {
         }
         guard let marker = labels.first else { return amazonDefaultRegion }
 
+        var rest = labels.dropFirst()
+        // A FIPS endpoint is a service, not a region: s3-fips.us-east-1.
+        if marker == fipsLabel {
+            if rest.first == dualStackLabel { rest = rest.dropFirst() }
+            return rest.first ?? amazonDefaultRegion
+        }
         // The legacy spelling joins the region to the label: s3-eu-west-1.
         if marker.hasPrefix("\(s3Label)-") {
             return String(marker.dropFirst(s3Label.count + 1))
         }
-        var rest = labels.dropFirst()
         if rest.first == dualStackLabel { rest = rest.dropFirst() }
         // Plain s3.amazonaws.com names no region and means the original one.
         return rest.first ?? amazonDefaultRegion
