@@ -36,6 +36,13 @@ final class CacheSupervisor {
     /// What each server is holding on this Mac.
     private(set) var usage: [UUID: CacheUsage] = [:]
 
+    /// What every server together is holding.
+    var totalUsage: CacheUsage {
+        CacheUsage(
+            pinnedBytes: usage.values.reduce(0) { $0 + $1.pinnedBytes },
+            evictableBytes: usage.values.reduce(0) { $0 + $1.evictableBytes })
+    }
+
     private let evictor = CacheEvictor()
     private var schedule: Task<Void, Never>?
     /// Once per run rather than once ever: the condition is fixable, and
@@ -71,9 +78,33 @@ final class CacheSupervisor {
     }
 
     func sweep() async {
+        await sweep(scope: .policies(AppSettings.autoCleanPolicy()))
+    }
+
+    /// Applies the cleaning settings now, whether or not automatic cleaning
+    /// is on: the person asked for it.
+    func cleanNow() async {
+        let store = AppSettings.sharedStore
+        let policy = AutoCleanPolicy(
+            unusedDays: AutoCleanUnusedDays(
+                days: store.object(forKey: AppSettings.Keys.autoCleanUnusedDays) as? Int
+                    ?? AppSettings.defaultAutoCleanUnusedDays).rawValue,
+            totalLimitBytes: AutoCleanTotalLimit(
+                bytes: store.object(forKey: AppSettings.Keys.autoCleanTotalLimitBytes) as? Int64
+                    ?? AppSettings.defaultAutoCleanTotalLimitBytes).bytes)
+        await sweep(scope: .policies(policy))
+    }
+
+    /// Drops every local copy that can go. Files kept on this Mac, open
+    /// ones, and edits not yet uploaded stay; the system refuses those.
+    func removeAllDownloads() async {
+        await sweep(scope: .everything)
+    }
+
+    private func sweep(scope: CacheEvictor.Scope) async {
         let servers = mountedServers()
         guard !servers.isEmpty else { return }
-        let outcome = await evictor.evictContent(for: servers)
+        let outcome = await evictor.evictContent(for: servers, scope: scope)
         if outcome.needsRemount {
             reportContentThatOnlyARemountCanFree()
         }

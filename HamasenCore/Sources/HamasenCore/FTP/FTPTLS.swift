@@ -30,8 +30,12 @@ public enum FTPTLSMode: Sendable {
 
 /// Builds the TLS handlers an FTPS session needs.
 enum FTPTLS {
-    static func makeContext() throws -> NIOSSLContext {
-        try NIOSSLContext(configuration: .makeClientConfiguration())
+    /// - Parameter trustRoots: the system's, except where a test stands up
+    ///   servers under a certificate authority of its own.
+    static func makeContext(trustRoots: NIOSSLTrustRoots = .default) throws -> NIOSSLContext {
+        var configuration = TLSConfiguration.makeClientConfiguration()
+        configuration.trustRoots = trustRoots
+        return try NIOSSLContext(configuration: configuration)
     }
 
     /// - Parameter host: sent as the server name, unless it is an address —

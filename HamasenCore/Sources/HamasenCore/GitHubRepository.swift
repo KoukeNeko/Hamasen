@@ -76,3 +76,91 @@ extension GitHubRepository {
             .sorted { $0.contributions > $1.contributions }
     }
 }
+
+// MARK: - Releases
+
+extension GitHubRepository {
+    public static let releasesURL = URL(string: "https://github.com/\(owner)/\(name)/releases")!
+
+    /// Asked only by builds that do not come from the App Store, which
+    /// updates its own apps.
+    public static let latestReleaseAPIURL = URL(
+        string: "https://api.github.com/repos/\(owner)/\(name)/releases/latest"
+    )!
+
+    /// The release `latestReleaseAPIURL` answered with, or nil when none has
+    /// been published: GitHub answers that with 404, and with nothing
+    /// published, nothing is newer.
+    public static func latestRelease(from data: Data, statusCode: Int) throws -> GitHubRelease? {
+        switch statusCode {
+        case 200: return try JSONDecoder().decode(GitHubRelease.self, from: data)
+        case 404: return nil
+        default: throw URLError(.badServerResponse)
+        }
+    }
+}
+
+/// A published release, as much of it as an update check needs.
+public struct GitHubRelease: Equatable, Sendable, Decodable {
+    public struct Asset: Equatable, Sendable, Decodable {
+        public let name: String
+        public let downloadURL: URL
+
+        private enum CodingKeys: String, CodingKey {
+            case name
+            case downloadURL = "browser_download_url"
+        }
+
+        public init(name: String, downloadURL: URL) {
+            self.name = name
+            self.downloadURL = downloadURL
+        }
+    }
+
+    public let tagName: String
+    public let pageURL: URL
+    public let assets: [Asset]
+
+    private enum CodingKeys: String, CodingKey {
+        case tagName = "tag_name"
+        case pageURL = "html_url"
+        case assets
+    }
+
+    public init(tagName: String, pageURL: URL, assets: [Asset]) {
+        self.tagName = tagName
+        self.pageURL = pageURL
+        self.assets = assets
+    }
+
+    /// The version the tag names, without the "v" tags usually carry.
+    public var version: String {
+        tagName.hasPrefix("v") || tagName.hasPrefix("V") ? String(tagName.dropFirst()) : tagName
+    }
+
+    /// The disk image when there is one, which is what a person installs
+    /// from; otherwise the release page.
+    public var downloadURL: URL {
+        assets.first { $0.name.lowercased().hasSuffix(".dmg") }?.downloadURL ?? pageURL
+    }
+}
+
+public enum AppVersion {
+    /// Whether `candidate` is a later version than `current`, comparing the
+    /// dotted numbers one by one — "1.10" is after "1.9", and "1.2" equals
+    /// "1.2.0". Anything after a "-" (a pre-release label) is ignored.
+    public static func isNewer(_ candidate: String, than current: String) -> Bool {
+        func numbers(_ version: String) -> [Int] {
+            let core = version.split(separator: "-").first.map(String.init) ?? version
+            return core.split(separator: ".").map { Int($0.filter(\.isNumber)) ?? 0 }
+        }
+        let lhs = numbers(candidate)
+        let rhs = numbers(current)
+        for index in 0..<max(lhs.count, rhs.count) {
+            let left = index < lhs.count ? lhs[index] : 0
+            let right = index < rhs.count ? rhs[index] : 0
+            if left != right { return left > right }
+        }
+        return false
+    }
+}

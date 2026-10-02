@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+# Starts from the shared certificate in E2E/.run; rotate-cert replaces this
+# copy, which lives in a volume so it survives restarts.
+if [ ! -f /tls/server.pem ]; then
+    cp /e2e-certs/server.pem /e2e-certs/server-key.pem /tls/
+fi
+
+# Passive replies name the address clients reach the published ports at:
+# this Mac's loopback, or the host the stack runs on.
+sed "s/^pasv_address=.*/pasv_address=${E2E_HOST:-127.0.0.1}/" /etc/vsftpd/vsftpd.conf > /etc/vsftpd/active.conf
+
+exec supervise vsftpd /etc/vsftpd/active.conf

@@ -52,6 +52,33 @@ public enum SharedConstants {
     /// The host keys each endpoint has presented, so a changed one can be
     /// told from a first sighting.
     public static let knownHostsFileName = "known-hosts.json"
+    /// The working-set walk in progress, kept between the pages the system
+    /// asks for. See `WorkingSetWalk`.
+    public static let workingSetWalkFileName = "working-set-walk.json"
+    /// What each remote directory last looked like, one file per directory,
+    /// so a later listing can be told apart from it. See
+    /// `RemoteDirectorySnapshotStore`.
+    public static let remoteDirectoriesDirectoryName = "remote-directories"
+
+    /// The background walk's own per-directory record.
+    public static let walkDirectoriesDirectoryName = "walk-directories"
+    /// The single file that held all of the above before it was split.
+    /// Only ever deleted.
+    public static let legacyRemoteDirectorySnapshotFileName = "remote-directories.json"
+    /// Server-list snapshots the sync anchor refers to by digest. See
+    /// `ServerListSnapshotStore`.
+    public static let serverListSnapshotsDirectoryName = "server-list-snapshots"
+
+    /// Directories whose contents the system has to be told about again.
+    public static let directoryRefreshQueueFileName = "directory-refresh-queue.json"
+
+    /// When each local copy was last opened or downloaded. See
+    /// `ItemUsageStore`.
+    public static let itemUsageFileName = "item-usage.json"
+
+    /// Transfers, conflicts and server health, from the extension to the
+    /// app. See `ActivityStore`.
+    public static let activityFileName = "activity.json"
 
     /// The single File Provider domain. Every server appears as a top-level
     /// folder inside it, so Finder shows one Hamasen location. The sidebar

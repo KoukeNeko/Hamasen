@@ -1,5 +1,5 @@
 {
-  "originHash" : "64ed9b489334ea313933cbfef190ed451d46e318d786bbf9ef9836f9d5548a43",
+  "originHash" : "5ed584f7d39fe0bd09124bf406b75ff182fcd1e31869859aa3f7a9b0c984edfb",
   "pins" : [
     {
       "identity" : "bigint",
@@ -13,10 +13,17 @@
     {
       "identity" : "citadel",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/orlandos-nl/Citadel.git",
+      "location" : "https://github.com/Par-B/Citadel.git",
       "state" : {
-        "revision" : "ae8562f895de06ccb86fdb1cbb65fd99c8976e12",
-        "version" : "0.12.1"
+        "revision" : "41a661d240c5a0de7c2a44a5ee6dd12d9be7ee7f"
+      }
+    },
+    {
+      "identity" : "smbclient",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kishikawakatsumi/SMBClient.git",
+      "state" : {
+        "revision" : "66eafaa6d17e034e8036dee4b3ebc1b52cb53919"
       }
     },
     {

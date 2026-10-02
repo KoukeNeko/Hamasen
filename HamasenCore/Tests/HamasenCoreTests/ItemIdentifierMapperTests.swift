@@ -100,4 +100,16 @@ struct ItemIdentifierMapperTests {
         #expect(ItemIdentifierMapper.parentEntity(of: .serverRoot(Self.serverID)) == .root)
         #expect(ItemIdentifierMapper.parentEntity(of: .root) == .root)
     }
+
+    /// A directory is signalled by the identifier of whatever lists it, and
+    /// a server's own folder is not an item with the path "/".
+    @Test("要重新列舉一個目錄時，根目錄用伺服器資料夾的識別碼")
+    func namesTheContainerThatListsADirectory() {
+        #expect(
+            ItemIdentifierMapper.directoryEntity(serverID: Self.serverID, path: RemotePath.root)
+                == .serverRoot(Self.serverID))
+        #expect(
+            ItemIdentifierMapper.directoryEntity(serverID: Self.serverID, path: "/a/b")
+                == .item(serverID: Self.serverID, path: "/a/b"))
+    }
 }

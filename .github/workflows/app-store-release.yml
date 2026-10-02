@@ -59,6 +59,9 @@ jobs:
           # The build number is the commit count, which a shallow clone
           # reports as 1.
           fetch-depth: 0
+          # Nothing after checkout talks to git over the network, so the
+          # token is not left behind in .git/config for the build to see.
+          persist-credentials: false
 
       # App Store Connect refuses a build number it has already seen. The
       # commit count only grows as branches merge into main, so it needs no

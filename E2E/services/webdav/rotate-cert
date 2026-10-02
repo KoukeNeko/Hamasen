@@ -1,0 +1,13 @@
+#!/bin/sh
+# rotate-cert
+# Issues a new server certificate from the same CA and restarts rclone, which
+# reads it only at startup.
+set -eu
+
+if [ -z "${E2E_TLS:-}" ]; then
+    echo "rotate-cert: this service serves plain HTTP" >&2
+    exit 1
+fi
+
+issue-server-cert /e2e-certs /tls
+restart-server

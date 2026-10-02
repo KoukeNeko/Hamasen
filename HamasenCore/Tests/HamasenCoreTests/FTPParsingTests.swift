@@ -108,6 +108,39 @@ struct FTPListingTests {
         #expect(items.first?.name == "my report.pdf")
     }
 
+    @Test("MLSD 的符號連結型別不分大小寫，兩種寫法都認得")
+    func recognisesMachineListedLinks() {
+        let body = """
+        type=OS.unix=slink:/target;size=6;modify=20251101000000; a
+        type=os.unix=slink;size=6; b
+        type=OS.unix=symlink:/target;size=6; c
+        type=file;size=6; d
+        """
+        let items = FTPListing.parseMachineListing(body, directory: "/")
+        #expect(items.map(\.kind) == [.symlink, .symlink, .symlink, .file])
+    }
+
+    @Test("MLST 的回應讀成單一項目，名稱取自請求的路徑")
+    func readsMachineStatus() {
+        let response = FTPResponse(code: 250, lines: [
+            "Listing /srv/docs/report.pdf",
+            " type=file;size=1234;modify=20251224093000; /srv/docs/report.pdf",
+            "End",
+        ])
+        let item = FTPListing.parseMachineStatus(response, path: "/docs/report.pdf")
+        #expect(item?.path == "/docs/report.pdf")
+        #expect(item?.name == "report.pdf")
+        #expect(item?.kind == .file)
+        #expect(item?.size == 1234)
+        #expect(item?.modificationDate == FTPTimestamp.parse("20251224093000"))
+    }
+
+    @Test("MLST 對目錄回報 cdir 時仍視為目錄")
+    func readsADirectoryReportedAsCdir() {
+        let response = FTPResponse(code: 250, lines: ["Listing", " type=cdir;modify=20251101000000; /docs", "End"])
+        #expect(FTPListing.parseMachineStatus(response, path: "/docs")?.kind == .directory)
+    }
+
     // MARK: - LIST
 
     @Test("Unix 清單讀出型別、大小與名稱")

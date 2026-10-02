@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Crypto
 import Foundation
 
 /// Tracks what changed in the mounted-server list between two enumerations.
 ///
 /// The File Provider extension has no state of its own between calls, so the
-/// previous list is carried inside the sync anchor the system hands back.
+/// previous list is kept in the App Group (`ServerListSnapshotStore`) and the
+/// sync anchor the system hands back names it by digest. The list itself does
+/// not fit in an anchor: past 500 bytes the system treats the anchor as
+/// expired, which a handful of servers with long names reach.
 public enum ServerListChangeTracker {
     /// Server identifier to the token describing its Finder folder. Detects
     /// additions, removals, renames, and any other change the folder itself
@@ -40,16 +44,18 @@ public enum ServerListChangeTracker {
         )
     }
 
-    /// Encodes a snapshot for use as a sync anchor. Sorted keys keep the
-    /// encoding stable so an unchanged list produces an identical anchor.
+    /// Encodes a snapshot for storage. Sorted keys keep the encoding stable
+    /// so an unchanged list produces an identical digest.
     public static func encode(_ snapshot: Snapshot) -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         return (try? encoder.encode(snapshot)) ?? Data()
     }
 
-    /// Decodes a previously encoded snapshot; an unreadable anchor is treated
-    /// as "nothing known yet", which makes every server look new.
+    /// Decodes a previously encoded snapshot; unreadable data is treated as
+    /// "nothing known yet", which makes every server look new. Not for an
+    /// anchor the system handed back: one whose snapshot cannot be found is an
+    /// expired anchor, not an empty list.
     public static func decode(_ data: Data) -> Snapshot {
         (try? JSONDecoder().decode(Snapshot.self, from: data)) ?? [:]
     }
@@ -59,5 +65,12 @@ public enum ServerListChangeTracker {
         let updated = configs.filter { previous[$0.id.uuidString] != $0.finderItemToken }
         let removedServerIDs = previous.keys.filter { current[$0] == nil }.sorted()
         return Diff(updated: updated, removedServerIDs: removedServerIDs)
+    }
+
+    /// A short, stable name for a snapshot: the same list always has the same
+    /// digest, and a changed one does not. 128 bits of SHA-256 is far more
+    /// than the handful of snapshots kept could collide in.
+    public static func digest(of snapshot: Snapshot) -> String {
+        SHA256.hash(data: encode(snapshot)).prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 }

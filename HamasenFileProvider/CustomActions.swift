@@ -44,8 +44,12 @@ extension FileProviderExtension: NSFileProviderCustomAction {
                 completionHandler(nil)
                 await afterCompletion?()
             } catch is CancellationError {
+                CustomActionRunner.log.notice("\(action.rawValue) cancelled by the system")
                 completionHandler(CocoaError(.userCancelled))
             } catch {
+                // Finder shows little or nothing for a failed action, so the
+                // log is the only place the reason survives.
+                CustomActionRunner.log.error("\(action.rawValue) failed: \(error.localizedDescription)")
                 completionHandler(error)
             }
         }
@@ -56,12 +60,13 @@ extension FileProviderExtension: NSFileProviderCustomAction {
 
 /// Executes one context-menu action on the selection Finder passed along.
 enum CustomActionRunner {
-    private static let log = HamasenLog(category: "CustomActions")
+    static let log = HamasenLog(category: "CustomActions")
 
     /// Work that must wait until the system has been told the action is
-    /// done. Only unmounting the last server needs it: removing the domain
-    /// stops this very extension, so it cannot happen before the completion
-    /// is reported.
+    /// done. Unmounting the last server hides the domain, which takes the
+    /// location away from under the action still waiting on it; and asking
+    /// the system to re-enumerate a folder while it is still waiting on the
+    /// action never gets an answer.
     typealias AfterCompletion = () async -> Void
 
     static func run(
@@ -89,7 +94,7 @@ enum CustomActionRunner {
             try await copyLocalPath(of: identifier)
             return nil
         case .refresh:
-            try await FinderDomain.signalServerListChanged()
+            try await refresh(entities, identifiers: itemIdentifiers)
             return nil
         case .unmountServer:
             let entity = try singleServerEntity(in: entities)
@@ -101,11 +106,9 @@ enum CustomActionRunner {
             try await freeLocalSpace(of: entities)
             return nil
         case .keepOnMac:
-            try setPinned(true, on: entities)
-            return nil
+            return try setPinned(true, on: entities)
         case .stopKeepingOnMac:
-            try setPinned(false, on: entities)
-            return nil
+            return try setPinned(false, on: entities)
         }
     }
 
@@ -162,24 +165,104 @@ enum CustomActionRunner {
             try await FinderDomain.synchronize(hasMountedServers: true)
             return nil
         }
-        return { await removeDomainPreservingEdits() }
+        return { await hideDomain() }
     }
 
     /// Records that the user wants the selection kept on this Mac, or no
     /// longer wants it.
     ///
-    /// The pin only has to be written: the item reports it, and the cache
-    /// sweep reads the same file, so nothing here has to touch content. The
-    /// system is told through the item's metadata version the next time it
-    /// asks, which is why the pin is part of that version.
-    private static func setPinned(_ isPinned: Bool, on entities: [ProviderEntity]) throws {
+    /// Records the pin, then — once the action is reported done — has the
+    /// system look again and, for a new pin, fetch the content.
+    ///
+    /// The pin itself only has to be written: the item reports it, and the
+    /// cache sweep reads the same file. The system learns of it through the
+    /// item's metadata version, which is why the pin is part of that version
+    /// and why each parent is queued for a refresh: the badge and the menu
+    /// entry change the moment the system looks, not the next time it
+    /// happens to. The keep-downloaded policy alone leaves the download to
+    /// the background downloader and its own idea of a convenient time — a
+    /// 4 GB file pinned days ago was still dataless — so the download is
+    /// asked for outright.
+    private static func setPinned(_ isPinned: Bool, on entities: [ProviderEntity]) throws -> AfterCompletion? {
         let store = try PinnedItemsStore()
+        var parents: Set<DirectoryRefreshQueue.Entry> = []
+        var items: [NSFileProviderItemIdentifier] = []
         for entity in entities {
-            guard case .item = entity else { continue }
-            try store.setPinned(isPinned, for: ItemIdentifierMapper.identifier(for: entity).rawValue)
+            guard case .item = entity, let serverID = entity.serverID else { continue }
+            let identifier = ItemIdentifierMapper.identifier(for: entity)
+            try store.setPinned(isPinned, for: identifier.rawValue)
+            items.append(identifier)
+            parents.insert(.init(serverID: serverID, path: RemotePath.parent(of: entity.path)))
         }
         PinnedItems.invalidate()
-        log.debug("\(isPinned ? "Pinned" : "Unpinned") \(entities.count) items")
+        log.notice("\(isPinned ? "Pinned" : "Unpinned") \(items.count) items")
+        return {
+            await refresh(parents)
+            if isPinned {
+                await download(items)
+            }
+        }
+    }
+
+    /// Asks the system to list what the selection shows again.
+    ///
+    /// The working-set enumerator only re-lists directories found in the
+    /// queue, so signalling alone refreshes nothing: the folders selected go
+    /// in, and for a file the folder that holds it.
+    private static func refresh(
+        _ entities: [ProviderEntity], identifiers: [NSFileProviderItemIdentifier]
+    ) async throws {
+        var directories: Set<DirectoryRefreshQueue.Entry> = []
+        for (entity, identifier) in zip(entities, identifiers) {
+            switch entity {
+            case .root:
+                for config in try ConnectionRegistry.mountedConfigs() {
+                    directories.insert(.init(serverID: config.id, path: RemotePath.root))
+                }
+            case .serverRoot(let serverID):
+                directories.insert(.init(serverID: serverID, path: RemotePath.root))
+            case .item(let serverID, let path):
+                let directoryPath = await isDirectory(identifier) ? path : RemotePath.parent(of: path)
+                directories.insert(.init(serverID: serverID, path: directoryPath))
+            }
+        }
+        try DirectoryRefreshQueue().enqueue(directories)
+        try await FinderDomain.signalWorkingSet()
+    }
+
+    /// Whether the item on this Mac is a folder, which the identifier alone
+    /// does not say. Reading the attribute does not download anything. When
+    /// it cannot be read the answer is no, since listing the parent shows
+    /// the item either way.
+    private static func isDirectory(_ identifier: NSFileProviderItemIdentifier) async -> Bool {
+        guard let url = try? await FinderDomain.manager().getUserVisibleURL(for: identifier) else {
+            return false
+        }
+        return (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+    }
+
+    private static func refresh(_ directories: Set<DirectoryRefreshQueue.Entry>) async {
+        do {
+            try DirectoryRefreshQueue().enqueue(directories)
+            try await FinderDomain.signalWorkingSet()
+        } catch {
+            // The pin is recorded either way; the system picks it up on its
+            // next enumeration instead of now.
+            log.error("Could not ask for a refresh of \(directories.count) directories: \(error.localizedDescription)")
+        }
+    }
+
+    private static func download(_ items: [NSFileProviderItemIdentifier]) async {
+        for item in items {
+            do {
+                try await FinderDomain.manager().requestDownloadForItem(
+                    withIdentifier: item, requestedRange: NSRange(location: NSNotFound, length: 0))
+                log.notice("Download requested for \(item.rawValue)")
+            } catch {
+                // Still pinned: the background downloader gets to it later.
+                log.error("Could not request the download of \(item.rawValue): \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Makes the selection dataless again. The system does the actual work
@@ -216,16 +299,14 @@ enum CustomActionRunner {
             .map { ItemIdentifierMapper.identifier(for: .serverRoot($0)) }
     }
 
-    /// Content that never reached the server survives the removal, but by the
-    /// time its location is known this process may already be gone, so it is
-    /// recorded rather than revealed.
-    private static func removeDomainPreservingEdits() async {
+    /// Takes the location out of Finder once nothing is mounted. With nothing
+    /// mounted the domain is only hidden, even an outdated one, so no
+    /// unsynced edits are moved anywhere that would need recording.
+    private static func hideDomain() async {
         do {
-            if let preservedLocation = try await FinderDomain.synchronize(hasMountedServers: false) {
-                log.notice("Unsynced edits were preserved at \(preservedLocation.path)")
-            }
+            try await FinderDomain.synchronize(hasMountedServers: false)
         } catch {
-            log.error("Removing the Finder location after the last unmount failed: \(error.localizedDescription)")
+            log.error("Hiding the Finder location after the last unmount failed: \(error.localizedDescription)")
         }
     }
 }

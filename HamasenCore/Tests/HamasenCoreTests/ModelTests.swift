@@ -219,3 +219,37 @@ struct StorageModeTests {
         )
     }
 }
+
+@Suite("Pausing and change checks")
+struct PauseAndChangeCheckTests {
+    @Test("舊設定檔沒有暫停與檢查間隔欄位時，為執行中且用協定預設值")
+    func decodesOlderConfigurations() throws {
+        let json = """
+        {"id":"8F5F5E0A-1C55-4F4B-A7D5-6A2D6F2B9C11","name":"NAS","transferProtocol":"s3",
+         "host":"example.com","port":443,"username":"user","remotePath":"/bucket"}
+        """
+        let config = try JSONDecoder().decode(ServerConfig.self, from: Data(json.utf8))
+        #expect(!config.isPaused)
+        #expect(config.remoteChangeIntervalSeconds == nil)
+        #expect(config.effectiveRemoteChangeIntervalSeconds == 0)
+    }
+
+    @Test("暫停狀態會改變 Finder 資料夾的版本，執行中維持原本的版本")
+    func pausingChangesTheFolderToken() {
+        var config = ServerConfig(name: "NAS", host: "example.com", username: "user")
+        let running = config.finderItemToken
+        #expect(running == "NAS|\(ServerConfig.StorageMode.automatic.versionToken)")
+        config.isPaused = true
+        #expect(config.finderItemToken != running)
+    }
+
+    @Test("雲端硬碟使用 OAuth 且沒有使用者自訂的主機")
+    func describesCloudDrives() {
+        #expect(ServerConfig.TransferProtocol.googleDrive.oauthProvider == .google)
+        #expect(ServerConfig.TransferProtocol.oneDrive.oauthProvider == .microsoft)
+        #expect(ServerConfig.TransferProtocol.dropbox.oauthProvider == .dropbox)
+        #expect(!ServerConfig.TransferProtocol.dropbox.hasUserChosenHost)
+        #expect(ServerConfig.TransferProtocol.smb.hasUserChosenHost)
+        #expect(ServerConfig.TransferProtocol.smb.defaultPort == 445)
+    }
+}

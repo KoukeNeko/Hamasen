@@ -32,7 +32,7 @@ export DEVELOPER_DIR
 
 echo "==> Using DEVELOPER_DIR: ${DEVELOPER_DIR}"
 
-echo "==> [1/4] Checking every target declares the same build number"
+echo "==> [1/5] Checking every target declares the same build number"
 # An archive is refused when an extension's build number differs from the app
 # around it, and they have differed three times: bumping the version in
 # Xcode's General tab writes it to one target, leaving the rest behind. The
@@ -48,13 +48,13 @@ if [[ "$(printf '%s\n' "$declared_versions" | wc -l | tr -d ' ')" != "1" ]]; the
 fi
 echo "    ${declared_versions}"
 
-echo "==> [2/4] Linting extension Info.plists"
+echo "==> [2/5] Linting extension Info.plists"
 plutil -lint "${PROJECT_ROOT}"/Config/*Info.plist
 
-echo "==> [3/4] Running HamasenCore tests"
+echo "==> [3/5] Running HamasenCore tests"
 (cd "${PROJECT_ROOT}/HamasenCore" && swift test)
 
-echo "==> [4/4] Building app + File Provider extension"
+echo "==> [4/5] Building app + File Provider extension"
 # A CI runner has no signing identity, and must not be allowed to mint one:
 # automatic signing would issue a fresh certificate on every run and exhaust
 # the team's allowance. This step only has to prove the sources compile, so
@@ -78,5 +78,11 @@ xcodebuild \
     -destination 'platform=macOS' \
     "${signing_arguments[@]}" \
     build | grep -E "error:|warning:|BUILD"
+
+echo "==> [5/5] Checking the String Catalogs"
+# After the build, which this reuses: the extractor only runs as part of one,
+# and a string added without a translation is invisible until somebody sees
+# the source language where their own should have been.
+"${PROJECT_ROOT}/scripts/sync-strings.sh" --check
 
 echo "==> All checks passed"

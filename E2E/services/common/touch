@@ -1,0 +1,12 @@
+#!/bin/sh
+# touch <relative-path> <unix-seconds>
+# Sets the modification time of a file under the data root the client mounts,
+# the way an edit from another device would.
+set -eu
+
+target="$E2E_DATA_ROOT/$1"
+if [ ! -e "$target" ]; then
+    echo "touch: $1: no such file or directory" >&2
+    exit 1
+fi
+touch -m -d "@$2" "$target"

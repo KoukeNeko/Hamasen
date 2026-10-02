@@ -81,6 +81,9 @@ struct HostKeySection: View {
         do {
             try KnownHostsStore().forget(endpoint: server.hostKeyEndpoint)
             load()
+            // A changed key paused the whole domain; the next connection
+            // records the new one, so let the system try again.
+            Task { _ = try? await FinderDomain.signalAuthenticationResolved() }
         } catch {
             errorMessage = String(localized: "無法清除已記錄的主機金鑰：\(error.localizedDescription)")
         }

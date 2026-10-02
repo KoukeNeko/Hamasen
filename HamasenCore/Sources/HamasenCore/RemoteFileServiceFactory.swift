@@ -18,11 +18,14 @@ import Foundation
 /// protocol-to-implementation mapping lives, so the app and the File Provider
 /// extension can never disagree about it.
 public enum RemoteFileServiceFactory {
+    /// Throws only when the credentials are of a kind the protocol cannot
+    /// use at all — a password handed to a cloud drive — which the forms
+    /// never produce but a restored backup could.
     public static func makeService(
         for config: ServerConfig,
         credentials: ServerCredentials,
         connectTimeoutSeconds: Int = AppSettings.connectTimeoutSeconds()
-    ) -> any RemoteFileService {
+    ) throws -> any RemoteFileService {
         switch config.transferProtocol {
         case .sftp:
             return SFTPFileService(
@@ -43,7 +46,48 @@ public enum RemoteFileServiceFactory {
                 credentials: credentials,
                 connectTimeoutSeconds: connectTimeoutSeconds
             )
+        case .s3:
+            return S3FileService(
+                config: config,
+                credentials: credentials,
+                endpoint: s3Endpoint(for: config),
+                connectTimeoutSeconds: connectTimeoutSeconds,
+                uploadSizes: {
+                    (AppSettings.s3MultipartThresholdBytes(), AppSettings.s3PartSizeBytes())
+                }
+            )
+        case .smb:
+            return SMBFileService(
+                config: config,
+                credentials: credentials,
+                connectTimeoutSeconds: connectTimeoutSeconds
+            )
+        case .dropbox:
+            return try DropboxFileService(
+                config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds)
+        case .oneDrive:
+            return try OneDriveFileService(
+                config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds)
+        case .googleDrive:
+            return try GoogleDriveFileService(
+                config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds)
         }
+    }
+
+    /// Unset settings are derived so the common providers work as typed:
+    /// the region is written into Amazon's own hostnames and can be read
+    /// back out, everything else is regionless, and only Amazon wants the
+    /// bucket in the hostname. The stored values exist for the provider that
+    /// does not fit that guess.
+    static func s3Endpoint(for config: ServerConfig) -> S3Endpoint {
+        S3Endpoint(
+            scheme: S3Endpoint.scheme(forHost: config.host),
+            host: config.host,
+            port: config.port == config.transferProtocol.defaultPort ? nil : config.port,
+            region: config.s3Region.flatMap { $0.isEmpty ? nil : $0 }
+                ?? S3Endpoint.inferredRegion(forHost: config.host),
+            addressingStyle: config.s3AddressingStyle
+        )
     }
 
     /// Where SSH host keys are remembered.

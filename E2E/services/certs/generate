@@ -1,0 +1,32 @@
+#!/bin/sh
+# Creates, once, the material the services and the harness share under /out
+# (E2E/.run): a TLS CA, a server certificate it signs, and the SFTP client
+# key. Existing files are kept, so clients that already trust them still do.
+set -eu
+
+certs=/out/certs
+keys=/out/keys
+mkdir -p "$certs" "$keys"
+
+if [ ! -f "$certs/ca.pem" ]; then
+    now=$(date +%s)
+    openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+        -out "$certs/ca-key.pem"
+    openssl req -x509 -new -key "$certs/ca-key.pem" -subj "/CN=Hamasen E2E CA" \
+        -not_before "$(date -u -d "@$((now - 3600))" +%Y%m%d%H%M%SZ)" \
+        -not_after "$(date -u -d "@$((now + 3650 * 86400))" +%Y%m%d%H%M%SZ)" \
+        -addext "keyUsage = critical, keyCertSign, cRLSign" \
+        -out "$certs/ca.pem"
+    chmod 600 "$certs/ca-key.pem"
+    chmod 644 "$certs/ca.pem"
+    # A server certificate from an earlier CA would no longer verify.
+    rm -f "$certs/server.pem"
+fi
+
+if [ ! -f "$certs/server.pem" ]; then
+    issue-server-cert "$certs" "$certs"
+fi
+
+if [ ! -f "$keys/id_ed25519" ]; then
+    ssh-keygen -q -t ed25519 -N '' -C hamasen-e2e -f "$keys/id_ed25519"
+fi

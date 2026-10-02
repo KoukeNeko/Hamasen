@@ -1,0 +1,8 @@
+[
+  {"name": "sftp", "listen": "0.0.0.0:12222", "upstream": "sftp:22", "enabled": true},
+  {"name": "ftp", "listen": "0.0.0.0:12121", "upstream": "ftp:21", "enabled": true},
+  {"name": "webdav", "listen": "0.0.0.0:18081", "upstream": "webdav:8080", "enabled": true},
+  {"name": "smb", "listen": "0.0.0.0:11445", "upstream": "smb:445", "enabled": true},
+  {"name": "s3", "listen": "0.0.0.0:18333", "upstream": "s3:8333", "enabled": true},
+  {"name": "cloud", "listen": "0.0.0.0:18090", "upstream": "cloud:8090", "enabled": true}
+]

@@ -28,17 +28,33 @@ import SwiftUI
 @MainActor
 @Observable
 final class ServerListModel {
+    private static let log = HamasenLog(category: "model")
+
     var servers: [ServerConfig] = []
     var mountedServerIDs: Set<UUID> = []
     var errorMessage: String?
     /// Something the user may want to act on, from here or from the sweep.
     var notice: Notice?
+    /// Whether the person has switched the Finder location on in System
+    /// Settings; nil while it is not in Finder or not yet known.
+    private(set) var isDomainEnabled: Bool?
 
-    /// What the system is currently transferring for this domain.
-    let transfers = TransferMonitor()
+    /// What the extension is transferring, what finished, the conflicts it
+    /// kept, and how each server answered it.
+    let activity = ActivityMonitor()
     /// What the mounted servers hold on this Mac, and what keeps it within
     /// bounds.
     let cache = CacheSupervisor()
+    let remoteChanges = RemoteChangeWatcher()
+    let index = WorkingSetRefresher()
+    let updates = UpdateChecker()
+
+    /// How each server answered the app's own checks, beside what the
+    /// extension reports; whichever changed last is the one shown.
+    private var observedHealth: [UUID: ServerHealth] = [:]
+    /// The status each connection was last announced in, so a notification
+    /// goes out when a connection gets into trouble and not on every look.
+    private var announcedStatuses: [UUID: ConnectionStatus]?
 
     private let credentialStore = KeychainCredentialStore()
 
@@ -88,12 +104,32 @@ final class ServerListModel {
             errorMessage = String(localized: "讀取伺服器設定失敗：\(error.localizedDescription)")
             return
         }
-        await migrateLegacyDomains()
-        await syncDomainRegistration()
+        // Everything that watches and reports starts before the domain is
+        // registered, not after: registering waits for fileproviderd, which
+        // can spend minutes starting a large domain after the extension was
+        // updated, and none of this needs the registration to have finished.
         cache.start(
             servers: { [weak self] in self?.mountedServers ?? [] },
             reporting: { [weak self] notice in self?.notice = notice }
         )
+        activity.start(
+            onNewConflicts: { [weak self] conflicts in self?.announce(conflicts) },
+            onChange: { [weak self] in self?.announceStatusChanges() }
+        )
+        remoteChanges.start(
+            servers: { [weak self] in self?.mountedServers.filter { !$0.isPaused } ?? [] },
+            observing: { [weak self] health, serverID in self?.observe(health, for: serverID) }
+        )
+        index.start()
+        updates.startAutomaticChecks()
+        observeDomainChanges()
+        announceStatusChanges()
+
+        await migrateLegacyDomains()
+        await refreshDomainState()
+        await syncDomainRegistration()
+        await refreshDomainState()
+        _ = try? await FinderDomain.releaseDomainWidePauses()
     }
 
     /// Earlier versions registered one domain per server (identifier = server
@@ -105,14 +141,15 @@ final class ServerListModel {
         else { return }
 
         guard !legacyDomains.isEmpty else { return }
+        var legacyServerIDs: Set<UUID> = []
         for domain in legacyDomains {
             if let serverID = UUID(uuidString: domain.identifier.rawValue),
                servers.contains(where: { $0.id == serverID }) {
-                mountedServerIDs.insert(serverID)
+                legacyServerIDs.insert(serverID)
             }
             try? await NSFileProviderManager.remove(domain)
         }
-        persistMountedSet()
+        persistMountedServers(adding: legacyServerIDs)
     }
 
     // MARK: - CRUD
@@ -120,6 +157,7 @@ final class ServerListModel {
     @discardableResult
     func saveServer(_ config: ServerConfig, credentials: CredentialUpdate) async -> Bool {
         guard let stores = stores() else { return false }
+        let previous = servers.first { $0.id == config.id }
         do {
             var updatedServers = servers
             if let existingIndex = updatedServers.firstIndex(where: { $0.id == config.id }) {
@@ -135,12 +173,16 @@ final class ServerListModel {
             return false
         }
 
-        // A rename shows up as the folder name in Finder; tell the system to
-        // re-check the server list.
+        // A rename shows up as the folder name in Finder, and new credentials
+        // may clear a sign-in failure that paused the whole domain; tell the
+        // system both.
         if isMounted(config) {
             // The domain may still be initializing; the next enumeration
             // picks the rename up anyway.
-            _ = try? await FinderDomain.signalServerListChanged()
+            _ = try? await FinderDomain.signalAuthenticationResolved()
+        }
+        if previous?.indexesInBackground != config.indexesInBackground {
+            index.settingsChanged()
         }
         cache.sweepSoon()
         return true
@@ -155,6 +197,8 @@ final class ServerListModel {
             try credentialStore.deleteAllCredentials(for: config.id)
             _ = try? PinnedItemsStore().removePins(forServer: config.id)
             servers = remainingServers
+            observedHealth[config.id] = nil
+            activity.forget(serverID: config.id)
         } catch {
             errorMessage = String(localized: "刪除伺服器失敗：\(error.localizedDescription)")
         }
@@ -179,7 +223,7 @@ final class ServerListModel {
         // The Finder folders are listed in this order too, so the change has
         // to reach the extension rather than stopping at the window.
         Task {
-            _ = try? await FinderDomain.signalServerListChanged()
+            _ = try? await FinderDomain.signalWorkingSet()
         }
     }
 
@@ -331,8 +375,7 @@ final class ServerListModel {
     }
 
     func mount(_ config: ServerConfig) async {
-        mountedServerIDs.insert(config.id)
-        persistMountedSet()
+        persistMountedServers(adding: [config.id])
         await syncDomainRegistration()
     }
 
@@ -346,16 +389,22 @@ final class ServerListModel {
             errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
             return
         }
+        // Its directories would be reported as new when it comes back. A miss
+        // is reclaimed by the poll's next `keepOnly` or by pruning.
+        try? RemoteDirectorySnapshotStore().forget(serverID: config.id)
+        try? RemoteDirectorySnapshotStore.walkRecord().forget(serverID: config.id)
         await syncDomainRegistration()
     }
 
     // MARK: - Finder integration
 
-    /// Opens the mounted Hamasen location in Finder.
-    func revealInFinder() async {
+    /// Opens the mounted Hamasen location in Finder, or one server's folder
+    /// inside it.
+    func revealInFinder(_ server: ServerConfig? = nil) async {
         guard let manager = NSFileProviderManager(for: FinderDomain.domain) else { return }
+        let identifier = server.map { ItemIdentifierMapper.identifier(for: .serverRoot($0.id)) } ?? .rootContainer
         do {
-            let url = try await manager.getUserVisibleURL(for: .rootContainer)
+            let url = try await manager.getUserVisibleURL(for: identifier)
             // getUserVisibleURL vends a security-scoped URL: a sandboxed app
             // has no standing access to ~/Library/CloudStorage and must claim
             // it before handing the location to Finder.
@@ -366,6 +415,21 @@ final class ServerListModel {
                 }
             }
             NSWorkspace.shared.open(url)
+        } catch {
+            errorMessage = String(localized: "無法開啟 Finder 位置：\(error.localizedDescription)")
+        }
+    }
+
+    /// Shows one item in Finder, selected — a conflict copy, for instance.
+    func revealItem(serverID: UUID, path: String) async {
+        guard let manager = try? FinderDomain.manager() else { return }
+        let identifier = ItemIdentifierMapper.identifier(
+            for: ItemIdentifierMapper.directoryEntity(serverID: serverID, path: path))
+        do {
+            let url = try await manager.getUserVisibleURL(for: identifier)
+            let hasScopedAccess = url.startAccessingSecurityScopedResource()
+            defer { if hasScopedAccess { url.stopAccessingSecurityScopedResource() } }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
             errorMessage = String(localized: "無法開啟 Finder 位置：\(error.localizedDescription)")
         }
@@ -383,6 +447,17 @@ final class ServerListModel {
     /// field blank without implying the server has no credential.
     func hasStoredPassword(for serverID: UUID) -> Bool {
         hasStoredCredential(kind: .password, for: serverID)
+    }
+
+    /// Whether a cloud drive connection has a sign-in stored.
+    func hasStoredToken(for serverID: UUID) -> Bool {
+        hasStoredCredential(kind: .oauthToken, for: serverID)
+    }
+
+    /// The stored password, for asking an SMB server which shares it has
+    /// before an edit is saved.
+    func storedPassword(for serverID: UUID) -> String? {
+        try? credentialStore.load(kind: .password, for: serverID)
     }
 
     /// Only a definite "no such item" counts as absent. Any other Keychain
@@ -412,19 +487,187 @@ final class ServerListModel {
         do {
             credentials = try draft.resolve(for: config, using: credentialStore)
         } catch {
-            return config.authenticationMethod == .password
-                ? String(localized: "沒有已儲存的密碼，請先輸入密碼再測試")
-                : String(localized: "沒有可用的 SSH 金鑰，請先選擇金鑰檔案")
+            switch config.authenticationMethod {
+            case .password: return String(localized: "沒有已儲存的密碼，請先輸入密碼再測試")
+            case .privateKey: return String(localized: "沒有可用的 SSH 金鑰，請先選擇金鑰檔案")
+            case .oauth: return String(localized: "尚未登入，請先在瀏覽器登入")
+            }
         }
 
-        let service = RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
-        defer { Task { try? await service.disconnect() } }
+        let service: any RemoteFileService
         do {
-            try await service.connect()
-            _ = try await service.listDirectory(at: RemotePath.root)
+            service = try RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
+        } catch {
+            return error.localizedDescription
+        }
+        defer { Task { try? await service.disconnect() } }
+        // Every protocol has its own timeout, and a host that accepts the
+        // connection and then says nothing can still outlast them; the test
+        // as a whole gives up after the same time, so the form never spins
+        // for good.
+        let limit = AppSettings.connectTimeoutSeconds() + 5
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await service.connect()
+                    _ = try await service.listDirectory(at: RemotePath.root)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(limit))
+                    throw RemoteFileServiceError.connectionFailed(underlying: String(localized: "連線逾時"))
+                }
+                defer { group.cancelAll() }
+                try await group.next()
+            }
             return nil
         } catch {
             return error.localizedDescription
+        }
+    }
+
+    // MARK: - Adding
+
+    /// Adds a connection only once it has been shown to work, and mounts it.
+    ///
+    /// Returns why it could not be added. Nothing is saved in that case, so a
+    /// connection that never worked is not left in the list for the person
+    /// to find and delete; the form keeps what they typed for another try.
+    func addConnection(_ config: ServerConfig, credentials: CredentialUpdate) async -> String? {
+        if let failure = await testConnection(config: config, credentials: credentials) {
+            return failure
+        }
+        guard await saveServer(config, credentials: credentials) else {
+            return errorMessage ?? String(localized: "儲存連線失敗")
+        }
+        await mount(config)
+        return nil
+    }
+
+    /// Signs in to a cloud drive in the browser and says whose account it
+    /// was.
+    func signIn(to provider: OAuthProvider) async throws -> (token: OAuthToken, email: String) {
+        let token = try await OAuthSignIn.signIn(provider: provider)
+        let email = (try? await CloudAccount.email(signedInWith: token)) ?? ""
+        return (token, email)
+    }
+
+    // MARK: - Pausing
+
+    /// Pauses or resumes a connection. A paused one stays in Finder with
+    /// what is already on this Mac; nothing is sent or fetched until it is
+    /// resumed.
+    func setPaused(_ isPaused: Bool, for config: ServerConfig) async {
+        guard var updated = servers.first(where: { $0.id == config.id }), updated.isPaused != isPaused else {
+            return
+        }
+        updated.isPaused = isPaused
+        guard await saveServer(updated, credentials: CredentialUpdate()) else { return }
+        // The folder's badge changes, and on resume whatever waited while
+        // paused is asked for again.
+        _ = try? await FinderDomain.signalWorkingSet()
+        if !isPaused, let manager = try? FinderDomain.manager() {
+            try? await manager.reimportItems(below: ItemIdentifierMapper.identifier(for: .serverRoot(config.id)))
+        }
+        announceStatusChanges()
+    }
+
+    // MARK: - Status
+
+    /// What a connection is doing, from the extension's reports and the
+    /// app's own checks.
+    func status(for config: ServerConfig) -> ConnectionStatus {
+        guard isMounted(config) else { return .notMounted }
+        if config.isPaused { return .paused }
+        switch health(for: config.id)?.state {
+        case .unreachable?: return .unreachable(health(for: config.id)?.message)
+        case .signInRequired?: return .signInRequired(health(for: config.id)?.message)
+        case .reachable?, nil: break
+        }
+        return activity.transfers(for: config.id).isEmpty ? .connected : .syncing
+    }
+
+    var overallStatus: OverallStatus {
+        OverallStatus.combining(servers.map(status(for:)))
+    }
+
+    private func health(for serverID: UUID) -> ServerHealth? {
+        switch (activity.health(for: serverID), observedHealth[serverID]) {
+        case let (reported?, observed?): return reported.since >= observed.since ? reported : observed
+        case let (reported, observed): return reported ?? observed
+        }
+    }
+
+    func observe(_ health: ServerHealth, for serverID: UUID) {
+        if let current = observedHealth[serverID], current.state == health.state, current.message == health.message {
+            return
+        }
+        observedHealth[serverID] = health
+        announceStatusChanges()
+    }
+
+    /// Notifies when a connection gets into trouble. Called whenever what
+    /// the status is made of changes; the first call only records where
+    /// things stand, since trouble that was there at launch is not news.
+    func announceStatusChanges() {
+        var current: [UUID: ConnectionStatus] = [:]
+        for server in servers { current[server.id] = status(for: server) }
+        defer { announcedStatuses = current }
+        guard let previous = announcedStatuses else { return }
+        for server in servers {
+            guard let status = current[server.id], status != previous[server.id] else { continue }
+            switch status {
+            case .unreachable(let message) where !(previous[server.id]?.needsAttention ?? false):
+                AppNotifier.connectionLost(server, message: message)
+            case .signInRequired:
+                AppNotifier.signInRequired(server)
+            default:
+                break
+            }
+        }
+    }
+
+    private func announce(_ conflicts: [ConflictRecord]) {
+        for conflict in conflicts {
+            let name = servers.first { $0.id == conflict.serverID }?.name ?? ""
+            AppNotifier.conflict(conflict, serverName: name)
+        }
+        announceStatusChanges()
+    }
+
+    // MARK: - System Settings
+
+    /// Reads whether the Finder location is switched on, which macOS asks
+    /// the person to do once in System Settings.
+    func refreshDomainState() async {
+        do {
+            let domains = try await NSFileProviderManager.domains()
+            // Hidden means nothing is mounted, and there is nothing to
+            // switch on until something is.
+            isDomainEnabled = domains.first {
+                $0.identifier == FinderDomain.domain.identifier && !$0.isHidden
+            }?.userEnabled
+        } catch {
+            // What was last known stays: a failed lookup says nothing about
+            // whether the switch moved.
+            Self.log.error("Could not read the Finder location's state: \(error.localizedDescription)")
+        }
+    }
+
+    private var domainObserver: NSObjectProtocol?
+
+    private func observeDomainChanges() {
+        guard domainObserver == nil else { return }
+        domainObserver = NotificationCenter.default.addObserver(
+            forName: .fileProviderDomainDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.refreshDomainState() }
+        }
+    }
+
+    /// Opens Login Items & Extensions, where File Providers are switched on.
+    func openFileProviderSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -436,17 +679,32 @@ final class ServerListModel {
 
     // MARK: - Domain helpers
 
-    private func persistMountedSet() {
+    /// Adds to the mounted set by delta and takes the result from the store.
+    ///
+    /// The extension removes servers from the same file (unmounting from
+    /// Finder), so writing back the set this model holds could undo that.
+    private func persistMountedServers(adding serverIDs: Set<UUID>) {
         guard let stores = stores() else { return }
         do {
-            try stores.mounted.saveMountedServerIDs(mountedServerIDs)
+            mountedServerIDs = try stores.mounted.addMountedServers(serverIDs)
         } catch {
             errorMessage = String(localized: "儲存掛載狀態失敗：\(error.localizedDescription)")
         }
     }
 
-    /// Registers or removes the main domain so it exists exactly when at
-    /// least one server is mounted.
+    /// Empties the Finder location and builds it again.
+    func resetFinderLocation() async {
+        do {
+            try await FinderDomain.reset(hasMountedServers: !mountedServerIDs.isEmpty)
+        } catch {
+            errorMessage = String(localized: "重設 Finder 位置失敗：\(error.localizedDescription)")
+        }
+        await refreshDomainState()
+        cache.sweepSoon()
+    }
+
+    /// Shows the main domain in Finder exactly when at least one server is
+    /// mounted.
     private func syncDomainRegistration() async {
         var preservedLocation: URL?
         do {
@@ -456,8 +714,9 @@ final class ServerListModel {
         } catch {
             errorMessage = String(localized: "更新 Finder 位置失敗：\(error.localizedDescription)")
         }
-        // Content that never made it to the server survives the unmount;
-        // showing it is the only way the user learns it is there.
+        // Replacing an outdated domain keeps content that never made it to
+        // the server wherever the system chooses; showing it is the only
+        // way the user learns it is there.
         if let preservedLocation {
             NSWorkspace.shared.activateFileViewerSelecting([preservedLocation])
         }

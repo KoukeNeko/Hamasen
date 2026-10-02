@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+# A one-second directory cache, so files changed on disk (by /e2e/touch,
+# say) show up in the next listing much as they would on an ordinary server.
+# Not zero: rclone then re-arms each directory's cache cleanup at once,
+# forever, and its idle CPU grows with every directory it has served until
+# requests take tens of seconds.
+set -- rclone serve webdav "$E2E_DATA_ROOT" --addr ":$E2E_PORT" \
+    --htpasswd /etc/rclone/htpasswd --dir-cache-time 1s
+
+if [ -n "${E2E_TLS:-}" ]; then
+    # Starts from the shared certificate in E2E/.run; rotate-cert replaces
+    # this copy, which lives in a volume so it survives restarts.
+    if [ ! -f /tls/server.pem ]; then
+        cp /e2e-certs/server.pem /e2e-certs/server-key.pem /tls/
+    fi
+    set -- "$@" --cert /tls/server.pem --key /tls/server-key.pem
+fi
+
+exec supervise "$@"

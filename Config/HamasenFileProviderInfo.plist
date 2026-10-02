@@ -108,6 +108,41 @@
 				<string>SUBQUERY(fileproviderItems, $item, $item.isFolder == YES OR $item.isDownloaded == YES).@count &gt; 0</string>
 			</dict>
 		</array>
+		<!-- Badges Finder draws on an item's icon when the item names them in
+		     its `decorations` (NSFileProviderItemDecorating). The image is the
+		     icon of the UTI under BadgeImageType; the system's own badge UTIs
+		     ship with icons, so nothing has to be drawn here. The label is a
+		     key into Localizable.xcstrings, like the action names. -->
+		<key>NSFileProviderDecorations</key>
+		<array>
+			<dict>
+				<key>Identifier</key>
+				<string>dev.hamasen.decoration.pinned</string>
+				<key>BadgeImageType</key>
+				<string>com.apple.icon-decoration.badge.pinned</string>
+				<key>Category</key>
+				<string>Badge</string>
+				<key>Label</key>
+				<dict>
+					<key>NSStringFormat</key>
+					<string>DECORATION_PINNED</string>
+				</dict>
+			</dict>
+			<!-- A label beside the server folder's name rather than a badge:
+			     the system has no paused badge, and a warning one would read
+			     as something having gone wrong. -->
+			<dict>
+				<key>Identifier</key>
+				<string>dev.hamasen.decoration.paused</string>
+				<key>Category</key>
+				<string>Sharing</string>
+				<key>Label</key>
+				<dict>
+					<key>NSStringFormat</key>
+					<string>DECORATION_PAUSED</string>
+				</dict>
+			</dict>
+		</array>
 	</dict>
 </dict>
 </plist>

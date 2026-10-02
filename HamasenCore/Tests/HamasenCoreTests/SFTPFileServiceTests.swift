@@ -103,7 +103,9 @@ struct SFTPFileServiceTests {
             hostKeyPolicy: .acceptAnything
         )
 
-        await #expect(throws: RemoteFileServiceError.self) {
+        // A refused password asks for the password again; reported as a
+        // connection failure, it would read as the server being down.
+        await #expect(throws: RemoteFileServiceError.authenticationFailed) {
             try await service.connect()
         }
 
@@ -151,7 +153,7 @@ struct SFTPFileServiceTests {
             hostKeyPolicy: .acceptAnything
         )
 
-        await #expect(throws: RemoteFileServiceError.self) {
+        await #expect(throws: RemoteFileServiceError.authenticationFailed) {
             try await service.connect()
         }
 
@@ -448,5 +450,244 @@ struct SFTPFileServiceTests {
         #expect(items.map(\.name) == ["scoped.txt"])
 
         try await Self.tearDown(service, server)
+    }
+
+    // MARK: - Transfers
+
+    private static func makeLocalFile(_ payload: Data) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sftp-local-\(UUID().uuidString).bin")
+        try payload.write(to: url)
+        return url
+    }
+
+    /// Patterned so a chunk that lands at the wrong offset or twice cannot
+    /// pass for the right one.
+    private static func makePayload(byteCount: Int) -> Data {
+        Data((0..<byteCount).map { UInt8(truncatingIfNeeded: $0 &* 31 &+ $0 >> 8) })
+    }
+
+    private final class ProgressLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var totals: [Int64] = []
+        func record(_ total: Int64) { lock.withLock { totals.append(total) } }
+        var recorded: [Int64] { lock.withLock { totals } }
+    }
+
+    @Test("多 MB 檔案上傳再下載內容一致並回報進度")
+    func roundTripsMultiMegabyteFileWithProgress() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let payload = Self.makePayload(byteCount: 5_000_017)
+        let source = try Self.makeLocalFile(payload)
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sftp-back-\(UUID().uuidString).bin")
+        defer {
+            try? FileManager.default.removeItem(at: source)
+            try? FileManager.default.removeItem(at: destination)
+        }
+
+        let uploadProgress = ProgressLog()
+        try await service.uploadFile(from: source, to: "/big.bin", progress: { uploadProgress.record($0) })
+        #expect(try Data(contentsOf: server.rootDirectory.appendingPathComponent("big.bin")) == payload)
+        #expect(uploadProgress.recorded == uploadProgress.recorded.sorted())
+        #expect(uploadProgress.recorded.last == Int64(payload.count))
+
+        let downloadProgress = ProgressLog()
+        try await service.downloadFile(at: "/big.bin", to: destination, progress: { downloadProgress.record($0) })
+        #expect(try Data(contentsOf: destination) == payload)
+        #expect(downloadProgress.recorded == downloadProgress.recorded.sorted())
+        #expect(downloadProgress.recorded.last == Int64(payload.count))
+
+        let ranged = try await service.downloadRange(at: "/big.bin", offset: 123_456, length: 2_000_000)
+        #expect(ranged == payload.subdata(in: 123_456..<2_123_456))
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("取消下載會在傳完前停止")
+    func cancellingDownloadStopsEarly() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let payload = Self.makePayload(byteCount: 8_000_000)
+        try payload.write(to: server.rootDirectory.appendingPathComponent("cancel-me.bin"))
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sftp-cancel-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let progress = ProgressLog()
+        let task = Task {
+            try await service.downloadFile(at: "/cancel-me.bin", to: destination, progress: { progress.record($0) })
+        }
+        while progress.recorded.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect((progress.recorded.last ?? 0) < Int64(payload.count))
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("上傳完成後不留暫存檔且會取代舊檔")
+    func uploadReplacesExistingFileWithoutLeavingTemporary() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        try Data("old".utf8).write(to: server.rootDirectory.appendingPathComponent("target.txt"))
+        let source = try Self.makeLocalFile(Data("new content".utf8))
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        try await service.uploadFile(from: source, to: "/target.txt")
+
+        let names = try FileManager.default.contentsOfDirectory(atPath: server.rootDirectory.path)
+        #expect(names == ["target.txt"])
+        #expect(try String(contentsOf: server.rootDirectory.appendingPathComponent("target.txt"), encoding: .utf8) == "new content")
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("列表不顯示進行中的上傳暫存檔")
+    func listingHidesTemporaryUploads() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let temporaryName = RemotePath.name(of: RemotePath.temporaryUploadPath(for: "/report.txt"))
+        try Data("partial".utf8).write(to: server.rootDirectory.appendingPathComponent(temporaryName))
+        try Data("done".utf8).write(to: server.rootDirectory.appendingPathComponent("report.txt"))
+
+        let items = try await service.listDirectory(at: RemotePath.root)
+        #expect(items.map(\.name) == ["report.txt"])
+
+        try await Self.tearDown(service, server)
+    }
+
+    /// An upload cut off with the connection cannot remove its temporary
+    /// file, and listings hide it; the folder still has to delete.
+    @Test("刪除目錄時一併移除中斷上傳留下的暫存檔")
+    func deletingDirectoryRemovesStrandedUploads() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let folder = server.rootDirectory.appendingPathComponent("inner")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        let temporaryName = RemotePath.name(of: RemotePath.temporaryUploadPath(for: "/inner/report.txt"))
+        try Data("partial".utf8).write(to: folder.appendingPathComponent(temporaryName))
+
+        try await service.deleteDirectory(at: "/inner")
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+
+        try await Self.tearDown(service, server)
+    }
+
+    // MARK: - Symlinks
+
+    @Test("刪除指向目錄的連結不會刪掉目標內容")
+    func deletingDirectoryLinkKeepsTarget() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let target = server.rootDirectory.appendingPathComponent("target")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: target.appendingPathComponent("precious.txt"))
+        try FileManager.default.createSymbolicLink(
+            at: server.rootDirectory.appendingPathComponent("link"),
+            withDestinationURL: target
+        )
+
+        // The link reads as a directory, which is what sends it here.
+        #expect(try await service.itemInfo(at: "/link").isDirectory)
+        try await service.deleteDirectory(at: "/link")
+
+        #expect(!FileManager.default.fileExists(atPath: server.rootDirectory.appendingPathComponent("link").path))
+        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("precious.txt").path))
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("刪除含有目錄連結的目錄只移除連結")
+    func deletingDirectoryContainingLinkKeepsLinkTarget() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        let target = server.rootDirectory.appendingPathComponent("target")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: target.appendingPathComponent("precious.txt"))
+        let holder = server.rootDirectory.appendingPathComponent("holder")
+        try FileManager.default.createDirectory(at: holder, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: holder.appendingPathComponent("link"),
+            withDestinationURL: target
+        )
+
+        try await service.deleteDirectory(at: "/holder")
+
+        #expect(!FileManager.default.fileExists(atPath: holder.path))
+        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("precious.txt").path))
+
+        try await Self.tearDown(service, server)
+    }
+
+    // MARK: - Errors
+
+    @Test("移動到已存在的項目回報 alreadyExists")
+    func moveOntoExistingItemThrowsAlreadyExists() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        try Data("a".utf8).write(to: server.rootDirectory.appendingPathComponent("a.txt"))
+        try Data("b".utf8).write(to: server.rootDirectory.appendingPathComponent("b.txt"))
+
+        await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/b.txt")) {
+            try await service.moveItem(from: "/a.txt", to: "/b.txt")
+        }
+        #expect(try String(contentsOf: server.rootDirectory.appendingPathComponent("b.txt"), encoding: .utf8) == "b")
+
+        try await Self.tearDown(service, server)
+    }
+
+    @Test("移動不存在的項目回報 itemNotFound")
+    func moveMissingItemThrowsItemNotFound() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        await #expect(throws: RemoteFileServiceError.itemNotFound(path: "/missing.txt")) {
+            try await service.moveItem(from: "/missing.txt", to: "/other.txt")
+        }
+
+        try await Self.tearDown(service, server)
+    }
+
+    /// A half-open connection never answers; without a per-request timeout
+    /// the download would wait forever while `isConnected` stayed true.
+    @Test("伺服器不回應時逾時並標記連線失效")
+    func unansweredRequestTimesOutAndDropsSession() async throws {
+        let server = try await TestSFTPServer.start()
+        let service = SFTPFileService(
+            config: ServerConfig(
+                name: "測試伺服器",
+                host: "127.0.0.1",
+                port: server.port,
+                username: TestSFTPServer.username
+            ),
+            credentials: .password(TestSFTPServer.password),
+            connectTimeoutSeconds: 1,
+            hostKeyPolicy: .acceptAnything
+        )
+        try await service.connect()
+
+        try Data("stuck".utf8).write(to: server.rootDirectory.appendingPathComponent("stuck.txt"))
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sftp-stuck-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        server.stallsReads = true
+        do {
+            try await service.downloadFile(at: "/stuck.txt", to: destination)
+            Issue.record("Expected the download to time out")
+        } catch let error as RemoteFileServiceError {
+            guard case .connectionFailed = error else {
+                Issue.record("Expected connectionFailed, got \(error)")
+                return
+            }
+        }
+        server.stallsReads = false
+
+        #expect(await service.isConnected == false)
+
+        try await service.disconnect()
+        try await server.stop()
     }
 }

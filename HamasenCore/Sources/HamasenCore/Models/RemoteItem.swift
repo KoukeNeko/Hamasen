@@ -32,6 +32,14 @@ public struct RemoteItem: Sendable, Equatable, Identifiable {
     public let creationDate: Date?
     /// POSIX permissions (e.g. 0o644); nil when unknown.
     public let permissions: UInt16?
+    /// An identity the server gives this exact content — an S3 or WebDAV
+    /// ETag — when it has one. nil for protocols that only report size and
+    /// modification time.
+    public let contentTag: String?
+    /// A symbolic link reported as what it points at. Its kind is the
+    /// target's, so anything that walks a tree checks this before going
+    /// inside: a link to an ancestor never ends.
+    public let isResolvedLink: Bool
 
     public var id: String { path }
     public var isDirectory: Bool { kind == .directory }
@@ -43,7 +51,9 @@ public struct RemoteItem: Sendable, Equatable, Identifiable {
         size: Int64,
         modificationDate: Date? = nil,
         creationDate: Date? = nil,
-        permissions: UInt16? = nil
+        permissions: UInt16? = nil,
+        contentTag: String? = nil,
+        isResolvedLink: Bool = false
     ) {
         self.path = path
         self.name = name
@@ -52,6 +62,25 @@ public struct RemoteItem: Sendable, Equatable, Identifiable {
         self.modificationDate = modificationDate
         self.creationDate = creationDate
         self.permissions = permissions
+        self.contentTag = contentTag
+        self.isResolvedLink = isResolvedLink
+    }
+
+    /// What identifies this item's content, for deciding whether it changed.
+    ///
+    /// The one derivation both the File Provider item version and the change
+    /// watcher's record use: when they disagree, one side sees a change the
+    /// other does not. The modification time is cut to whole seconds because
+    /// servers report it at different precisions from different calls — an
+    /// S3 listing in milliseconds, the HEAD of the same object in seconds —
+    /// and a version that differs between a listing and a lookup makes the
+    /// system re-download a file that never changed.
+    public var contentVersionToken: String {
+        if let contentTag {
+            return "t\(size)-\(contentTag)"
+        }
+        let seconds = modificationDate.map { Int64($0.timeIntervalSince1970.rounded(.down)) } ?? 0
+        return "\(size)-\(seconds)"
     }
 }
 
@@ -84,6 +113,24 @@ public enum RemotePath {
         if base == root { return mountRelativePath }
         if mountRelativePath == root { return base }
         return base + mountRelativePath
+    }
+
+    private static let temporaryUploadPrefix = ".hamasen-upload-"
+
+    /// Where an upload is written before it replaces `path`, beside it so the
+    /// final rename stays on the same file system.
+    ///
+    /// Writing in place truncates the file first: a connection lost halfway
+    /// leaves the server holding half a file under the real name.
+    public static func temporaryUploadPath(for path: String) -> String {
+        let token = UUID().uuidString.prefix(8).lowercased()
+        return join(parent(of: path), "\(temporaryUploadPrefix)\(token)-\(name(of: path))")
+    }
+
+    /// Whether a name is an upload still in flight, which listings leave out
+    /// so Finder never shows it.
+    public static func isTemporaryUpload(name: String) -> Bool {
+        name.hasPrefix(temporaryUploadPrefix)
     }
 
     /// Drops a trailing separator so paths compare equal regardless of how a

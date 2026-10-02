@@ -61,13 +61,27 @@ actor CacheEvictor {
         var usage: [UUID: CacheUsage] = [:]
     }
 
+    /// The pinned identifiers, or nil when they cannot be read.
+    ///
+    /// Never an empty set in that case: with nothing known to be pinned every
+    /// pinned file becomes a candidate, and the sweep would evict what the
+    /// user asked to keep. The extension's `PinnedItems` refuses the same way.
+    private func loadPinned() -> Set<String>? {
+        do {
+            return try PinnedItemsStore().loadPinnedIdentifiers()
+        } catch {
+            log.error("Skipping the cache pass: the pinned items could not be read: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Measures without dropping anything, for when the user is looking at a
     /// server rather than when the allowance needs enforcing.
     func measureUsage(for servers: [ServerConfig]) async -> [UUID: CacheUsage] {
         guard let manager = try? FinderDomain.manager(),
-              let materialized = try? await materializedItems(from: manager)
+              let materialized = try? await MaterializedItems.all(from: manager)
         else { return [:] }
-        let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
+        guard let pinned = loadPinned() else { return [:] }
         let items = await measured(cachedItems(from: materialized), for: servers, using: manager)
         return CacheEvictionPlan.usage(of: items, pinned: pinned)
     }
@@ -92,6 +106,9 @@ actor CacheEvictor {
         let folderNames = Dictionary(
             servers.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }
         )
+        // When each copy was last wanted, with the copies seen for the first
+        // time noted as of now and the ones gone forgotten, in one write.
+        let usage = (try? ItemUsageStore().reconcile(present: Set(items.map(\.identifier)))) ?? [:]
         return items.map { item in
             guard let folder = folderNames[item.serverID],
                   case .item(_, let path)? = ItemIdentifierMapper.entity(for: .init(item.identifier))
@@ -108,17 +125,30 @@ actor CacheEvictor {
                 identifier: item.identifier,
                 serverID: item.serverID,
                 byteCount: Int64(allocated ?? 0),
-                modifiedAt: item.modifiedAt
+                modifiedAt: item.modifiedAt,
+                lastUsedAt: usage[item.identifier]?.latest
             )
         }
     }
 
+    /// What a pass is asked to drop.
+    enum Scope {
+        /// What each server's own allowance and the shared policy call for.
+        case policies(AutoCleanPolicy?)
+        /// Every copy that can go: "remove all downloads".
+        case everything
+    }
+
     @discardableResult
-    func evictContent(for servers: [ServerConfig]) async -> Outcome {
+    func evictContent(for servers: [ServerConfig], scope: Scope) async -> Outcome {
         let policies = Dictionary(
             servers.map { ($0.id, $0.cachePolicy) }, uniquingKeysWith: { first, _ in first }
         )
-        let isManaged = policies.values.contains { $0 != .unlimited }
+        let isManaged: Bool
+        switch scope {
+        case .policies(let autoClean): isManaged = autoClean != nil || policies.values.contains { $0 != .unlimited }
+        case .everything: isManaged = true
+        }
         guard isManaged, !isRunning else { return Outcome() }
         isRunning = true
         defer { isRunning = false }
@@ -132,21 +162,33 @@ actor CacheEvictor {
 
         do {
             let cached = await measured(
-                cachedItems(from: try await materializedItems(from: manager)),
+                cachedItems(from: try await MaterializedItems.all(from: manager)),
                 for: servers,
                 using: manager
             )
             // What the user pinned is exempt, whatever the allowance says.
-            let pinned = (try? PinnedItemsStore().loadPinnedIdentifiers()) ?? []
+            guard let pinned = loadPinned() else { return Outcome() }
             var outcome = Outcome(
                 heldOverByPins: CacheEvictionPlan.serversHeldOverAllowanceByPins(
                     items: cached, policies: policies, pinned: pinned
                 ),
                 usage: CacheEvictionPlan.usage(of: cached, pinned: pinned)
             )
-            let candidates = CacheEvictionPlan.itemsToEvict(
-                from: cached, policies: policies, pinned: pinned, limit: Self.maximumPerPass
-            ).map(NSFileProviderItemIdentifier.init(rawValue:))
+            let planned: [String]
+            switch scope {
+            case .policies(let autoClean):
+                var combined = CacheEvictionPlan.itemsToEvict(
+                    from: cached, policies: policies, pinned: pinned, limit: Self.maximumPerPass)
+                if let autoClean {
+                    let shared = CacheEvictionPlan.itemsToClean(
+                        from: cached, policy: autoClean, pinned: pinned, limit: Self.maximumPerPass)
+                    combined += shared.filter { !combined.contains($0) }
+                }
+                planned = Array(combined.prefix(Self.maximumPerPass))
+            case .everything:
+                planned = CacheEvictionPlan.allEvictable(from: cached, pinned: pinned)
+            }
+            let candidates = planned.map(NSFileProviderItemIdentifier.init(rawValue:))
             guard !candidates.isEmpty else {
                 // Reported rather than returned in silence: "nothing to free"
                 // and "the filter matched nothing" look identical from
@@ -214,63 +256,4 @@ actor CacheEvictor {
         }
     }
 
-    /// The materialized set is served as an enumerator, so it has to be
-    /// drained page by page.
-    private func materializedItems(
-        from manager: NSFileProviderManager
-    ) async throws -> [any NSFileProviderItemProtocol] {
-        try await withCheckedThrowingContinuation { continuation in
-            let collector = MaterializedItemCollector(continuation: continuation)
-            collector.start(manager.enumeratorForMaterializedItems())
-        }
-    }
-}
-
-/// Collects one enumeration of the materialized set and resumes its
-/// continuation exactly once, whichever way the enumeration ends.
-private nonisolated final class MaterializedItemCollector: NSObject, NSFileProviderEnumerationObserver, @unchecked Sendable {
-    private let continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>
-    private var items: [any NSFileProviderItemProtocol] = []
-    private var hasResumed = false
-    /// Held because the enumerator is otherwise only referenced by the call
-    /// that started it, and it has to outlive that call.
-    private var enumerator: (any NSFileProviderEnumerator)?
-
-    /// Nonisolated because the enumerator drives this from whatever queue it
-    /// runs on; the protocol it conforms to is declared on the main actor,
-    /// which would otherwise put every callback there.
-    init(continuation: CheckedContinuation<[any NSFileProviderItemProtocol], Error>) {
-        self.continuation = continuation
-    }
-
-    func start(_ enumerator: any NSFileProviderEnumerator) {
-        self.enumerator = enumerator
-        enumerator.enumerateItems(for: self, startingAt: NSFileProviderPage(Data()))
-    }
-
-    func didEnumerate(_ items: [any NSFileProviderItemProtocol]) {
-        self.items.append(contentsOf: items)
-    }
-
-    func finishEnumerating(upTo nextPage: NSFileProviderPage?) {
-        if let nextPage {
-            enumerator?.enumerateItems(for: self, startingAt: nextPage)
-            return
-        }
-        finish { $0.resume(returning: items) }
-    }
-
-    func finishEnumeratingWithError(_ error: any Error) {
-        finish { $0.resume(throwing: error) }
-    }
-
-    private func finish(
-        _ resume: (CheckedContinuation<[any NSFileProviderItemProtocol], Error>) -> Void
-    ) {
-        guard !hasResumed else { return }
-        hasResumed = true
-        enumerator?.invalidate()
-        enumerator = nil
-        resume(continuation)
-    }
 }

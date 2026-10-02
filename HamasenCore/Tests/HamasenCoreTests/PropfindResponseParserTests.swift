@@ -177,4 +177,39 @@ struct PropfindResponseParserTests {
                 == "/files/report.pdf"
         )
     }
+
+    @Test("getetag 去掉引號，弱驗證標記視為沒有 ETag")
+    func normalisesTheEntityTag() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <d:multistatus xmlns:d="DAV:">
+          <d:response><d:href>/a</d:href><d:propstat><d:prop>
+            <d:getetag>W/"abc123"</d:getetag></d:prop>
+            <d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+          <d:response><d:href>/b</d:href><d:propstat><d:prop>
+            <d:getetag>plain</d:getetag></d:prop>
+            <d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+          <d:response><d:href>/c</d:href>
+            <d:propstat><d:prop><d:getcontentlength>3</d:getcontentlength></d:prop>
+              <d:status>HTTP/1.1 200 OK</d:status></d:propstat>
+            <d:propstat><d:prop><d:getetag/></d:prop>
+              <d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>
+        </d:multistatus>
+        """
+        let entries = try PropfindResponseParser.parse(Data(xml.utf8))
+        #expect(entries.map(\.contentTag) == [nil, "plain", nil])
+    }
+
+    @Test("failureStatuses 只回傳非 2xx 的成員狀態")
+    func reportsOnlyFailedMemberStatuses() {
+        let xml = """
+        <?xml version="1.0"?>
+        <d:multistatus xmlns:d="DAV:">
+          <d:response><d:href>/ok</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response>
+          <d:response><d:href>/locked</d:href><d:status>HTTP/1.1 423 Locked</d:status></d:response>
+          <d:response><d:href>/denied</d:href><d:status>HTTP/1.1 403 Forbidden</d:status></d:response>
+        </d:multistatus>
+        """
+        #expect(PropfindResponseParser.failureStatuses(in: Data(xml.utf8)) == [423, 403])
+    }
 }

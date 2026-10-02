@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import Security
 
 /// Keeps credentials attached across redirects, but only when the redirect
 /// stays on the same origin and the method is safe to replay.
@@ -30,9 +31,13 @@ private final class RedirectAuthenticator: NSObject, URLSessionTaskDelegate, @un
 
     private let authorization: String?
     private let origin: URLComponents
+    /// Certificate authorities trusted in place of the system's, for tests
+    /// that serve HTTPS under one of their own. Empty in the app.
+    private let trustedAnchors: [SecCertificate]
 
-    init(authorization: String?, scheme: String?, host: String, port: Int) {
+    init(authorization: String?, scheme: String?, host: String, port: Int, trustedAnchors: [SecCertificate] = []) {
         self.authorization = authorization
+        self.trustedAnchors = trustedAnchors
         var origin = URLComponents()
         origin.scheme = scheme
         origin.host = host
@@ -65,6 +70,20 @@ private final class RedirectAuthenticator: NSObject, URLSessionTaskDelegate, @un
         completionHandler(request)
     }
 
+    func urlSession(
+        _ session: URLSession, didReceive challenge: URLAuthenticationChallenge
+    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        guard !trustedAnchors.isEmpty,
+              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust
+        else { return (.performDefaultHandling, nil) }
+        SecTrustSetAnchorCertificates(trust, trustedAnchors as CFArray)
+        SecTrustSetAnchorCertificatesOnly(trust, true)
+        var error: CFError?
+        guard SecTrustEvaluateWithError(trust, &error) else { return (.cancelAuthenticationChallenge, nil) }
+        return (.useCredential, URLCredential(trust: trust))
+    }
+
     /// Scheme, host and port must all match: a same-host redirect from https
     /// to http would otherwise put the password on the wire in the clear.
     private func isSameOrigin(_ url: URL?) -> Bool {
@@ -95,6 +114,7 @@ public actor WebDAVFileService: RemoteFileService {
     private enum Method: String {
         case propfind = "PROPFIND"
         case get = "GET"
+        case head = "HEAD"
         case put = "PUT"
         case mkcol = "MKCOL"
         case delete = "DELETE"
@@ -117,12 +137,18 @@ public actor WebDAVFileService: RemoteFileService {
         static let unauthorized = 401
         static let forbidden = 403
         static let notFound = 404
+        /// MKCOL's answer for a name already taken.
+        static let methodNotAllowed = 405
+        static let preconditionFailed = 412
         static let rangeNotSatisfiable = 416
     }
 
     /// MOVE must fail rather than replace an existing destination, matching
     /// SFTP's rename and letting Finder offer its own replace prompt.
     private static let refuseOverwrite = "F"
+    /// Except for the MOVE that puts a finished upload in place, which is
+    /// the replacing the caller asked for.
+    private static let allowOverwrite = "T"
 
     /// Only the properties the app maps onto NSFileProviderItem.
     private static let propfindBody = Data("""
@@ -132,9 +158,16 @@ public actor WebDAVFileService: RemoteFileService {
         <D:resourcetype/>
         <D:getcontentlength/>
         <D:getlastmodified/>
+        <D:getetag/>
       </D:prop>
     </D:propfind>
     """.utf8)
+
+    /// Declared on every PROPFIND answer by Nextcloud, ownCloud and
+    /// ownCloud Infinite Scale; see `uploadsInPlace`.
+    private static let ownCloudNamespace = Data("http://owncloud.org/ns".utf8)
+
+    private static let listOperation = "列出目錄"
 
     private static let log = HamasenLog(category: "webdav")
 
@@ -142,6 +175,8 @@ public actor WebDAVFileService: RemoteFileService {
     /// kept so the remaining chunks of one file do not re-download it.
     private struct CachedBody {
         let path: String
+        /// What the server said identified this content when it was sent; the
+        /// copy is served only while the server still says the same.
         let validator: String
         let url: URL
     }
@@ -159,15 +194,47 @@ public actor WebDAVFileService: RemoteFileService {
     private var requestsInFlight = 0
     private var isTearingDown = false
     private var cachedBody: CachedBody?
+    /// Whether uploads are PUT straight to their name. Nextcloud and
+    /// ownCloud delete the file a MOVE lands on before moving, and with it
+    /// the file id that its versions, shares, public links, comments and
+    /// tags hang on; they hold a PUT in a part file of their own until it is
+    /// complete, so writing to the name is safe there.
+    ///
+    /// Told apart by the ownCloud namespace in the connect probe's answer,
+    /// at no cost in requests. Nextcloud, ownCloud and Infinite Scale declare
+    /// it on every multistatus whether or not any of its properties were
+    /// asked for — sabre writes out the whole namespace map their file
+    /// plugins add it to, and Infinite Scale writes it as a fixed attribute —
+    /// while the probe asks only for DAV: properties, so no other server has
+    /// cause to name it. The headers that mark these servers (OC-FileId,
+    /// OC-ETag) only arrive on the PUT and MOVE being chosen between, and a
+    /// proxy can put the /remote.php/ endpoint behind any path.
+    private var uploadsInPlace = false
+
+    private let trustedAnchors: [SecCertificate]
 
     public init(
         config: ServerConfig,
         credentials: ServerCredentials,
         connectTimeoutSeconds: Int = AppSettings.defaultConnectTimeoutSeconds
     ) {
+        self.init(
+            config: config, credentials: credentials, connectTimeoutSeconds: connectTimeoutSeconds,
+            trustedAnchors: [])
+    }
+
+    /// - Parameter trustedAnchors: certificate authorities trusted in place
+    ///   of the system's, for tests that serve HTTPS under their own.
+    init(
+        config: ServerConfig,
+        credentials: ServerCredentials,
+        connectTimeoutSeconds: Int,
+        trustedAnchors: [SecCertificate]
+    ) {
         self.config = config
         self.credentials = credentials
         self.connectTimeoutSeconds = connectTimeoutSeconds
+        self.trustedAnchors = trustedAnchors
 
         if case .password(let password) = credentials {
             let pair = Data("\(config.username):\(password)".utf8).base64EncodedString()
@@ -192,7 +259,9 @@ public actor WebDAVFileService: RemoteFileService {
         // connect() cannot observe success before the credentials are checked.
         let candidate = makeSession()
         do {
-            _ = try await propfind(at: RemotePath.root, depth: .itemOnly, using: candidate)
+            let document = try await propfindDocument(at: RemotePath.root, depth: .itemOnly, using: candidate)
+            _ = try Self.parseMultiStatus(document, path: RemotePath.root)
+            uploadsInPlace = document.range(of: Self.ownCloudNamespace) != nil
         } catch {
             candidate.invalidateAndCancel()
             throw error
@@ -227,7 +296,8 @@ public actor WebDAVFileService: RemoteFileService {
                 authorization: authorizationHeader,
                 scheme: config.transferProtocol.urlScheme,
                 host: config.host,
-                port: config.port
+                port: config.port,
+                trustedAnchors: trustedAnchors
             ),
             delegateQueue: nil
         )
@@ -269,6 +339,8 @@ public actor WebDAVFileService: RemoteFileService {
             // A depth-1 PROPFIND also describes the directory itself; it is
             // matched by path rather than position, which servers vary on.
             guard RemotePath.withoutTrailingSeparator(entryPath) != directoryPath else { return nil }
+            // Uploads in flight are not part of the folder yet.
+            guard !RemotePath.isTemporaryUpload(name: RemotePath.name(of: entryPath)) else { return nil }
             return Self.makeRemoteItem(path: entryPath, entry: entry)
         }
     }
@@ -281,11 +353,12 @@ public actor WebDAVFileService: RemoteFileService {
         return Self.makeRemoteItem(path: path, entry: entry)
     }
 
-    public func downloadFile(at path: String, to localURL: URL) async throws {
+    public func downloadFile(at path: String, to localURL: URL, progress: TransferProgress?) async throws {
         let request = try makeRequest(method: .get, path: path)
         let (temporaryURL, response) = try await withSession { session in
             do {
-                return try await session.download(for: request)
+                return try await session.download(
+                    for: request, delegate: Self.progressDelegate(progress, session: session))
             } catch {
                 throw Self.mapTransportError(error, operation: String(localized: "下載", bundle: .module), path: path)
             }
@@ -300,6 +373,12 @@ public actor WebDAVFileService: RemoteFileService {
         } catch {
             throw RemoteFileServiceError.localFileUnreadable(url: localURL)
         }
+        // The delegate reports bytes as they arrive, but not reliably the
+        // last of them: the call can return before its final callback. The
+        // total is known now, so it is reported here whatever came before.
+        if let progress, let size = try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            progress(Int64(size))
+        }
     }
 
     public func downloadRange(at path: String, offset: Int64, length: Int) async throws -> Data {
@@ -309,7 +388,12 @@ public actor WebDAVFileService: RemoteFileService {
         // answering whole entities; serving later chunks from the copy on
         // disk avoids re-downloading the file once per chunk.
         if let cached = cachedBody, cached.path == path {
-            return try Self.readSlice(from: cached.url, offset: offset, length: length, path: path)
+            if await currentValidator(at: path) == cached.validator {
+                return try Self.readSlice(from: cached.url, offset: offset, length: length, path: path)
+            }
+            // The file changed on the server, or cannot be checked: slices of
+            // the old copy would be served as if they were the new content.
+            discardCachedBody(forPath: path)
         }
 
         var request = try makeRequest(method: .get, path: path)
@@ -376,21 +460,140 @@ public actor WebDAVFileService: RemoteFileService {
         }
     }
 
-    public func uploadFile(from localURL: URL, to path: String) async throws {
-        let request = try makeRequest(method: .put, path: path)
-        let (_, response) = try await withSession { session in
+    /// Written beside the file and moved over it once complete, except on
+    /// Nextcloud and ownCloud (see `uploadsInPlace`). Servers such as rclone
+    /// keep whatever arrived of a PUT that was cut off, under the name it
+    /// was sent to, so a connection lost halfway through a PUT to the real
+    /// name leaves half of the new file where the old one was.
+    public func uploadFile(from localURL: URL, to path: String, progress: TransferProgress?) async throws {
+        let operation = String(localized: "上傳", bundle: .module)
+        let temporaryPath = uploadsInPlace ? nil : RemotePath.temporaryUploadPath(for: path)
+        var isMoving = false
+        do {
+            let request = try makeRequest(method: .put, path: temporaryPath ?? path)
+            let (body, response) = try await withSession { session in
+                do {
+                    return try await session.upload(
+                        for: request, fromFile: localURL,
+                        delegate: Self.progressDelegate(progress, session: session))
+                } catch {
+                    throw Self.mapTransportError(error, operation: operation, path: path)
+                }
+            }
+            try Self.validate(response, body: body, method: .put, operation: operation, path: path)
+            if let temporaryPath {
+                let replacesFile = try await refuseFolder(at: path)
+                isMoving = true
+                try await moveUpload(
+                    from: temporaryPath, to: path, overwriting: replacesFile, operation: operation)
+            }
+        } catch {
+            if let temporaryPath {
+                if isMoving {
+                    await settleFailedMove(of: temporaryPath, to: path)
+                } else {
+                    await discardTemporaryUpload(at: temporaryPath)
+                }
+            }
+            throw error
+        }
+        discardCachedBody(forPath: path)
+        if let progress, let size = try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            progress(Int64(size))
+        }
+    }
+
+    /// MOVE with Overwrite: T deletes whatever is at the destination first,
+    /// folder and all, so a folder that appeared under the name while the
+    /// upload ran is refused rather than replaced. Returns whether a file is
+    /// there to be replaced.
+    private func refuseFolder(at path: String) async throws -> Bool {
+        do {
+            if try await itemInfo(at: path).isDirectory {
+                throw RemoteFileServiceError.alreadyExists(path: path)
+            }
+            return true
+        } catch RemoteFileServiceError.itemNotFound {
+            return false
+        }
+    }
+
+    /// - Parameter overwriting: whether a file was at the destination when
+    ///   it was looked at. When nothing was, the MOVE refuses to overwrite:
+    ///   a file someone else created there since is theirs, and the server
+    ///   answers 412 instead of replacing it.
+    private func moveUpload(
+        from temporaryPath: String, to path: String, overwriting: Bool, operation: String
+    ) async throws {
+        var request = try makeRequest(method: .move, path: temporaryPath)
+        request.setValue(try absoluteURL(for: path).absoluteString, forHTTPHeaderField: "Destination")
+        request.setValue(overwriting ? Self.allowOverwrite : Self.refuseOverwrite, forHTTPHeaderField: "Overwrite")
+        let (body, response) = try await withSession { session in
             do {
-                return try await session.upload(for: request, fromFile: localURL)
+                return try await session.data(for: request)
             } catch {
-                throw Self.mapTransportError(error, operation: String(localized: "上傳", bundle: .module), path: path)
+                throw Self.mapTransportError(error, operation: operation, path: path)
             }
         }
-        try Self.validate(response, method: .put, operation: String(localized: "上傳", bundle: .module), path: path)
-        discardCachedBody(forPath: path)
+        try Self.validate(response, body: body, method: .move, operation: operation, path: path)
+    }
+
+    /// A MOVE can fail after the server has already deleted the destination
+    /// — servers that overwrite by deleting first and renaming second do —
+    /// and then the upload under its temporary name is the only copy of the
+    /// file left. It is removed only once the destination is seen to be there;
+    /// otherwise it stays, hidden from listings, and where it is gets logged.
+    private func settleFailedMove(of temporaryPath: String, to path: String) async {
+        let destinationExists = await Task { (try? await self.itemInfo(at: path)) != nil }.value
+        if destinationExists {
+            await discardTemporaryUpload(at: temporaryPath)
+        } else {
+            Self.log.error("upload to \(path) could not be moved into place and nothing is there now; kept at \(temporaryPath)")
+        }
+    }
+
+    /// Best effort: the upload has already failed, and this only tidies up
+    /// after it. Over a connection that is gone it fails as well, and the
+    /// listings hide what it leaves.
+    ///
+    /// Sent from a task of its own, because the upload's may have been
+    /// cancelled and URLSession cancels a request made from a cancelled task
+    /// before it is sent.
+    private func discardTemporaryUpload(at temporaryPath: String) async {
+        await Task {
+            do {
+                try await self.perform(
+                    method: .delete, path: temporaryPath, operation: String(localized: "刪除檔案", bundle: .module))
+            } catch RemoteFileServiceError.itemNotFound {
+            } catch {
+                Self.log.notice("could not remove temporary upload \(temporaryPath): \(String(describing: error))")
+            }
+        }.value
     }
 
     public func createDirectory(at path: String) async throws {
-        try await perform(method: .mkcol, path: path, operation: String(localized: "建立目錄", bundle: .module))
+        let operation = String(localized: "建立目錄", bundle: .module)
+        // RFC 4918 refuses an existing name with 405, but some servers —
+        // rclone among them — answer 201 and leave it as it was, which would
+        // pass an existing folder off as a new one. So the name is looked up
+        // first, and 405 still covers one created in between.
+        do {
+            _ = try await itemInfo(at: path)
+            throw RemoteFileServiceError.alreadyExists(path: path)
+        } catch RemoteFileServiceError.itemNotFound {
+        }
+        let request = try makeRequest(method: .mkcol, path: path)
+        let (body, response) = try await withSession { session in
+            do {
+                return try await session.data(for: request)
+            } catch {
+                throw Self.mapTransportError(error, operation: operation, path: path)
+            }
+        }
+        if (response as? HTTPURLResponse)?.statusCode == Status.methodNotAllowed {
+            throw RemoteFileServiceError.alreadyExists(path: path)
+        }
+        try Self.validate(response, body: body, method: .mkcol, operation: operation, path: path)
     }
 
     public func deleteFile(at path: String) async throws {
@@ -407,30 +610,41 @@ public actor WebDAVFileService: RemoteFileService {
         request.setValue(try absoluteURL(for: newPath).absoluteString, forHTTPHeaderField: "Destination")
         request.setValue(Self.refuseOverwrite, forHTTPHeaderField: "Overwrite")
 
-        let (_, response) = try await withSession { session in
+        let (body, response) = try await withSession { session in
             do {
                 return try await session.data(for: request)
             } catch {
                 throw Self.mapTransportError(error, operation: String(localized: "移動", bundle: .module), path: oldPath)
             }
         }
-        try Self.validate(response, method: .move, operation: String(localized: "移動", bundle: .module), path: oldPath)
+        // Overwrite: F met an existing destination; the name in the way is
+        // the destination's, not the source's.
+        if (response as? HTTPURLResponse)?.statusCode == Status.preconditionFailed {
+            throw RemoteFileServiceError.alreadyExists(path: newPath)
+        }
+        try Self.validate(response, body: body, method: .move, operation: String(localized: "移動", bundle: .module), path: oldPath)
         discardCachedBody(forPath: oldPath)
     }
 
     // MARK: - Requests
 
-    private func propfind(
+    private func propfind(at path: String, depth: Depth) async throws -> [PropfindResponseParser.Entry] {
+        try Self.parseMultiStatus(await propfindDocument(at: path, depth: depth), path: path)
+    }
+
+    /// The multistatus as the server sent it, for connect(), which reads
+    /// more of it than the parsed entries carry.
+    private func propfindDocument(
         at path: String,
         depth: Depth,
         using probeSession: URLSession? = nil
-    ) async throws -> [PropfindResponseParser.Entry] {
+    ) async throws -> Data {
         var request = try makeRequest(method: .propfind, path: path)
         request.setValue(depth.rawValue, forHTTPHeaderField: "Depth")
         request.setValue("application/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.httpBody = Self.propfindBody
 
-        let operation = "列出目錄"
+        let operation = Self.listOperation
         let fetch: (URLSession) async throws -> (Data, URLResponse) = { session in
             do {
                 return try await session.data(for: request)
@@ -447,26 +661,29 @@ public actor WebDAVFileService: RemoteFileService {
             (data, response) = try await withSession(fetch)
         }
         try Self.validate(response, method: .propfind, operation: operation, path: path)
+        return data
+    }
 
+    private static func parseMultiStatus(_ document: Data, path: String) throws -> [PropfindResponseParser.Entry] {
         do {
-            return try PropfindResponseParser.parse(data)
+            return try PropfindResponseParser.parse(document)
         } catch {
             throw RemoteFileServiceError.operationFailed(
-                operation: operation, path: path, underlying: String(describing: error)
+                operation: listOperation, path: path, underlying: String(describing: error)
             )
         }
     }
 
     private func perform(method: Method, path: String, operation: String) async throws {
         let request = try makeRequest(method: method, path: path)
-        let (_, response) = try await withSession { session in
+        let (body, response) = try await withSession { session in
             do {
                 return try await session.data(for: request)
             } catch {
                 throw Self.mapTransportError(error, operation: operation, path: path)
             }
         }
-        try Self.validate(response, method: method, operation: operation, path: path)
+        try Self.validate(response, body: body, method: method, operation: operation, path: path)
     }
 
     private func makeRequest(method: Method, path: String) throws -> URLRequest {
@@ -531,9 +748,7 @@ public actor WebDAVFileService: RemoteFileService {
     private func retainCachedBody(at url: URL, path: String, response: HTTPURLResponse) {
         // Without a validator there is no way to tell a stale copy from a
         // fresh one, so nothing is kept.
-        let validator = response.value(forHTTPHeaderField: "ETag")
-            ?? response.value(forHTTPHeaderField: "Last-Modified")
-        guard let validator else {
+        guard let validator = Self.validator(of: response) else {
             try? FileManager.default.removeItem(at: url)
             return
         }
@@ -548,7 +763,45 @@ public actor WebDAVFileService: RemoteFileService {
         cachedBody = nil
     }
 
+    /// The server's current validator for the file, or nil when it cannot be
+    /// had. A HEAD rather than a PROPFIND, so it is spelled by the same
+    /// headers the cached body's was and the two compare exactly.
+    private func currentValidator(at path: String) async -> String? {
+        // Every failure here means "cannot confirm the copy is current", and
+        // the caller then fetches again, where the real error is reported.
+        guard var request = try? makeRequest(method: .head, path: path) else { return nil }
+        // The same request shape as the ranged GET whose validator this is
+        // compared against: a compressed answer can carry a different ETag.
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        guard let (_, response) = try? await withSession({ try await $0.data(for: request) }),
+              let http = response as? HTTPURLResponse,
+              Status.successRange.contains(http.statusCode)
+        else { return nil }
+        return Self.validator(of: http)
+    }
+
+    /// An ETag when the server sends one, otherwise the modification time
+    /// with the length, since a time alone cannot tell two edits within a
+    /// second apart.
+    private static func validator(of response: HTTPURLResponse) -> String? {
+        if let tag = HTTPTransfer.normalizedETag(response.value(forHTTPHeaderField: "ETag")) {
+            return "etag:\(tag)"
+        }
+        guard let modified = response.value(forHTTPHeaderField: "Last-Modified") else { return nil }
+        let length = response.value(forHTTPHeaderField: "Content-Length") ?? ""
+        return "modified:\(modified)|\(length)"
+    }
+
     // MARK: - Responses
+
+    private static func progressDelegate(
+        _ progress: TransferProgress?, session: URLSession
+    ) -> TransferProgressDelegate? {
+        progress.map {
+            TransferProgressDelegate(
+                redirectHandler: session.delegate as? URLSessionTaskDelegate, progress: $0)
+        }
+    }
 
     private static func makeRemoteItem(path: String, entry: PropfindResponseParser.Entry) -> RemoteItem {
         RemoteItem(
@@ -556,7 +809,10 @@ public actor WebDAVFileService: RemoteFileService {
             name: RemotePath.name(of: path),
             kind: entry.isCollection ? .directory : .file,
             size: entry.contentLength ?? 0,
-            modificationDate: entry.lastModified
+            modificationDate: entry.lastModified,
+            // A collection's tag changes with its contents on some servers,
+            // and a directory has no content of its own to version.
+            contentTag: entry.isCollection ? nil : entry.contentTag
         )
     }
 
@@ -597,6 +853,7 @@ public actor WebDAVFileService: RemoteFileService {
 
     private static func validate(
         _ response: URLResponse,
+        body: Data? = nil,
         method: Method,
         operation: String,
         path: String
@@ -611,9 +868,14 @@ public actor WebDAVFileService: RemoteFileService {
         // failures surface there; for anything else the operation may have
         // partially failed and reporting success would lose data.
         if httpResponse.statusCode == Status.multiStatus, method != .propfind {
+            let failures = body.map(PropfindResponseParser.failureStatuses) ?? []
             log.error("\(operation) at \(path) returned 207; treating partial result as failure")
+            if failures.contains(where: { $0 == Status.unauthorized || $0 == Status.forbidden }) {
+                throw RemoteFileServiceError.permissionDenied(operation: operation, path: path)
+            }
+            let detail = failures.isEmpty ? "" : "：" + failures.map { "HTTP \($0)" }.joined(separator: "、")
             throw RemoteFileServiceError.operationFailed(
-                operation: operation, path: path, underlying: "伺服器回報部分項目未完成（207）"
+                operation: operation, path: path, underlying: "伺服器回報部分項目未完成（207）\(detail)"
             )
         }
 
@@ -627,9 +889,7 @@ public actor WebDAVFileService: RemoteFileService {
             // Authenticated but not permitted here — a per-item condition, not
             // a reason to put the whole domain into a re-authentication state.
             log.error("\(operation) at \(path) forbidden: HTTP 403")
-            throw RemoteFileServiceError.operationFailed(
-                operation: operation, path: path, underlying: "沒有權限（HTTP 403）"
-            )
+            throw RemoteFileServiceError.permissionDenied(operation: operation, path: path)
         case Status.notFound:
             log.debug("\(operation) at \(path): not found")
             throw RemoteFileServiceError.itemNotFound(path: path)
@@ -647,10 +907,14 @@ public actor WebDAVFileService: RemoteFileService {
         if let domainError = error as? RemoteFileServiceError { return domainError }
 
         let urlError = error as? URLError
-        switch urlError?.code {
-        case .cannotConnectToHost, .cannotFindHost, .timedOut, .networkConnectionLost, .notConnectedToInternet:
+        if let urlError, HTTPTransfer.isTransportFailure(urlError.code) {
             log.error("\(operation) at \(path) unreachable: \(String(describing: error))")
-            return RemoteFileServiceError.connectionFailed(underlying: error.localizedDescription)
+            return HTTPTransfer.connectionFailure(urlError)
+        }
+        switch urlError?.code {
+        case .cancelled:
+            // The caller's task was cancelled; that is not a server failure.
+            return CancellationError()
         case .userAuthenticationRequired:
             return RemoteFileServiceError.authenticationFailed
         case .appTransportSecurityRequiresSecureConnection:

@@ -30,10 +30,15 @@ actor FTPControlConnection {
 
     private let channel: Channel
     private let responses: FTPResponseHandler
+    /// How long a reply may take before the server is taken to be gone. A
+    /// server that goes silent never closes the socket, so without this the
+    /// caller waits forever.
+    private let replyTimeout: TimeAmount
 
-    private init(channel: Channel, responses: FTPResponseHandler) {
+    private init(channel: Channel, responses: FTPResponseHandler, replyTimeout: TimeAmount) {
         self.channel = channel
         self.responses = responses
+        self.replyTimeout = replyTimeout
     }
 
     /// The address the control connection is talking to, which is where a
@@ -51,6 +56,7 @@ actor FTPControlConnection {
         port: Int,
         timeoutSeconds: Int,
         tls: FTPTLSMode = .none,
+        trustRoots: NIOSSLTrustRoots = .default,
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton
     ) async throws -> (connection: FTPControlConnection, greeting: FTPResponse) {
         let responses = FTPResponseHandler()
@@ -72,15 +78,25 @@ actor FTPControlConnection {
             throw RemoteFileServiceError.connectionFailed(underlying: String(describing: error))
         }
 
-        let connection = FTPControlConnection(channel: channel, responses: responses)
-        let greeting = try await responses.nextResponse(on: channel.eventLoop).get()
+        let connection = FTPControlConnection(
+            channel: channel,
+            responses: responses,
+            replyTimeout: .seconds(Int64(timeoutSeconds))
+        )
+        let greeting: FTPResponse
+        do {
+            greeting = try await connection.nextReply(timeout: connection.replyTimeout)
+        } catch {
+            await connection.close()
+            throw RemoteFileServiceError.connectionFailed(underlying: String(describing: error))
+        }
         guard greeting.isPositiveCompletion else {
             try? await channel.close()
             throw RemoteFileServiceError.connectionFailed(underlying: greeting.text)
         }
         if tls == .explicit {
             do {
-                try await connection.startTLS(host: host)
+                try await connection.startTLS(host: host, trustRoots: trustRoots)
             } catch {
                 await connection.close()
                 throw error
@@ -92,7 +108,7 @@ actor FTPControlConnection {
     /// Upgrades the control connection, which has to happen before the login
     /// rather than after it: the point is that the password never travels in
     /// the clear.
-    private func startTLS(host: String) async throws {
+    private func startTLS(host: String, trustRoots: NIOSSLTrustRoots) async throws {
         let response = try await send("AUTH TLS")
         guard response.isPositiveCompletion else {
             throw FTPError.commandFailed(command: "AUTH", response: response)
@@ -103,7 +119,7 @@ actor FTPControlConnection {
         // Swift 6 language mode. Only the hostname crosses.
         let hostname = host
         try await channel.eventLoop.submit {
-            let handler = try FTPTLS.makeHandler(context: FTPTLS.makeContext(), host: hostname)
+            let handler = try FTPTLS.makeHandler(context: FTPTLS.makeContext(trustRoots: trustRoots), host: hostname)
             // At the head, so bytes are decrypted before anything tries to
             // read lines out of them.
             try self.channel.pipeline.syncOperations.addHandler(handler, position: .first)
@@ -116,11 +132,16 @@ actor FTPControlConnection {
     ///   still recording that the command was sent.
     @discardableResult
     func send(_ command: String, redactingArgument: Bool = false) async throws -> FTPResponse {
+        // A line break inside a path would end the command early and let the
+        // rest run as a second one. Scalars, because "\r\n" is one Character.
+        guard !command.unicodeScalars.contains(where: { $0 == "\r" || $0 == "\n" }) else {
+            throw FTPError.invalidCommand
+        }
         Self.log.debug("→ \(redactingArgument ? String(command.prefix(4)) + "…" : command)")
         var buffer = channel.allocator.buffer(capacity: command.utf8.count + 2)
         buffer.writeString(command + Self.lineEnding)
         try await channel.writeAndFlush(buffer)
-        let response = try await responses.nextResponse(on: channel.eventLoop).get()
+        let response = try await nextReply(timeout: replyTimeout)
         Self.log.debug("← \(response.code) \(response.lines.first ?? "")")
         return response
     }
@@ -130,14 +151,26 @@ actor FTPControlConnection {
     func expect(_ command: String, redactingArgument: Bool = false) async throws -> FTPResponse {
         let response = try await send(command, redactingArgument: redactingArgument)
         guard !response.isFailure else {
-            throw FTPError.commandFailed(command: String(command.prefix(4)), response: response)
+            throw FTPError.commandFailed(command: FTPError.name(of: command), response: response)
         }
         return response
     }
 
     /// The reply that closes a transfer, read once the data connection ends.
     func awaitCompletion() async throws -> FTPResponse {
-        try await responses.nextResponse(on: channel.eventLoop).get()
+        try await nextReply(timeout: replyTimeout)
+    }
+
+    /// A reply that has not arrived in time will arrive later, in front of
+    /// the reply to whatever is sent next. There is no way to tell them
+    /// apart afterwards, so the connection is closed rather than kept.
+    private func nextReply(timeout: TimeAmount) async throws -> FTPResponse {
+        do {
+            return try await responses.nextResponse(on: channel.eventLoop, timeout: timeout).get()
+        } catch let error as FTPError {
+            if case .timedOut = error { await close() }
+            throw error
+        }
     }
 
     var isActive: Bool { channel.isActive }
@@ -190,7 +223,11 @@ private final class FTPResponseHandler: ChannelInboundHandler, @unchecked Sendab
     }
 
     /// The next reply, whether it has already arrived or has yet to.
-    func nextResponse(on eventLoop: EventLoop) -> EventLoopFuture<FTPResponse> {
+    ///
+    /// A timeout fails the whole handler rather than only this wait: the
+    /// reply that never came is still owed, so nothing read afterwards can be
+    /// matched to its command.
+    func nextResponse(on eventLoop: EventLoop, timeout: TimeAmount) -> EventLoopFuture<FTPResponse> {
         eventLoop.flatSubmit {
             if !self.delivered.isEmpty {
                 return eventLoop.makeSucceededFuture(self.delivered.removeFirst())
@@ -200,6 +237,10 @@ private final class FTPResponseHandler: ChannelInboundHandler, @unchecked Sendab
             }
             let promise = eventLoop.makePromise(of: FTPResponse.self)
             self.waiting.append(promise)
+            let timer = eventLoop.scheduleTask(in: timeout) {
+                self.fail(with: FTPError.timedOut)
+            }
+            promise.futureResult.whenComplete { _ in timer.cancel() }
             return promise.futureResult
         }
     }
@@ -210,23 +251,59 @@ private final class FTPResponseHandler: ChannelInboundHandler, @unchecked Sendab
 enum FTPError: Error {
     case commandFailed(command: String, response: FTPResponse)
     case connectionClosed
+    /// The server did not answer, or stopped sending data, in time.
+    case timedOut
+    /// A command that would have run as more than one.
+    case invalidCommand
     case unreadableAddress(response: FTPResponse)
+
+    /// The verb of a command line, which is what a failure is reported by.
+    static func name(of command: String) -> String {
+        String(command.split(separator: " ", maxSplits: 1).first ?? "")
+    }
+
+    /// Replies that say the session or its data connection is gone, however
+    /// the command was worded: 421 closes the control connection, 425 and
+    /// 426 mean a data connection could not be opened or was cut.
+    var isConnectionLevel: Bool {
+        switch self {
+        case .connectionClosed, .timedOut: return true
+        case .commandFailed(_, let response): return [421, 425, 426].contains(response.code)
+        case .invalidCommand, .unreadableAddress: return false
+        }
+    }
 
     /// The service-level error this becomes, so callers see the same kinds of
     /// failure whatever protocol they are talking.
+    ///
+    /// Telling a missing item from a refused one needs a look at the server,
+    /// which is the service's to make; this maps only what the reply alone
+    /// decides.
     func asServiceError(operation: String, path: String) -> RemoteFileServiceError {
         switch self {
         case .commandFailed(_, let response):
             // 530 is "not logged in", which is what a wrong password draws.
-            // 550 covers both "no such file" and "permission denied", and
-            // only the text tells them apart.
             if response.code == 530 { return .authenticationFailed }
+            if isConnectionLevel {
+                return .connectionFailed(underlying: response.text)
+            }
+            // 553 is a name the server will not accept, which in practice is
+            // a permission.
+            if response.code == 553 { return .permissionDenied(operation: operation, path: path) }
             if response.code == 550, response.text.lowercased().contains("no such") {
                 return .itemNotFound(path: path)
             }
             return .operationFailed(operation: operation, path: path, underlying: response.text)
         case .connectionClosed:
             return .connectionFailed(underlying: "the server closed the connection")
+        case .timedOut:
+            return .connectionFailed(underlying: "the server stopped responding")
+        case .invalidCommand:
+            return .operationFailed(
+                operation: operation,
+                path: path,
+                underlying: "the path contains a line break"
+            )
         case .unreadableAddress(let response):
             return .operationFailed(
                 operation: operation,

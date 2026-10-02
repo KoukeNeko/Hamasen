@@ -37,10 +37,34 @@ final class TestWebDAVServer {
         var ignoresRange = false
         /// Answer DELETE with 207, as a collection with a failed member does.
         var multiStatusOnDelete = false
+        /// The status the failed member of that 207 reports.
+        var multiStatusMemberCode = 423
         /// Answer writes with 403 while still accepting the credentials.
         var forbidsWrites = false
         /// Omit getcontentlength from PROPFIND responses.
         var omitsContentLength = false
+        /// Send no ETag anywhere, so a client can only go by Last-Modified.
+        var omitsETag = false
+        /// Answer MKCOL on an existing collection with 201 and change
+        /// nothing, as rclone does, instead of RFC 4918's 405.
+        var createsExistingCollection = false
+        /// Close the connection once this many bytes of a PUT's body have
+        /// arrived — the link dropping mid-upload — and keep what did arrive
+        /// under the name the PUT was for, as rclone serve webdav does.
+        var dropsPutsAfterBytes: Int?
+        /// Declare the ownCloud and Nextcloud namespaces on every PROPFIND
+        /// answer, as Nextcloud does whether or not any of their properties
+        /// were asked for. Nextcloud's PUT writing over a file in place, and
+        /// its MOVE deleting the file it lands on first, are what this server
+        /// does already.
+        var behavesLikeNextcloud = false
+        /// Store a PUT's body but never answer it, so the client is still
+        /// waiting, with the file already on the server, when it gives up.
+        var neverAnswersPuts = false
+        /// Answer a MOVE that overwrites with 500 after deleting what was at
+        /// the destination, as a server that deletes first and renames
+        /// second does when the rename fails.
+        var failsMoveAfterDeletingDestination = false
 
         static let wellBehaved = Behaviour()
     }
@@ -164,6 +188,11 @@ private final class WebDAVHandler: ChannelInboundHandler {
             if let bytes = buffer.readBytes(length: buffer.readableBytes) {
                 body.append(contentsOf: bytes)
             }
+            if let limit = behaviour.dropsPutsAfterBytes, let head, head.method == .PUT, body.count >= limit {
+                try? body.prefix(limit).write(to: localURL(for: decodedPath(head.uri)))
+                self.head = nil
+                context.close(promise: nil)
+            }
         case .end:
             guard let head else { return }
             respond(to: head, body: body, context: context)
@@ -204,6 +233,8 @@ private final class WebDAVHandler: ChannelInboundHandler {
         switch head.method.rawValue {
         case "PROPFIND":
             handlePropfind(path: path, target: target, head: head, context: context)
+        case "HEAD":
+            handleHead(target: target, context: context)
         case "GET":
             handleGet(target: target, head: head, context: context)
         case "PUT":
@@ -260,9 +291,12 @@ private final class WebDAVHandler: ChannelInboundHandler {
             }
         }
 
+        let namespaces = behaviour.behavesLikeNextcloud
+            ? #" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns""#
+            : ""
         let xml = """
         <?xml version="1.0" encoding="utf-8"?>
-        <D:multistatus xmlns:D="DAV:">
+        <D:multistatus xmlns:D="DAV:"\(namespaces)>
         \(responses.joined(separator: "\n"))
         </D:multistatus>
         """
@@ -295,11 +329,42 @@ private final class WebDAVHandler: ChannelInboundHandler {
                 <D:resourcetype>\(resourceType)</D:resourcetype>
                 \(behaviour.omitsContentLength ? "" : "<D:getcontentlength>\(size)</D:getcontentlength>")
                 <D:getlastmodified>\(modified)</D:getlastmodified>
+                \(entityTag(attributes: attributes, isDirectory: isDirectory).map { "<D:getetag>\"\($0)\"</D:getetag>" } ?? "")
               </D:prop>
               <D:status>HTTP/1.1 200 OK</D:status>
             </D:propstat>
           </D:response>
         """
+    }
+
+    /// Derived from the content, so an edit changes it the way a real
+    /// server's does. Nil for a directory and when the behaviour omits it.
+    private func entityTag(attributes: [FileAttributeKey: Any], isDirectory: Bool) -> String? {
+        guard !behaviour.omitsETag, !isDirectory else { return nil }
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        return "\(size)-\(Int64(modified * 1000))"
+    }
+
+    private func headers(for target: URL, contents: Data) -> [String: String] {
+        let attributes = (try? FileManager.default.attributesOfItem(atPath: target.path)) ?? [:]
+        var headers = [
+            "Last-Modified": Self.httpDateFormatter.string(
+                from: attributes[.modificationDate] as? Date ?? Date())
+        ]
+        if let tag = entityTag(attributes: attributes, isDirectory: false) {
+            headers["ETag"] = "\"\(tag)\""
+        }
+        return headers
+    }
+
+    private func handleHead(target: URL, context: ChannelHandlerContext) {
+        guard let contents = FileManager.default.contents(atPath: target.path) else {
+            send(status: .notFound, context: context)
+            return
+        }
+        send(status: .ok, contentLength: contents.count,
+             extraHeaders: headers(for: target, contents: contents), context: context)
     }
 
     private func handleGet(target: URL, head: HTTPRequestHead, context: ChannelHandlerContext) {
@@ -313,7 +378,7 @@ private final class WebDAVHandler: ChannelInboundHandler {
             send(
                 status: .ok,
                 body: contents,
-                extraHeaders: ["ETag": "\"test-\(contents.count)\""],
+                extraHeaders: headers(for: target, contents: contents),
                 context: context
             )
             return
@@ -336,6 +401,7 @@ private final class WebDAVHandler: ChannelInboundHandler {
     private func handlePut(target: URL, body: Data, context: ChannelHandlerContext) {
         do {
             try body.write(to: target)
+            guard !behaviour.neverAnswersPuts else { return }
             send(status: .created, context: context)
         } catch {
             send(status: .conflict, context: context)
@@ -343,6 +409,11 @@ private final class WebDAVHandler: ChannelInboundHandler {
     }
 
     private func handleMkcol(target: URL, context: ChannelHandlerContext) {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            send(status: behaviour.createsExistingCollection ? .created : .methodNotAllowed, context: context)
+            return
+        }
         do {
             try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
             send(status: .created, context: context)
@@ -362,7 +433,7 @@ private final class WebDAVHandler: ChannelInboundHandler {
             <D:multistatus xmlns:D="DAV:">
               <D:response>
                 <D:href>/locked-child</D:href>
-                <D:status>HTTP/1.1 423 Locked</D:status>
+                <D:status>HTTP/1.1 \(behaviour.multiStatusMemberCode) Member</D:status>
               </D:response>
             </D:multistatus>
             """
@@ -397,6 +468,10 @@ private final class WebDAVHandler: ChannelInboundHandler {
                     return
                 }
                 try FileManager.default.removeItem(at: destinationURL)
+                if behaviour.failsMoveAfterDeletingDestination {
+                    send(status: .internalServerError, context: context)
+                    return
+                }
             }
             try FileManager.default.moveItem(at: target, to: destinationURL)
             send(status: .created, context: context)
@@ -439,11 +514,12 @@ private final class WebDAVHandler: ChannelInboundHandler {
     private func send(
         status: HTTPResponseStatus,
         body: Data = Data(),
+        contentLength: Int? = nil,
         extraHeaders: [String: String] = [:],
         context: ChannelHandlerContext
     ) {
         var headers = HTTPHeaders()
-        headers.add(name: "Content-Length", value: String(body.count))
+        headers.add(name: "Content-Length", value: String(contentLength ?? body.count))
         for (name, value) in extraHeaders {
             headers.add(name: name, value: value)
         }
