@@ -40,6 +40,9 @@ struct ConnectionDraft {
     var password = ""
     var importedKey: PrivateKeyImporter.ImportedKey?
     var keyPassphrase = ""
+    /// The key an imported SSH configuration names, which the key panel
+    /// opens on; the sandbox cannot read it until it is chosen there.
+    var suggestedKeyPath: String?
     var oauthToken: OAuthToken?
 
     var storageMode: ServerConfig.StorageMode
@@ -94,6 +97,19 @@ struct ConnectionDraft {
         indexesInBackground = server.indexesInBackground
         remoteChangeInterval = RemoteChangeInterval(seconds: server.effectiveRemoteChangeIntervalSeconds)
         isPaused = server.isPaused
+    }
+
+    /// Fills in what an SSH configuration says about one of its hosts,
+    /// leaving fields it does not mention as they are.
+    mutating func apply(_ host: SSHConfigHost) {
+        address = host.hostName ?? host.alias
+        if let port = host.port { portText = String(port) }
+        if let user = host.user { username = user }
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { name = host.alias }
+        if let identityFile = host.identityFile {
+            authenticationMethod = .privateKey
+            suggestedKeyPath = identityFile
+        }
     }
 
     // MARK: - Turning it into a configuration

@@ -44,10 +44,21 @@ enum PrivateKeyImporter {
         return URL(fileURLWithPath: home, isDirectory: true).appendingPathComponent(".ssh", isDirectory: true)
     }
 
+    /// A path from an SSH configuration, with "~" meaning the user's home.
+    static func url(forConfiguredPath path: String) -> URL {
+        let home = sshDirectory.deletingLastPathComponent()
+        if path == "~" { return home }
+        if path.hasPrefix("~/") { return home.appendingPathComponent(String(path.dropFirst(2))) }
+        if path.hasPrefix("/") { return URL(fileURLWithPath: path) }
+        return sshDirectory.appendingPathComponent(path)
+    }
+
     /// Shows the open panel and returns the chosen key, or nil if cancelled.
     /// Throws when the file cannot be read or is not a usable key.
+    /// - Parameter suggestedPath: a key an SSH configuration names, which the
+    ///   panel opens on.
     @MainActor
-    static func promptForKey() throws -> ImportedKey? {
+    static func promptForKey(suggestedPath: String? = nil) throws -> ImportedKey? {
         let panel = NSOpenPanel()
         panel.message = String(localized: "選擇 OpenSSH 私密金鑰檔案")
         panel.prompt = String(localized: "選擇")
@@ -55,7 +66,7 @@ enum PrivateKeyImporter {
         panel.allowsMultipleSelection = false
         // Keys normally live in ~/.ssh, which is hidden by default.
         panel.showsHiddenFiles = true
-        panel.directoryURL = sshDirectory
+        panel.directoryURL = suggestedPath.map(url(forConfiguredPath:)) ?? sshDirectory
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 

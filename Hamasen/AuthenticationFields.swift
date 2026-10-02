@@ -22,6 +22,8 @@ struct AuthenticationFields: View {
     @Binding var password: String
     @Binding var importedKey: PrivateKeyImporter.ImportedKey?
     @Binding var keyPassphrase: String
+    /// A key an imported SSH configuration names, which the key panel opens on.
+    var suggestedKeyPath: String?
 
     /// Whether a key is already stored, so the form can say so instead of
     /// asking for one again.
@@ -116,7 +118,7 @@ struct AuthenticationFields: View {
 
     private func importKey() {
         do {
-            if let key = try PrivateKeyImporter.promptForKey() {
+            if let key = try PrivateKeyImporter.promptForKey(suggestedPath: suggestedKeyPath) {
                 importedKey = key
                 importError = nil
             }

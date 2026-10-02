@@ -43,6 +43,7 @@ struct ConnectionSettingsSections: View {
                     password: $draft.password,
                     importedKey: $draft.importedKey,
                     keyPassphrase: $draft.keyPassphrase,
+                    suggestedKeyPath: draft.suggestedKeyPath,
                     hasStoredKey: hasStoredKey,
                     allowsBlankPassword: hasStoredPassword,
                     allowsPrivateKey: true
@@ -67,6 +68,7 @@ struct ConnectionSettingsSections: View {
             SMBSharePicker(draft: $draft, hasStoredPassword: hasStoredPassword, model: model)
             TextField("路徑", text: $draft.remotePath, prompt: Text(verbatim: "/"))
         case .sftp:
+            SSHConfigImportRow(draft: $draft)
             TextField("主機", text: $draft.address, prompt: Text("例如 192.168.1.20"))
             TextField("連接埠", text: $draft.portText)
             TextField("使用者名稱", text: $draft.username)
@@ -103,6 +105,51 @@ struct ConnectionSettingsSections: View {
             .textContentType(.username)
         SecureField("密碼", text: $draft.password, prompt: hasStoredPassword ? Text("留空表示不變更") : nil)
             .textContentType(.password)
+    }
+}
+
+/// Fills an SFTP connection from a host in ~/.ssh/config. With several
+/// hosts in the file, they are offered to choose from.
+private struct SSHConfigImportRow: View {
+    @Binding var draft: ConnectionDraft
+
+    @State private var hosts: [SSHConfigHost] = []
+    @State private var chosenAlias: String?
+    @State private var failure: String?
+
+    var body: some View {
+        LabeledContent("SSH 設定") {
+            Button("匯入…", action: importHosts)
+        }
+        if hosts.count > 1 {
+            Picker("SSH 主機", selection: $chosenAlias) {
+                Text("尚未選擇").tag(String?.none)
+                ForEach(hosts, id: \.alias) { host in
+                    Text(verbatim: host.alias).tag(Optional(host.alias))
+                }
+            }
+            .onChange(of: chosenAlias) { _, alias in
+                if let host = hosts.first(where: { $0.alias == alias }) { draft.apply(host) }
+            }
+        }
+        if let failure {
+            Text(failure)
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func importHosts() {
+        do {
+            guard let found = try SSHConfigImporter.promptForHosts() else { return }
+            failure = nil
+            chosenAlias = nil
+            hosts = found
+            if found.count == 1 { draft.apply(found[0]) }
+        } catch {
+            hosts = []
+            failure = error.localizedDescription
+        }
     }
 }
 
