@@ -205,9 +205,16 @@ private final class DirectoryBackedSFTPDelegate: SFTPDelegate {
     // MARK: SFTPDelegate
 
     func fileAttributes(atPath path: String, context: SSHContext) async throws -> SFTPFileAttributes {
+        let url = localURL(for: path)
+        // A missing path is reported as one, as a real server does; answering
+        // with empty attributes made every new upload look like a collision.
+        // stat follows a symlink, so a dangling one is missing too.
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw SFTPMessage.Status(requestId: 0, errorCode: .noSuchFile, message: "No such file", languageTag: "en")
+        }
         // stat follows a symlink, as a real server's does; only directory
         // listings describe the link itself.
-        makeAttributes(forLocalURL: localURL(for: path), followingLinks: true)
+        return makeAttributes(forLocalURL: url, followingLinks: true)
     }
 
     func openFile(

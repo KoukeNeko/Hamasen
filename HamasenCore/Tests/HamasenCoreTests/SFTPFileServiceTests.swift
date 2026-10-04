@@ -404,6 +404,20 @@ struct SFTPFileServiceTests {
         try await Self.tearDown(service, server)
     }
 
+    /// An upload first asks whether the name is taken. A server that cannot
+    /// say "no such file" makes every new file look like a collision, which
+    /// is how the demo server once turned each Finder copy into "name 2".
+    @Test("讀取不存在項目的屬性回報 itemNotFound", .timeLimit(.minutes(1)))
+    func itemInfoOfMissingItemThrowsItemNotFound() async throws {
+        let (service, server) = try await Self.makeConnectedService()
+
+        await #expect(throws: RemoteFileServiceError.itemNotFound(path: "/not-here.txt")) {
+            try await service.itemInfo(at: "/not-here.txt")
+        }
+
+        try await Self.tearDown(service, server)
+    }
+
     @Test("移動與重新命名")
     func moveItemRenamesRemoteFile() async throws {
         let (service, server) = try await Self.makeConnectedService()

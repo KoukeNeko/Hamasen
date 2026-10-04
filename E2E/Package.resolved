@@ -13,9 +13,9 @@
     {
       "identity" : "citadel",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Par-B/Citadel.git",
+      "location" : "https://github.com/KoukeNeko/Citadel.git",
       "state" : {
-        "revision" : "41a661d240c5a0de7c2a44a5ee6dd12d9be7ee7f"
+        "revision" : "8bf4667ec2c07f5640444e91f83b84cea6542795"
       }
     },
     {

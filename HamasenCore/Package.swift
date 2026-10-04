@@ -17,11 +17,14 @@ let package = Package(
         .executable(name: "DemoServers", targets: ["DemoServers"]),
     ],
     dependencies: [
-        // Pinned to the one commit of orlandos-nl/Citadel#137 on top of 0.12.1:
-        // upstream's listDirectory never closes the directory handle, so one
-        // SFTP session fails every listing after the server's 1,021st handle.
-        // Back to the release line once that PR is in one.
-        .package(url: "https://github.com/Par-B/Citadel.git", revision: "41a661d240c5a0de7c2a44a5ee6dd12d9be7ee7f"),
+        // Pinned to two fixes on top of 0.12.1. The commit of
+        // orlandos-nl/Citadel#137: upstream's listDirectory never closes the
+        // directory handle, so one SFTP session fails every listing after the
+        // server's 1,021st handle. And on top of it, a server that fails stat
+        // or lstat answers with a status instead of never answering, which
+        // is how the test server reports a missing path. Back to the release
+        // line once both are in one.
+        .package(url: "https://github.com/KoukeNeko/Citadel.git", revision: "8bf4667ec2c07f5640444e91f83b84cea6542795"),
         // Already in the graph through Citadel; declared so the test target
         // can stand up an in-process WebDAV server.
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.0"),
