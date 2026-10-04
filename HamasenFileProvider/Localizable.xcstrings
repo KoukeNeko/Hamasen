@@ -427,6 +427,40 @@
         }
       }
     },
+    "沒有「本地網路」權限，無法連線到區域網路上的伺服器。到「系統設定」>「隱私權與安全性」>「本地網路」開啟 HamasenFileProvider。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Without Local Network access, servers on your local network can’t be reached. Turn on HamasenFileProvider in System Settings > Privacy & Security > Local Network."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「ローカルネットワーク」へのアクセスが許可されていないため、ローカルネットワーク上のサーバに接続できません。「システム設定」>「プライバシーとセキュリティ」>「ローカルネットワーク」で HamasenFileProvider をオンにしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 네트워크 접근 권한이 없어 로컬 네트워크의 서버에 연결할 수 없습니다. 시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크에서 HamasenFileProvider를 켜십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有“本地网络”权限，无法连接到局域网中的服务器。请前往“系统设置”>“隐私与安全性”>“本地网络”开启 HamasenFileProvider。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有「本地網路」權限，無法連線到區域網路上的伺服器。到「系統設定」>「隱私權與安全性」>「本地網路」開啟 HamasenFileProvider。"
+          }
+        }
+      }
+    },
     "無法寫入剪貼簿": {
       "localizations": {
         "en": {

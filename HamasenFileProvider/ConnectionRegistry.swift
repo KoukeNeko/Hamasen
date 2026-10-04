@@ -103,7 +103,14 @@ actor ConnectionRegistry {
         let connection = Connection(config: config, task: Task { () throws -> any RemoteFileService in
             let credentials = try KeychainCredentialStore().loadCredentials(for: config)
             let service = try RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
-            try await service.connect()
+            do {
+                try await service.connect()
+            } catch let error where FileProviderErrorMapper.isConnectionFailure(error) {
+                if await LocalNetworkAccess.isDenied(host: config.host, port: config.port) {
+                    throw LocalNetworkAccess.DeniedError()
+                }
+                throw error
+            }
             return service
         })
         connections[serverID] = connection
@@ -211,6 +218,14 @@ enum FileProviderErrorMapper {
         switch error {
         case is CancellationError:
             return CocoaError(.userCancelled)
+        case is LocalNetworkAccess.DeniedError where operation == .read:
+            // Retried, the read would keep Finder loading for as long as the
+            // access stays off; failed outright, Finder says why.
+            return CocoaError(.fileReadNoPermission, userInfo: [
+                NSLocalizedDescriptionKey: error.localizedDescription, NSUnderlyingErrorKey: error,
+            ])
+        case is LocalNetworkAccess.DeniedError:
+            return NSFileProviderError(.serverUnreachable)
         case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected:
             // A read is asked for again when it is needed. Paused instead, it
             // would hold up every other server for as long as this one stays
@@ -278,10 +293,12 @@ enum FileProviderErrorMapper {
     }
 
     /// Whether the connection itself failed, as opposed to the server
-    /// answering with a refusal.
+    /// answering with a refusal. A Local Network denial counts: the probe
+    /// keeps checking, so access turned on later brings the server back.
     static func isConnectionFailure(_ error: Error) -> Bool {
         switch error {
-        case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected:
+        case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected,
+             is LocalNetworkAccess.DeniedError:
             return true
         default:
             return false
