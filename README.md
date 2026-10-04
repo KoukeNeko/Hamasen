@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Docs/hamasen-iOS-Default-1024@1x.png" alt="Hamasen" width="160">
+  <img src="Docs/app-icon.png" alt="Hamasen" width="160">
 </p>
 
 <h1 align="center">Hamasen 哈瑪星</h1>
@@ -56,6 +56,15 @@ Finder sidebar
 Mounting and unmounting happen in the app; the folders appear and disappear in
 Finder as you do it. Drag the list into whatever order suits you.
 
+### Make each folder recognisable
+
+Click a connection's icon at the top of its page to give its Finder folder a
+look of its own: one of Finder's tag colors, a symbol, an emoji, or a picture
+of your choosing. The name beside the icon is edited in place and names both
+the connection and its folder. Colors, symbols and emoji are what Finder's own
+**Customize Folder** sets on a local folder; a picture is kept on this Mac only,
+never uploaded to the server, and put back if the folder is rebuilt.
+
 A connection can also be **paused**: its folder stays in Finder, marked as
 paused, and nothing is sent to the server until it is resumed — for a laptop on
 a metered network, or a server under maintenance.
@@ -94,7 +103,11 @@ Right-clicking anything under the Hamasen location offers:
 | Action | What it does |
 |---|---|
 | **Copy remote path** | The address on the server |
+| **Copy URL** | `sftp://`, `smb://`, the WebDAV or S3 address, or a cloud drive's web page — never a password |
 | **Copy local path** | Where it sits under `~/Library/CloudStorage` |
+| **Open in browser** | WebDAV, S3 objects (a presigned link valid for an hour) and cloud drives |
+| **Open in Terminal** | SFTP servers: an `ssh://` session with your own keys and `~/.ssh/config` |
+| **Show in Hamasen** | Brings the app forward on that connection |
 | **Refresh** | Re-read the folder from the server |
 | **Keep on this Mac** | Pin a file so nothing evicts it |
 | **Stop keeping on this Mac** | Release the pin |
@@ -164,7 +177,13 @@ hand in Settings. Error messages are translated too, not just the buttons.
    Finder, and choose whether Hamasen opens at login
 3. To add a connection, press **+**, pick the kind of server, and enter the
    host and credentials — or sign in, for a cloud drive. The connection is
-   tried before it is saved, and one that fails is not kept.
+   tried before it is saved, and one that fails is not kept. For SFTP,
+   **SSH Config › Import…** fills the host, port, user and key from a host in
+   `~/.ssh/config`.
+4. The first time a server on your local network is opened in Finder, macOS
+   asks whether **HamasenFileProvider** may find devices on the local network.
+   Allow it: the extension is its own identity, separate from the app, and
+   without it LAN servers cannot be reached from Finder.
 
 The mount survives quitting the app: the system keeps it up. The app needs to
 be running for the space limits, auto-clean, change checks and notifications,
@@ -260,8 +279,16 @@ every server having been deleted.
 extension's Info.plist with activation rules over `fileproviderItems`. This is
 the mechanism Google Drive and Synology Drive use; Finder never asks a
 FinderSync extension for menus on `~/Library/CloudStorage` paths.
-`fileproviderctl evaluate <path>` shows the rules and their verdicts without
-opening Finder, and a test pins the shipped plist against the Swift side.
+Rules that depend on the protocol read it from each item's `userInfo`, so an
+item listed before an update gains the new entries once its folder is
+refreshed. `fileproviderctl evaluate <path>` shows the rules and their verdicts
+without opening Finder, and a test pins the shipped plist against the Swift
+side.
+
+**A folder's custom picture** is the classic `Icon\r` file inside it, whose
+resource fork holds the icon, and which the extension refuses to sync
+(`excludedFromSync`), so it never reaches the server. The app writes it itself:
+`NSWorkspace.setIcon` fails for a sandboxed app inside a File Provider domain.
 
 **Backups with passwords** are PBKDF2-HMAC-SHA256 at 600,000 iterations into
 AES-256-GCM. The whole file is encrypted, not only the secrets in it: which
@@ -364,7 +391,27 @@ du -sh ~/Library/Application\ Support/FileProvider/*/database
 builds it again. Copies on this Mac go and are downloaded again when opened,
 and so do edits that never reached a server; the servers are not touched.
 
+### A server on the local network never loads in Finder
+
+The extension needs its own **Local Network** permission, separate from the
+app's. Without it the kernel drops its connections and Finder reports that the
+server cannot be reached because Local Network access is off. Turn on
+**HamasenFileProvider** in **System Settings › Privacy & Security › Local
+Network**. To confirm that this is the cause:
+
+```bash
+/usr/bin/log show --last 5m --info --predicate 'process == "kernel" AND eventMessage CONTAINS "reason: NECP"'
+```
+
+Lines naming `HamasenFileProvi` mean the system is dropping its connections.
+
 ### The Finder context menu has lost its entries
+
+If `fileproviderctl dump dev.hamasen.mac.FileProvider` shows the domain as
+`unable to startup` with `database is locked`, Finder offers no provider
+entries at all while browsing still works. Restart `fileproviderd`
+(`killall fileproviderd`) and then Finder. If the check below reports the
+location's database as damaged, use **Reset Finder Location…**.
 
 The entries come from the extension's Info.plist, which the system reads
 through whatever bundle PluginKit has on record. Archiving registers the
