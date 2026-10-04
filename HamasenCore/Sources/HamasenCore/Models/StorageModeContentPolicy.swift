@@ -54,11 +54,4 @@ extension ServerConfig {
     public var finderItemToken: String {
         "\(name)|\(storageMode.versionToken)" + (isPaused ? "|paused" : "") + finderAppearance.versionToken
     }
-
-    /// The server folder's name in Finder: the one chosen for Finder, or
-    /// the connection's own.
-    public var finderFolderName: String {
-        let chosen = finderAppearance.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return chosen.isEmpty ? name : chosen
-    }
 }

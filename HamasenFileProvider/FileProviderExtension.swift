@@ -58,6 +58,10 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
     static let log = HamasenLog(category: "extension")
 
+    /// The hidden file a folder's custom icon lives in, named with a
+    /// trailing carriage return since the classic Mac OS.
+    static let customIconFileName = "Icon\r"
+
     func invalidate() {
         let registry = registry
         Task {
@@ -305,6 +309,14 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             // then asks for its deletion, which touches nothing on the server
             // since the identifier it names is not one of ours.
             Self.log.notice("createItem \(filename) excluded from sync: symbolic links cannot be created")
+            completionHandler(nil, fields, false, NSFileProviderError(.excludedFromSync))
+            return Self.answered()
+        }
+        if filename == Self.customIconFileName {
+            // Where Finder keeps a folder's own icon, pasted in Get Info or
+            // set from the app. It belongs to this Mac's view of the folder;
+            // uploaded, it would be a stray file on the server.
+            Self.log.notice("createItem \(filename.debugDescription) excluded from sync: custom folder icon")
             completionHandler(nil, fields, false, NSFileProviderError(.excludedFromSync))
             return Self.answered()
         }

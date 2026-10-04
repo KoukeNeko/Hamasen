@@ -15,20 +15,18 @@
 import Foundation
 
 /// How a server's folder looks in Finder. Every part is optional, and an
-/// unset part leaves Finder's own default.
+/// unset part leaves Finder's own default. The folder's name is the
+/// connection's own; there is no second one for Finder.
 ///
 /// The color and the symbol are what Finder's Customize Folder writes on a
 /// local folder: a color tag, and a JSON object in `com.apple.icon.folder#S`.
 /// The provider hands both over as the folder item's tags and extended
 /// attributes, so Finder draws them the same way.
 public struct FinderAppearance: Codable, Hashable, Sendable {
-    /// Shown as the folder's name instead of the connection's.
-    public var name: String?
     public var color: TagColor?
     public var icon: Icon?
 
-    public init(name: String? = nil, color: TagColor? = nil, icon: Icon? = nil) {
-        self.name = name
+    public init(color: TagColor? = nil, icon: Icon? = nil) {
         self.color = color
         self.icon = icon
     }
@@ -52,22 +50,33 @@ public struct FinderAppearance: Codable, Hashable, Sendable {
         }
     }
 
-    /// Stored as `{"symbol": name}` or `{"emoji": character}`.
+    /// Stored as `{"symbol": name}`, `{"emoji": character}` or
+    /// `{"image": true}`.
     public enum Icon: Codable, Hashable, Sendable {
         /// An SF Symbol name.
         case symbol(String)
         case emoji(String)
+        /// A picture of the user's own. Finder's Customize Folder has no
+        /// place for one, so it goes on the folder the classic way, as the
+        /// hidden `Icon\r` file the app writes on this Mac; the picture
+        /// itself stays with the app and is not part of the configuration.
+        case image
 
         private enum CodingKeys: String, CodingKey {
-            case symbol, emoji
+            case symbol, emoji, image
         }
 
         public init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             if let name = try container.decodeIfPresent(String.self, forKey: .symbol) {
                 self = .symbol(name)
+            } else if let character = try container.decodeIfPresent(String.self, forKey: .emoji) {
+                self = .emoji(character)
+            } else if try container.decodeIfPresent(Bool.self, forKey: .image) == true {
+                self = .image
             } else {
-                self = .emoji(try container.decode(String.self, forKey: .emoji))
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: container.codingPath, debugDescription: "No symbol, emoji or image"))
             }
         }
 
@@ -76,6 +85,7 @@ public struct FinderAppearance: Codable, Hashable, Sendable {
             switch self {
             case .symbol(let name): try container.encode(name, forKey: .symbol)
             case .emoji(let character): try container.encode(character, forKey: .emoji)
+            case .image: try container.encode(true, forKey: .image)
             }
         }
     }
@@ -97,7 +107,7 @@ public struct FinderAppearance: Codable, Hashable, Sendable {
         switch icon {
         case .symbol(let name): entry = ["sym": name]
         case .emoji(let character): entry = ["emoji": character]
-        case nil: return nil
+        case .image, nil: return nil
         }
         return try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys])
     }
@@ -109,8 +119,9 @@ public struct FinderAppearance: Codable, Hashable, Sendable {
         let iconToken = switch icon {
         case .symbol(let name): "sym:\(name)"
         case .emoji(let character): "emoji:\(character)"
+        case .image: "image"
         case nil: ""
         }
-        return "|look:\(name ?? "")|\(color?.rawValue ?? 0)|\(iconToken)"
+        return "|look:\(color?.rawValue ?? 0)|\(iconToken)"
     }
 }

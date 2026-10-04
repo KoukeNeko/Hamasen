@@ -77,7 +77,7 @@ final class ServerFolderItem: NSObject, NSFileProviderItem, NSFileProviderItemDe
     }
 
     var parentItemIdentifier: NSFileProviderItemIdentifier { .rootContainer }
-    var filename: String { config.finderFolderName }
+    var filename: String { config.name }
     var contentType: UTType { .folder }
 
     var capabilities: NSFileProviderItemCapabilities {

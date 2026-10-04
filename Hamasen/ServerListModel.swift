@@ -130,6 +130,7 @@ final class ServerListModel {
         await syncDomainRegistration()
         await refreshDomainState()
         _ = try? await FinderDomain.releaseDomainWidePauses()
+        await restoreCustomFolderIcons()
     }
 
     /// Earlier versions registered one domain per server (identifier = server
@@ -377,6 +378,7 @@ final class ServerListModel {
     func mount(_ config: ServerConfig) async {
         persistMountedServers(adding: [config.id])
         await syncDomainRegistration()
+        await restoreCustomFolderIcons()
     }
 
     func unmount(_ config: ServerConfig) async {
@@ -701,7 +703,52 @@ final class ServerListModel {
         }
         await refreshDomainState()
         cache.sweepSoon()
+        await restoreCustomFolderIcons()
     }
+
+    // MARK: - Folder pictures
+
+    /// Puts a connection's own picture on its Finder folder, or takes it off
+    /// with nil. The picture is remembered so a folder that loses it gets
+    /// it back.
+    @discardableResult
+    func setCustomFolderIcon(_ image: NSImage?, for config: ServerConfig) async -> Bool {
+        do {
+            if let image {
+                try CustomFolderIcon.store(image, for: config.id)
+            } else {
+                CustomFolderIcon.removeStored(for: config.id)
+            }
+            guard isMounted(config) else { return true }
+            try await CustomFolderIcon.apply(image ?? CustomFolderIcon.storedImage(for: config.id), toFolderOf: config.id)
+            return true
+        } catch {
+            errorMessage = String(localized: "設定資料夾圖示失敗：\(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Puts each chosen picture back on a folder that has lost it — the
+    /// location was reset, or the server was unmounted and mounted again.
+    ///
+    /// A folder the system is still bringing up after a reset or a mount
+    /// cannot be located yet, so each is tried a few times before giving up.
+    private func restoreCustomFolderIcons() async {
+        for server in mountedServers where server.finderAppearance.icon == .image {
+            for attempt in 1...Self.folderPictureAttempts {
+                do {
+                    try await CustomFolderIcon.restoreIfMissing(for: server.id)
+                    break
+                } catch where attempt < Self.folderPictureAttempts {
+                    try? await Task.sleep(for: .seconds(2))
+                } catch {
+                    Self.log.error("Could not restore the folder picture of \(server.id): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private static let folderPictureAttempts = 5
 
     /// Shows the main domain in Finder exactly when at least one server is
     /// mounted.

@@ -56,7 +56,7 @@ struct ConnectionDetailView: View {
 
     private var hasUnsavedChanges: Bool {
         guard let config = draft.makeConfig() else { return true }
-        return !Self.isEquivalent(config, server) || draft.hasNewSecrets
+        return !Self.isEquivalent(config, server) || draft.hasNewSecrets || draft.pendingFolderImage != nil
     }
 
     private var canSave: Bool {
@@ -68,17 +68,18 @@ struct ConnectionDetailView: View {
 
     var body: some View {
         Form {
+            // A row rather than the section's header: a header is not redrawn
+            // when the draft changes, so a new icon would not show.
             Section {
-                TextField("名稱", text: $draft.name, prompt: Text(draft.suggestedName))
-            } header: {
                 header
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
             }
             ConnectionSettingsSections(
                 draft: $draft, model: model,
                 hasStoredPassword: hasStoredPassword, hasStoredKey: hasStoredKey, hasStoredToken: hasStoredToken)
             SyncSection(draft: $draft)
             LocalCopySection(draft: $draft, usage: model.cache.usage[server.id] ?? CacheUsage(pinnedBytes: 0, evictableBytes: 0))
-            FinderAppearanceSection(draft: $draft)
             AdvancedConnectionSection(draft: $draft, server: server)
             Section {
                 Button("刪除這組連線…", role: .destructive) { isConfirmingDelete = true }
@@ -114,12 +115,18 @@ struct ConnectionDetailView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 14) {
-            ServiceIcon(kind: server.serviceKind, size: 52)
+            FolderAppearanceButton(
+                appearance: $draft.finderAppearance, pendingImage: $draft.pendingFolderImage,
+                serverID: server.id, kind: server.serviceKind)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(server.name)
+                    // The name of both the connection and its Finder folder,
+                    // edited in place and kept with the other unsaved edits.
+                    TextField("名稱", text: $draft.name, prompt: Text(draft.suggestedName))
+                        .labelsHidden()
+                        .textFieldStyle(.plain)
                         .font(.title2.bold())
-                        .foregroundStyle(.primary)
+                        .fixedSize()
                     ConnectionStatusBadge(status: status)
                 }
                 // One line whatever the state, so every connection's header
@@ -136,8 +143,7 @@ struct ConnectionDetailView: View {
                     .controlSize(.large)
             }
         }
-        .textCase(nil)
-        .padding(.bottom, 12)
+        .padding(.bottom, 4)
     }
 
     // MARK: - Toolbar
@@ -234,11 +240,22 @@ struct ConnectionDetailView: View {
         isSaving = true
         let credentials = draft.credentials
         let intervalChanged = config.effectiveRemoteChangeIntervalSeconds != server.effectiveRemoteChangeIntervalSeconds
+        let folderImage = draft.pendingFolderImage
+        let usesImage = config.finderAppearance.icon == .image
+        let usedImage = server.finderAppearance.icon == .image
         Task {
             defer { isSaving = false }
+            // The picture comes off before a symbol or emoji goes on: taking
+            // it off afterwards would also clear the flag the symbol needs.
+            if usedImage && !usesImage {
+                await model.setCustomFolderIcon(nil, for: server)
+            }
             // Clearing the fields before knowing the secret was stored would
             // leave no way to retry a failed save.
             if await model.saveServer(config, credentials: credentials) {
+                if usesImage, let folderImage, await model.setCustomFolderIcon(folderImage, for: config) {
+                    draft.pendingFolderImage = nil
+                }
                 draft.password = ""
                 draft.keyPassphrase = ""
                 draft.importedKey = nil

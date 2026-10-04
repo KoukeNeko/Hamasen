@@ -46,19 +46,10 @@ struct FinderAppearanceTests {
         #expect(config.finderItemToken != plain)
     }
 
-    @Test("Finder 名稱留白時沿用連線名稱")
-    func blankFinderNameFallsBack() {
-        var config = ServerConfig(name: "nas", host: "nas.local", username: "kai")
-        config.finderAppearance.name = "  "
-        #expect(config.finderFolderName == "nas")
-        config.finderAppearance.name = "Home NAS"
-        #expect(config.finderFolderName == "Home NAS")
-    }
-
     @Test("外觀能存回讀出，讀不懂時退回預設而不丟掉連線")
     func appearanceRoundTripsAndToleratesGarbage() throws {
         var config = ServerConfig(name: "nas", host: "nas.local", username: "kai")
-        config.finderAppearance = FinderAppearance(name: "NAS", color: .green, icon: .emoji("🖥"))
+        config.finderAppearance = FinderAppearance(color: .green, icon: .emoji("🖥"))
         let data = try JSONEncoder().encode(config)
         #expect(String(decoding: data, as: UTF8.self).contains(#""icon":{"emoji":"🖥"}"#))
         #expect(try JSONDecoder().decode(ServerConfig.self, from: data) == config)

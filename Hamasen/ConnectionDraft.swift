@@ -53,6 +53,9 @@ struct ConnectionDraft {
     var remoteChangeInterval: RemoteChangeInterval
     var isPaused: Bool
     var finderAppearance: FinderAppearance
+    /// A picture chosen for the folder and not saved yet. Not part of the
+    /// configuration: the app keeps it and puts it on the folder itself.
+    var pendingFolderImage: NSImage?
 
     init(kind: ServiceKind) {
         let transferProtocol = kind.defaultProtocol
@@ -205,11 +208,9 @@ struct ConnectionDraft {
     }
 
     /// Blank text is no choice, so a cleared field reads as unset rather
-    /// than as an empty name or emoji.
+    /// than as an empty emoji.
     private var normalizedAppearance: FinderAppearance {
         var appearance = finderAppearance
-        let name = appearance.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        appearance.name = name.isEmpty ? nil : name
         if case .emoji(let character) = appearance.icon {
             let trimmed = character.trimmingCharacters(in: .whitespacesAndNewlines)
             appearance.icon = trimmed.isEmpty ? nil : .emoji(String(trimmed.prefix(1)))
