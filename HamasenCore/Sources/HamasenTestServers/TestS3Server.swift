@@ -204,6 +204,7 @@ public final class TestS3ObjectStore: @unchecked Sendable {
     private var listings = 0
     private var completedUploads = 0
     private var internalErrorsLeft = 0
+    private var pendingWrites: [String: Data] = [:]
 
     /// How many times a bucket listing was served, so a test can tell one
     /// request covering a subtree from one request per directory.
@@ -240,6 +241,26 @@ public final class TestS3ObjectStore: @unchecked Sendable {
         guard internalErrorsLeft > 0 else { return false }
         internalErrorsLeft -= 1
         return true
+    }
+
+    /// Writes `data` under `key` just before the next request that writes
+    /// that key is served, as another client would between a check and the
+    /// write it guarded.
+    public func writeBeforeNextWrite(_ data: Data, toKey key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        pendingWrites[key] = data
+    }
+
+    /// Applies a pending write to `key`, then says whether anything is
+    /// stored there — what a write with `If-None-Match: *` is refused for.
+    func occupiedBeforeWrite(_ key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let data = pendingWrites.removeValue(forKey: key) {
+            objects[key] = StoredObject(data: data, lastModified: Date())
+        }
+        return objects[key] != nil
     }
 
     public var writeCount: Int {

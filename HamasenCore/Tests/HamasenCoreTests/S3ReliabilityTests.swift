@@ -499,6 +499,66 @@ struct S3ReliabilityTests {
         }
     }
 
+    // MARK: - A destination written during a move
+
+    /// Another client writes the name after the move checked it was free.
+    /// The copy must not replace that object, and the source must stay.
+    @Test
+    func aMoveDoesNotOverwriteAnObjectWrittenAfterTheCheck() async throws {
+        try await withService { service, server in
+            server.store.put(Data("mine".utf8), forKey: "a.txt")
+            server.store.writeBeforeNextWrite(Data("theirs".utf8), toKey: "b.txt")
+
+            await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/b.txt")) {
+                try await service.moveItem(from: "/a.txt", to: "/b.txt")
+            }
+
+            #expect(server.store.object(forKey: "b.txt")?.data == Data("theirs".utf8))
+            #expect(server.store.object(forKey: "a.txt")?.data == Data("mine".utf8))
+        }
+    }
+
+    @Test
+    func aMoveInRangesDoesNotOverwriteAnObjectWrittenAfterTheCheck() async throws {
+        let limit = 50
+        try await withService(
+            behaviour: .init(maxCopySourceBytes: limit),
+            singleCopyLimitBytes: Int64(limit), copyPartSizeBytes: 40
+        ) { service, server in
+            let payload = Data((0..<130).map { UInt8($0 % 251) })
+            server.store.put(payload, forKey: "huge.bin")
+            server.store.writeBeforeNextWrite(Data("theirs".utf8), toKey: "moved.bin")
+
+            await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/moved.bin")) {
+                try await service.moveItem(from: "/huge.bin", to: "/moved.bin")
+            }
+
+            #expect(server.store.object(forKey: "moved.bin")?.data == Data("theirs".utf8))
+            #expect(server.store.object(forKey: "huge.bin")?.data == payload)
+            #expect(server.store.openUploadCount == 0)
+        }
+    }
+
+    /// Partway through a folder: what was already copied is taken back, the
+    /// other client's object stays, and nothing leaves the source.
+    @Test
+    func aFolderMoveDoesNotOverwriteAnObjectWrittenAfterTheCheck() async throws {
+        try await withService { service, server in
+            server.store.put(Data("1".utf8), forKey: "photos/1.jpg")
+            server.store.put(Data("2".utf8), forKey: "photos/2.jpg")
+            server.store.writeBeforeNextWrite(Data("theirs".utf8), toKey: "pictures/2.jpg")
+
+            await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/pictures")) {
+                try await service.moveItem(from: "/photos", to: "/pictures")
+            }
+
+            #expect(server.store.object(forKey: "pictures/2.jpg")?.data == Data("theirs".utf8))
+            #expect(server.store.object(forKey: "pictures/1.jpg") == nil)
+            #expect(server.store.object(forKey: "photos/1.jpg") != nil)
+            #expect(server.store.object(forKey: "photos/2.jpg") != nil)
+        }
+    }
+
     // MARK: - Objects too large for one CopyObject
 
     @Test

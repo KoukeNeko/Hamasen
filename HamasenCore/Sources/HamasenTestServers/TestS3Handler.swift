@@ -124,7 +124,7 @@ final class S3Handler: ChannelInboundHandler {
         case (.PUT, false):
             putObject(target, head: head, context: context)
         case (.POST, false):
-            postObject(target, context: context)
+            postObject(target, head: head, context: context)
         case (.DELETE, false):
             deleteObject(target, ifMatch: head.headers.first(name: "If-Match"), context: context)
         default:
@@ -297,6 +297,7 @@ final class S3Handler: ChannelInboundHandler {
             return
         }
 
+        if refusesExisting(target.key, head: head, context: context) { return }
         if let source = head.headers.first(name: "x-amz-copy-source") {
             copyObject(from: source, to: target.key,
                        ifMatch: head.headers.first(name: "x-amz-copy-source-if-match"), context: context)
@@ -443,7 +444,18 @@ final class S3Handler: ChannelInboundHandler {
 
     // MARK: - Multipart
 
-    private func postObject(_ target: Target, context: ChannelHandlerContext) {
+    /// `If-None-Match: *` on a write: refused with 412 when the key is
+    /// already taken, as S3 does for PutObject, CopyObject and
+    /// CompleteMultipartUpload. Sends the error itself.
+    private func refusesExisting(_ key: String, head: HTTPRequestHead, context: ChannelHandlerContext) -> Bool {
+        let isConditional = head.headers.first(name: "If-None-Match") == "*"
+        guard store.occupiedBeforeWrite(key), isConditional else { return false }
+        send(error: "PreconditionFailed", message: "If-None-Match: * on \(key)",
+             status: .preconditionFailed, context: context)
+        return true
+    }
+
+    private func postObject(_ target: Target, head: HTTPRequestHead, context: ChannelHandlerContext) {
         if target.query["uploads"] != nil {
             let id = store.beginUpload()
             let xml = """
@@ -461,6 +473,7 @@ final class S3Handler: ChannelInboundHandler {
                  status: .badRequest, context: context)
             return
         }
+        if refusesExisting(target.key, head: head, context: context) { return }
         if behaviour.completeFailsWithStatusOK {
             send(errorWithStatusOK: "InternalError", message: "assembly did not complete",
                  context: context)

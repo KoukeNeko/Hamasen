@@ -521,7 +521,12 @@ public actor S3FileService: RemoteFileService {
             // Without an ETag nothing can pin the copy and the delete to one
             // version, and a same-size write in between would be lost.
             guard let tag = state.tag else { throw Self.unversioned(path: oldPath) }
-            let copiedTag = try await copy(from: source, to: destination, size: state.size, tag: tag, path: oldPath)
+            let copiedTag: String?
+            do {
+                copiedTag = try await copy(from: source, to: destination, size: state.size, tag: tag, path: oldPath)
+            } catch {
+                throw try await claimedDuringMove(destination, newPath: newPath, otherwise: error)
+            }
             do {
                 // Only the version that was copied may go: a write to the
                 // source after the copy fails this with 412.
@@ -544,20 +549,30 @@ public actor S3FileService: RemoteFileService {
         for entry in objects {
             let suffix = String(entry.key.dropFirst(sourcePrefix.count))
             let copyKey = destination.directoryPrefix + suffix
+            let copyObject = S3ObjectKey(bucket: destination.bucket, key: copyKey)
             let copiedTag: String?
-            if entry.key.hasSuffix("/"), entry.size == 0 {
-                // A folder marker holds nothing, so a new empty one is its
-                // copy — and servers that keep folders as directories,
-                // SeaweedFS among them, refuse to copy one at all.
-                let response = try await send(
-                    method: Method.put, object: S3ObjectKey(bucket: destination.bucket, key: copyKey),
-                    operation: Self.moveOperation, path: oldPath)
-                copiedTag = response.http.value(forHTTPHeaderField: "ETag").flatMap(HTTPTransfer.normalizedETag)
-            } else {
-                copiedTag = try await copy(
-                    from: S3ObjectKey(bucket: source.bucket, key: entry.key),
-                    to: S3ObjectKey(bucket: destination.bucket, key: copyKey),
-                    size: entry.size, tag: entry.contentTag, path: oldPath)
+            do {
+                if entry.key.hasSuffix("/"), entry.size == 0 {
+                    // A folder marker holds nothing, so a new empty one is its
+                    // copy — and servers that keep folders as directories,
+                    // SeaweedFS among them, refuse to copy one at all.
+                    let response = try await send(
+                        method: Method.put, object: copyObject, headers: Self.noClobber,
+                        operation: Self.moveOperation, path: oldPath)
+                    copiedTag = response.http.value(forHTTPHeaderField: "ETag").flatMap(HTTPTransfer.normalizedETag)
+                } else {
+                    copiedTag = try await copy(
+                        from: S3ObjectKey(bucket: source.bucket, key: entry.key), to: copyObject,
+                        size: entry.size, tag: entry.contentTag, path: oldPath)
+                }
+            } catch {
+                let failure = try await claimedDuringMove(copyObject, newPath: newPath, otherwise: error)
+                // Copies under a name somebody else is now using would mix
+                // into their folder; elsewhere they are harmless duplicates.
+                if case RemoteFileServiceError.alreadyExists = failure {
+                    await rollBack(copies: copies, in: destination.bucket, path: newPath)
+                }
+                throw failure
             }
             copies.append((copyKey, copiedTag))
         }
@@ -648,7 +663,7 @@ public actor S3FileService: RemoteFileService {
     @discardableResult
     private func completeUpload(
         _ uploadID: String, parts: [UploadedPart], object: S3ObjectKey,
-        operation: String, path: String
+        headers: [String: String] = [:], operation: String, path: String
     ) async throws -> String? {
         let body = "<CompleteMultipartUpload>"
             + parts.map {
@@ -658,7 +673,7 @@ public actor S3FileService: RemoteFileService {
         let response = try await send(
             method: Method.post, object: object,
             queryItems: [URLQueryItem(name: "uploadId", value: uploadID)],
-            body: Data(body.utf8), operation: operation, path: path,
+            headers: headers, body: Data(body.utf8), operation: operation, path: path,
             // Assembling a large object can outlast the response headers, so
             // the service sends 200 first and reports a failure in the body.
             failsOnEmbeddedError: true, expectingResult: "CompleteMultipartUploadResult")
@@ -692,7 +707,7 @@ public actor S3FileService: RemoteFileService {
         guard size > singleCopyLimitBytes else {
             let response = try await send(
                 method: Method.put, object: destination,
-                headers: sourceHeaders,
+                headers: sourceHeaders.merging(Self.noClobber, uniquingKeysWith: { $1 }),
                 operation: Self.moveOperation, path: path,
                 // Large copies are answered 200 before they finish, and a
                 // failure after that arrives as an <Error> document.
@@ -750,6 +765,21 @@ public actor S3FileService: RemoteFileService {
             operation: moveOperation, path: path, underlying: "伺服器沒有提供 ETag，無法安全移動")
     }
 
+    /// Sent with every write a move makes to its destination. The name was
+    /// found free before the move began, but another client may take it
+    /// since; this makes the server refuse instead of replacing their
+    /// object. A server that does not know the header ignores it, which
+    /// leaves only the check made beforehand.
+    private static let noClobber = ["If-None-Match": "*"]
+
+    /// What a failed copy into `object` means. S3 writes are atomic, so a
+    /// copy that failed did not land: anything under the key now is another
+    /// client's, which is a name taken rather than a failure.
+    private func claimedDuringMove(_ object: S3ObjectKey, newPath: String, otherwise error: Error) async throws -> Error {
+        guard !(error is CancellationError), try await objectSize(object, path: newPath) != nil else { return error }
+        return RemoteFileServiceError.alreadyExists(path: newPath)
+    }
+
     private static func sourceChanged(path: String) -> Error {
         RemoteFileServiceError.operationFailed(
             operation: moveOperation, path: path, underlying: "來源在移動期間被修改")
@@ -787,7 +817,7 @@ public actor S3FileService: RemoteFileService {
                 start = end + 1
             }
             return try await completeUpload(uploadID, parts: copied, object: destination,
-                                            operation: Self.moveOperation, path: path)
+                                            headers: Self.noClobber, operation: Self.moveOperation, path: path)
         } catch {
             await abandonUpload(uploadID, object: destination, path: path)
             throw error
