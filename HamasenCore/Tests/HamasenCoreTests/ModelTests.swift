@@ -36,6 +36,19 @@ struct RemotePathTests {
         #expect(RemotePath.name(of: "/docs/file.txt") == "file.txt")
         #expect(RemotePath.name(of: "/file.txt") == "file.txt")
     }
+
+    /// Only names this app makes are hidden: a file of the user's that
+    /// merely starts the same way stays visible.
+    @Test("只有上傳暫存檔的確切格式才隱藏")
+    func hidesOnlyGeneratedUploadNames() {
+        let generated = RemotePath.name(of: RemotePath.temporaryUploadPath(for: "/docs/report.pdf"))
+        #expect(RemotePath.isTemporaryUpload(name: generated))
+        #expect(RemotePath.isTemporaryUpload(name: ".hamasen-upload-1a2b3c4d-report.pdf"))
+        #expect(!RemotePath.isTemporaryUpload(name: ".hamasen-upload-notes.txt"))
+        #expect(!RemotePath.isTemporaryUpload(name: ".hamasen-upload-1A2B3C4D-report.pdf"))
+        #expect(!RemotePath.isTemporaryUpload(name: ".hamasen-upload-1a2b3c4d-"))
+        #expect(!RemotePath.isTemporaryUpload(name: "report.pdf"))
+    }
 }
 
 @Suite("ServerConfig")

@@ -123,14 +123,30 @@ public enum RemotePath {
     /// Writing in place truncates the file first: a connection lost halfway
     /// leaves the server holding half a file under the real name.
     public static func temporaryUploadPath(for path: String) -> String {
-        let token = UUID().uuidString.prefix(8).lowercased()
+        let token = UUID().uuidString.prefix(temporaryUploadTokenLength).lowercased()
         return join(parent(of: path), "\(temporaryUploadPrefix)\(token)-\(name(of: path))")
     }
 
+    private static let temporaryUploadTokenLength = 8
+
     /// Whether a name is an upload still in flight, which listings leave out
     /// so Finder never shows it.
+    ///
+    /// Only the exact shape `temporaryUploadPath` makes — the prefix, eight
+    /// lowercase hex digits, a hyphen, a name — so a file of the user's that
+    /// merely starts like one is still listed. Known by its shape rather than
+    /// by a record of what this process wrote, because an upload from
+    /// another process or another Mac, or one cut short by a crash, has to
+    /// stay out of sight too.
     public static func isTemporaryUpload(name: String) -> Bool {
-        name.hasPrefix(temporaryUploadPrefix)
+        guard name.hasPrefix(temporaryUploadPrefix) else { return false }
+        let rest = name.dropFirst(temporaryUploadPrefix.count)
+        let token = rest.prefix(temporaryUploadTokenLength)
+        let afterToken = rest.dropFirst(temporaryUploadTokenLength)
+        return token.count == temporaryUploadTokenLength
+            && token.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+            && afterToken.first == "-"
+            && afterToken.count > 1
     }
 
     /// Drops a trailing separator so paths compare equal regardless of how a
