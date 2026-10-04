@@ -461,7 +461,7 @@ public actor GoogleDriveFileService: RemoteFileService {
         // Forms, Sites, Maps and the rest have nothing that can be fetched.
         if !isFolder, export == nil, mimeType.hasPrefix(googleTypePrefix) { return nil }
 
-        var displayName = name.replacingOccurrences(of: "/", with: ":")
+        var displayName = displayName(name)
         if let export, !displayName.lowercased().hasSuffix("." + export.fileExtension) {
             displayName += "." + export.fileExtension
         }
@@ -485,9 +485,21 @@ public actor GoogleDriveFileService: RemoteFileService {
         return "\((name as NSString).deletingPathExtension) (\(suffix)).\(fileExtension)"
     }
 
-    /// The name to store on Drive: ":" back to the "/" it stood for.
+    /// Stands for a ":" in a Drive name. ":" itself is taken: it is how a
+    /// Mac file name holds the "/" Drive allows, and Finder shows it as one.
+    /// Shown as ":" too, a Drive name with a colon would be written back
+    /// with a slash and would collide with its slashed twin. A Drive name
+    /// already holding this character is the one case left ambiguous.
+    static let driveColon = "\u{A789}"
+
+    /// The name to show for a Drive name: "/" as ":", and ":" as `driveColon`.
+    static func displayName(_ driveName: String) -> String {
+        driveName.replacingOccurrences(of: ":", with: driveColon).replacingOccurrences(of: "/", with: ":")
+    }
+
+    /// The name to store on Drive: the inverse of `displayName`.
     static func driveName(_ displayName: String) -> String {
-        displayName.replacingOccurrences(of: ":", with: "/")
+        displayName.replacingOccurrences(of: ":", with: "/").replacingOccurrences(of: driveColon, with: ":")
     }
 
     /// An exported document renamed in Finder keeps the extension Hamasen

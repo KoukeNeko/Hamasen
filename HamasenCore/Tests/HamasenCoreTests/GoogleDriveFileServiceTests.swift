@@ -247,6 +247,23 @@ struct GoogleDriveFileServiceTests {
         #expect(fake.named("c/d.txt").count == 1)
     }
 
+    /// A colon is a character of its own on Drive, not a slash: shown as
+    /// one it would be written back as a slash, and a name with each would
+    /// collide.
+    @Test("名稱中的冒號另外顯示，改名後原樣寫回")
+    func keepsColonsApartFromSlashes() async throws {
+        let fake = FakeDrive()
+        fake.add("c:d.txt", data: Data("colon".utf8))
+        fake.add("c/d.txt", data: Data("slash".utf8))
+        let service = try Self.service(fake)
+        #expect(try await service.listDirectory(at: "/").map(\.name).sorted() == ["c:d.txt", "c\u{A789}d.txt"])
+        #expect(try await service.itemInfo(at: "/c\u{A789}d.txt").size == 5)
+
+        try await service.moveItem(from: "/c\u{A789}d.txt", to: "/e\u{A789}f.txt")
+        #expect(fake.named("e:f.txt").count == 1)
+        #expect(fake.named("c/d.txt").count == 1)
+    }
+
     @Test("捷徑視為目標項目")
     func followsShortcuts() async throws {
         let fake = FakeDrive()
