@@ -10,7 +10,13 @@ rm -f /tmp/bucket-ready
 # across container restarts, whatever address Docker assigns.
 # -volume.preStopSeconds=0 drops a 10 s pause from shutdown, which still
 # takes about 16 s (stop_grace_period in docker-compose.yml allows for it).
+# -volume.max and -master.volumeSizeLimitMB: left alone, the number of volumes
+# is worked out from the free disk at 30 GB apiece. On a host with a few GB
+# free that leaves none for the bucket's collection, which needs seven at
+# once, and every upload fails with InternalError. Volumes are not
+# preallocated, and the tests write a few megabytes.
 /entrypoint.sh server -ip=127.0.0.1 -ip.bind=0.0.0.0 -volume.preStopSeconds=0 \
+    -volume.max=64 -master.volumeSizeLimitMB=1024 \
     -s3 -s3.config=/etc/seaweedfs/s3.json -s3.iam=false &
 pid=$!
 trap 'kill -TERM "$pid"; wait "$pid"; exit 0' TERM INT
