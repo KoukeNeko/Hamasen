@@ -113,7 +113,14 @@ struct HamasenApp: App {
         // menu bar built up a pile of identical windows.
         Window(AppInfo.displayName, id: "main") {
             HamasenMainView(model: model, guide: guide, navigation: navigation)
+                // "Show in Hamasen" from Finder's context menu.
+                .onOpenURL { url in
+                    guard let serverID = AppLink.connectionID(in: url) else { return }
+                    navigation.selection = .connection(serverID)
+                    NSApp.activate()
+                }
         }
+        .handlesExternalEvents(matching: [AppLink.scheme])
         .windowToolbarStyle(.unified)
         // Launched as a login item, the app mounts in the background and
         // stays out of the way; the window opens when it is asked for.

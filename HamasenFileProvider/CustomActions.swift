@@ -40,7 +40,7 @@ extension FileProviderExtension: NSFileProviderCustomAction {
         let task = Task {
             defer { progress.completedUnitCount = 1 }
             do {
-                let afterCompletion = try await CustomActionRunner.run(action, on: itemIdentifiers)
+                let afterCompletion = try await CustomActionRunner.run(action, on: itemIdentifiers, registry: searchRegistry)
                 completionHandler(nil)
                 await afterCompletion?()
             } catch is CancellationError {
@@ -71,7 +71,8 @@ enum CustomActionRunner {
 
     static func run(
         _ action: FinderAction,
-        on itemIdentifiers: [NSFileProviderItemIdentifier]
+        on itemIdentifiers: [NSFileProviderItemIdentifier],
+        registry: ConnectionRegistry
     ) async throws -> AfterCompletion? {
         // The system may cancel the Progress before the task gets scheduled;
         // nothing below is long enough to need a second check.
@@ -109,7 +110,63 @@ enum CustomActionRunner {
             return try setPinned(true, on: entities)
         case .stopKeepingOnMac:
             return try setPinned(false, on: entities)
+        case .copyURL:
+            let entity = try singleServerEntity(in: entities)
+            try await copyToPasteboard(try await url(of: entity, registry: registry).absoluteString)
+            return nil
+        case .openInBrowser:
+            let entity = try singleServerEntity(in: entities)
+            guard let serverID = entity.serverID,
+                  let page = try await registry.service(for: serverID).browserURL(for: entity.path)
+            else { throw CustomActionError.noWebPage }
+            try await open(page)
+            return nil
+        case .openInTerminal:
+            let entity = try singleServerEntity(in: entities)
+            guard let serverID = entity.serverID else { throw CustomActionError.notAHamasenItem }
+            try await open(try sshURL(for: ConnectionRegistry.config(for: serverID)))
+            return nil
+        case .showInHamasen:
+            let entity = try singleServerEntity(in: entities)
+            guard let serverID = entity.serverID else { throw CustomActionError.notAHamasenItem }
+            try await open(AppLink.connection(serverID))
+            return nil
         }
+    }
+
+    /// The address another client is given; a cloud drive, which has none,
+    /// gives its web page instead, which takes asking its API.
+    private static func url(of entity: ProviderEntity, registry: ConnectionRegistry) async throws -> URL {
+        guard let serverID = entity.serverID else { throw CustomActionError.notAHamasenItem }
+        if let address = RemoteItemAddress.url(of: entity.path, on: try ConnectionRegistry.config(for: serverID)) {
+            return address
+        }
+        guard let page = try await registry.service(for: serverID).browserURL(for: entity.path) else {
+            throw CustomActionError.noWebPage
+        }
+        return page
+    }
+
+    /// Terminal answers `ssh://` itself and signs in with the user's own
+    /// keys and ~/.ssh/config. A URL cannot carry a command, so the session
+    /// starts in the account's home rather than in the folder.
+    private static func sshURL(for config: ServerConfig) throws -> URL {
+        var components = URLComponents()
+        components.scheme = "ssh"
+        if !config.username.isEmpty { components.user = config.username }
+        components.host = RemoteItemAddress.urlHost(for: config.host)
+        if config.port != config.transferProtocol.defaultPort { components.port = config.port }
+        guard config.transferProtocol == .sftp, let url = components.url else {
+            throw CustomActionError.cannotOpen("ssh")
+        }
+        return url
+    }
+
+    /// Hands the URL to whichever app claims it: the browser, Terminal, or
+    /// Hamasen itself for its own links.
+    private static func open(_ url: URL) async throws {
+        let didOpen = await MainActor.run { NSWorkspace.shared.open(url) }
+        guard didOpen else { throw CustomActionError.cannotOpen(url.scheme ?? "") }
     }
 
     /// The activation rules restrict these actions to one item on a server;
@@ -317,6 +374,8 @@ enum CustomActionError: LocalizedError {
     case notAServerFolder
     case pasteboardUnavailable
     case freeLocalSpaceFailed(failureCount: Int, reason: String)
+    case noWebPage
+    case cannotOpen(String)
 
     var errorDescription: String? {
         switch self {
@@ -330,6 +389,10 @@ enum CustomActionError: LocalizedError {
             return String(localized: "無法寫入剪貼簿")
         case .freeLocalSpaceFailed(let failureCount, let reason):
             return String(localized: "\(failureCount) 個項目無法釋放本機空間：\(reason)")
+        case .noWebPage:
+            return String(localized: "這個項目沒有網頁")
+        case .cannotOpen(let scheme):
+            return String(localized: "沒有可以開啟 \(scheme) 連結的 App")
         }
     }
 }

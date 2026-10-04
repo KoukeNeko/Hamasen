@@ -414,6 +414,28 @@ struct AWSSignatureV4Tests {
             == "prefix=two%20words%2F")
     }
 
+    /// The example Amazon publishes for query-string authentication: the
+    /// same object, key and moment must give the signature printed there.
+    @Test
+    func presignedQueryMatchesAmazonsExample() throws {
+        let query = AWSSignatureV4.presignedQuery(
+            path: "/test.txt",
+            host: "examplebucket.s3.amazonaws.com",
+            credentials: AWSCredentials(
+                accessKeyID: "AKIAIOSFODNN7EXAMPLE",
+                secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+            region: "us-east-1",
+            signedAt: Date(timeIntervalSince1970: 1369353600),
+            expiresInSeconds: 86_400)
+
+        let values = Dictionary(uniqueKeysWithValues: query.map { ($0.name, $0.value ?? "") })
+        #expect(values["X-Amz-Credential"] == "AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request")
+        #expect(values["X-Amz-Date"] == "20130524T000000Z")
+        #expect(values["X-Amz-Expires"] == "86400")
+        #expect(values["X-Amz-SignedHeaders"] == "host")
+        #expect(values["X-Amz-Signature"] == "aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404")
+    }
+
     /// S3 alone among AWS services encodes the path once. Double encoding
     /// turns every "%" into "%25" and is the classic way to produce a
     /// signature that works nowhere.

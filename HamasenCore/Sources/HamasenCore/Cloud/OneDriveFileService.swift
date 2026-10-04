@@ -218,6 +218,13 @@ public actor OneDriveFileService: RemoteFileService {
         try check(response, data: data, path: oldPath, operation: "move", destination: newPath)
     }
 
+    /// Graph hands out each item's page as `webUrl`.
+    public func browserURL(for path: String) async throws -> URL? {
+        let (data, response) = try await http.send(.cloud(url(for: path, suffix: "?$select=webUrl")))
+        try check(response, data: data, path: path, operation: "stat")
+        return (CloudJSON.object(data)?["webUrl"] as? String).flatMap(URL.init(string:))
+    }
+
     private func itemID(at path: String) async throws -> String {
         let (data, response) = try await http.send(.cloud(url(for: path, suffix: "?$select=id")))
         try check(response, data: data, path: path, operation: "stat")

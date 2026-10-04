@@ -47,6 +47,11 @@ public protocol RemoteFileService: Sendable {
     /// Fetches attributes for a single item.
     func itemInfo(at path: String) async throws -> RemoteItem
 
+    /// A page for the item that a web browser can open — the WebDAV
+    /// address, a presigned S3 link, a cloud drive's own page — or nil for a
+    /// protocol a browser cannot read.
+    func browserURL(for path: String) async throws -> URL?
+
     /// Asks the server something that only an answering server can answer,
     /// to tell whether it is reachable again. Throws while it is not.
     func checkReachable() async throws
@@ -108,6 +113,9 @@ extension RemoteFileService {
     public func checkReachable() async throws {
         _ = try await itemInfo(at: RemotePath.root)
     }
+
+    /// File protocols have nothing a browser can show.
+    public func browserURL(for path: String) async throws -> URL? { nil }
 
     /// Protocols without links list the same either way.
     public func listDirectoryWithoutFollowingLinks(at path: String) async throws -> [RemoteItem] {

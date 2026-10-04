@@ -38,19 +38,28 @@ struct FinderActivationRuleTests {
         let isFolder: Bool
         let isDownloaded: Bool
         var isPinned = false
+        /// What the item reports in its userInfo; the Hamasen root, which
+        /// belongs to no server, reports none.
+        var transferProtocol: ServerConfig.TransferProtocol? = .sftp
 
-        static func folder(_ entity: ProviderEntity) -> IndexedItem {
-            IndexedItem(identifier: ItemIdentifierMapper.identifier(for: entity), isFolder: true, isDownloaded: true)
+        static func folder(
+            _ entity: ProviderEntity, on transferProtocol: ServerConfig.TransferProtocol = .sftp
+        ) -> IndexedItem {
+            IndexedItem(
+                identifier: ItemIdentifierMapper.identifier(for: entity), isFolder: true, isDownloaded: true,
+                transferProtocol: entity == .root ? nil : transferProtocol)
         }
 
         static func file(
-            _ entity: ProviderEntity, isDownloaded: Bool, isPinned: Bool = false
+            _ entity: ProviderEntity, isDownloaded: Bool, isPinned: Bool = false,
+            on transferProtocol: ServerConfig.TransferProtocol = .sftp
         ) -> IndexedItem {
             IndexedItem(
                 identifier: ItemIdentifierMapper.identifier(for: entity),
                 isFolder: false,
                 isDownloaded: isDownloaded,
-                isPinned: isPinned
+                isPinned: isPinned,
+                transferProtocol: transferProtocol
             )
         }
     }
@@ -71,18 +80,40 @@ struct FinderActivationRuleTests {
     /// The system normalises this spelling to the server root; the rule has
     /// to accept it as well.
     private static let serverRootWithSlash = IndexedItem.folder(.item(serverID: serverID, path: RemotePath.root))
+    private static let webDAVFile = IndexedItem.file(
+        .item(serverID: serverID, path: "/site/index.html"), isDownloaded: false, on: .webdavs
+    )
+    private static let s3File = IndexedItem.file(
+        .item(serverID: serverID, path: "/bucket/photo.jpg"), isDownloaded: false, on: .s3
+    )
+    private static let s3Folder = IndexedItem.folder(.item(serverID: serverID, path: "/bucket/photos"), on: .s3)
+    private static let driveFile = IndexedItem.file(
+        .item(serverID: serverID, path: "/Report.docx"), isDownloaded: false, on: .googleDrive
+    )
+    private static let ftpFile = IndexedItem.file(
+        .item(serverID: serverID, path: "/pub/readme.txt"), isDownloaded: false, on: .ftp
+    )
+
+    /// What every single item on a server offers, whatever its protocol.
+    private static let anyServerItem: Set<FinderAction> = [.copyRemotePath, .copyURL, .copyLocalPath, .showInHamasen, .refresh]
 
     /// Every selection the rules are expected to tell apart, with the
     /// entries each one must show.
     private static let expectations: [(selection: [IndexedItem], visible: Set<FinderAction>, label: String)] = [
-        ([datalessFile], [.copyRemotePath, .copyLocalPath, .refresh, .keepOnMac], "single dataless file"),
-        ([downloadedFile], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace, .keepOnMac], "single downloaded file"),
+        ([datalessFile], anyServerItem.union([.openInTerminal, .keepOnMac]), "single dataless file"),
+        ([downloadedFile], anyServerItem.union([.openInTerminal, .freeLocalSpace, .keepOnMac]), "single downloaded file"),
         // The pair is exclusive: a kept file offers only the way back.
-        ([pinnedFile], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace, .stopKeepingOnMac], "a kept file"),
+        ([pinnedFile], anyServerItem.union([.openInTerminal, .freeLocalSpace, .stopKeepingOnMac]), "a kept file"),
         ([datalessFile, pinnedFile], [.refresh, .freeLocalSpace], "a kept file mixed with an unkept one"),
-        ([innerFolder], [.copyRemotePath, .copyLocalPath, .refresh, .freeLocalSpace], "single folder"),
-        ([serverRoot], [.copyRemotePath, .copyLocalPath, .refresh, .unmountServer, .freeLocalSpace], "single server folder"),
-        ([serverRootWithSlash], [.copyRemotePath, .copyLocalPath, .refresh, .unmountServer, .freeLocalSpace], "server folder as srv:<uuid>:/"),
+        ([innerFolder], anyServerItem.union([.openInTerminal, .freeLocalSpace]), "single folder"),
+        ([serverRoot], anyServerItem.union([.openInTerminal, .unmountServer, .freeLocalSpace]), "single server folder"),
+        ([serverRootWithSlash], anyServerItem.union([.openInTerminal, .unmountServer, .freeLocalSpace]), "server folder as srv:<uuid>:/"),
+        // A browser for the protocols with web pages, a shell for SFTP alone.
+        ([webDAVFile], anyServerItem.union([.openInBrowser, .keepOnMac]), "a WebDAV file"),
+        ([s3File], anyServerItem.union([.openInBrowser, .keepOnMac]), "an S3 object"),
+        ([s3Folder], anyServerItem.union([.freeLocalSpace]), "an S3 folder, which is only a prefix"),
+        ([driveFile], anyServerItem.union([.openInBrowser, .keepOnMac]), "a Google Drive file"),
+        ([ftpFile], anyServerItem.union([.keepOnMac]), "an FTP file"),
         // Several unkept files can be kept in one go.
         ([datalessFile, downloadedFile], [.refresh, .freeLocalSpace, .keepOnMac], "two files, one downloaded"),
         ([datalessFile, innerFolder], [.refresh, .freeLocalSpace], "a file and a folder"),
@@ -189,11 +220,13 @@ struct FinderActivationRuleTests {
     /// array of indexed items plus the domain's userInfo (empty for Hamasen).
     private static func predicateContext(for selection: [IndexedItem]) -> [String: Any] {
         let items: [[String: Any]] = selection.map { item in
-            [
+            var userInfo: [String: Any] = ["isPinned": item.isPinned]
+            userInfo["protocol"] = item.transferProtocol?.rawValue
+            return [
                 "itemIdentifier": item.identifier.rawValue,
                 "isFolder": item.isFolder,
                 "isDownloaded": item.isDownloaded,
-                "userInfo": ["isPinned": item.isPinned],
+                "userInfo": userInfo,
             ]
         }
         return ["fileproviderItems": items, "domainUserInfo": [String: Any]()]

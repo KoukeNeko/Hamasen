@@ -276,6 +276,19 @@ public actor DropboxFileService: RemoteFileService {
         return Array(entries.compactMap(parseEntry).prefix(limit))
     }
 
+    /// Dropbox's web pages are addressed by path: a folder by its own, a
+    /// file by its folder's with the file opened in the preview.
+    public func browserURL(for path: String) async throws -> URL? {
+        let absolute = absolutePath(path)
+        let isFolder = try await itemInfo(at: path).kind == .directory
+        var components = URLComponents(string: "https://www.dropbox.com")!
+        components.path = "/home" + (isFolder ? absolute : RemotePath.parent(of: absolute))
+        if !isFolder {
+            components.queryItems = [URLQueryItem(name: "preview", value: (absolute as NSString).lastPathComponent)]
+        }
+        return components.url
+    }
+
     // MARK: - Requests
 
     private func absolutePath(_ path: String) -> String {

@@ -128,6 +128,40 @@ public enum AWSSignatureV4 {
         return headers
     }
 
+    /// The query a presigned request carries in place of an `Authorization`
+    /// header, signature included, so a browser can fetch an object that is
+    /// not public until the link expires. Only the host is signed: a browser
+    /// adds headers of its own that a signature over them would reject.
+    public static func presignedQuery(
+        method: String = "GET",
+        path: String,
+        host: String,
+        credentials: AWSCredentials,
+        region: String,
+        service: String = s3Service,
+        signedAt: Date,
+        expiresInSeconds: Int
+    ) -> [URLQueryItem] {
+        let timestamp = timestamp(from: signedAt)
+        let day = String(timestamp.prefix(dayLength))
+        let scope = credentialScope(day: day, region: region, service: service)
+        var query = [
+            URLQueryItem(name: "X-Amz-Algorithm", value: algorithm),
+            URLQueryItem(name: "X-Amz-Credential", value: "\(credentials.accessKeyID)/\(scope)"),
+            URLQueryItem(name: "X-Amz-Date", value: timestamp),
+            URLQueryItem(name: "X-Amz-Expires", value: String(expiresInSeconds)),
+            URLQueryItem(name: "X-Amz-SignedHeaders", value: "host"),
+        ]
+        let canonical = canonicalRequest(for: Request(
+            method: method, path: path, queryItems: query,
+            headers: ["host": host], payloadHash: unsignedPayload))
+        let toSign = stringToSign(canonicalRequest: canonical.text, timestamp: timestamp, scope: scope)
+        let key = signingKey(
+            secretAccessKey: credentials.secretAccessKey, day: day, region: region, service: service)
+        query.append(URLQueryItem(name: "X-Amz-Signature", value: hexadecimal(hmac(key: key, message: toSign))))
+        return query
+    }
+
     /// The hash to declare for a body that is small enough to hold in memory.
     public static func payloadHash(of data: Data) -> String {
         hexadecimal(SHA256.hash(data: data))

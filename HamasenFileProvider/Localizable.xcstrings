@@ -107,6 +107,42 @@
         }
       }
     },
+    "ACTION_COPY_URL": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy URL"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URLをコピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL 복사"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝 URL"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製 URL"
+          }
+        }
+      }
+    },
     "ACTION_FREE_LOCAL_SPACE": {
       "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
       "extractionState": "manual",
@@ -179,6 +215,78 @@
         }
       }
     },
+    "ACTION_OPEN_IN_BROWSER": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Browser"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウザで開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브라우저에서 열기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在浏览器中打开"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在瀏覽器中開啟"
+          }
+        }
+      }
+    },
+    "ACTION_OPEN_IN_TERMINAL": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Terminal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルで開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널에서 열기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在终端中打开"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在終端機中開啟"
+          }
+        }
+      }
+    },
     "ACTION_REFRESH": {
       "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
       "extractionState": "manual",
@@ -211,6 +319,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "刷新"
+          }
+        }
+      }
+    },
+    "ACTION_SHOW_IN_HAMASEN": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Hamasen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hamasenで表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hamasen에서 보기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在哈玛星中显示"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在哈瑪星中顯示"
           }
         }
       }
@@ -461,6 +605,40 @@
         }
       }
     },
+    "沒有可以開啟 %@ 連結的 App": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No app can open %@ links"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ リンクを開けるAppがありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 링크를 열 수 있는 앱이 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可以打开 %@ 链接的 App"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有可以開啟 %@ 連結的 App"
+          }
+        }
+      }
+    },
     "無法寫入剪貼簿": {
       "localizations": {
         "en": {
@@ -525,6 +703,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个项目不属于 Hamasen 挂载"
+          }
+        }
+      }
+    },
+    "這個項目沒有網頁": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This item has no web page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目にはWebページがありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목에는 웹 페이지가 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目没有网页"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個項目沒有網頁"
           }
         }
       }

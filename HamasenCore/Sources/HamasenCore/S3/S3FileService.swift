@@ -1106,6 +1106,26 @@ public actor S3FileService: RemoteFileService {
         return !listing.objects.isEmpty || !listing.commonPrefixes.isEmpty
     }
 
+    // MARK: - Browser links
+
+    /// Long enough to open the link, short enough that a copy of it is not
+    /// lasting access to the object.
+    private static let browserLinkLifetimeSeconds = 3_600
+
+    /// A presigned link, since the objects are rarely public. A bucket or a
+    /// folder is a prefix, not something a browser can fetch.
+    public func browserURL(for path: String) async throws -> URL? {
+        guard let awsCredentials else { throw RemoteFileServiceError.notConnected }
+        let object = try object(for: path)
+        guard !object.key.isEmpty, try await itemInfo(at: path).kind == .file,
+              let unsigned = endpoint.address(for: object)
+        else { return nil }
+        let query = AWSSignatureV4.presignedQuery(
+            path: unsigned.signingPath, host: unsigned.hostHeader, credentials: awsCredentials,
+            region: endpoint.region, signedAt: Date(), expiresInSeconds: Self.browserLinkLifetimeSeconds)
+        return endpoint.address(for: object, queryItems: query)?.url
+    }
+
     // MARK: - Paths
 
     private func rootObject() throws -> S3ObjectKey {

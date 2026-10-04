@@ -700,26 +700,21 @@ public actor WebDAVFileService: RemoteFileService {
         return request
     }
 
+    /// The item's own address: a WebDAV server answers a browser's GET
+    /// with the file, and many with a listing for a folder.
+    public func browserURL(for path: String) async throws -> URL? {
+        try absoluteURL(for: path)
+    }
+
     /// Builds the absolute URL of a mount-relative path.
     private func absoluteURL(for mountRelativePath: String) throws -> URL {
-        // URLComponents traps rather than throwing on a negative port, so a
-        // malformed stored config must be rejected before it gets there.
         guard (1...65535).contains(config.port) else {
             throw RemoteFileServiceError.operationFailed(
                 operation: String(localized: "組合網址", bundle: .module), path: mountRelativePath,
                 underlying: "無效的連接埠：\(config.port)"
             )
         }
-
-        var components = URLComponents()
-        components.scheme = config.transferProtocol.urlScheme
-        components.host = Self.urlHost(for: config.host)
-        if config.port != config.transferProtocol.defaultPort {
-            components.port = config.port
-        }
-        components.path = RemotePath.resolve(mountRelativePath, against: config.remotePath)
-
-        guard let url = components.url else {
+        guard let url = RemoteItemAddress.url(of: mountRelativePath, on: config) else {
             throw RemoteFileServiceError.operationFailed(
                 operation: String(localized: "組合網址", bundle: .module), path: mountRelativePath, underlying: "無效的主機或路徑"
             )
@@ -843,12 +838,6 @@ public actor WebDAVFileService: RemoteFileService {
                 operation: String(localized: "下載區間", bundle: .module), path: path, underlying: error.localizedDescription
             )
         }
-    }
-
-    /// URLComponents rejects a bare IPv6 literal; it has to be bracketed.
-    private static func urlHost(for host: String) -> String {
-        guard host.contains(":"), !host.hasPrefix("[") else { return host }
-        return "[\(host)]"
     }
 
     private static func validate(

@@ -174,6 +174,15 @@ public actor GoogleDriveFileService: RemoteFileService {
         try await node(at: path).remoteItem(at: path)
     }
 
+    /// Drive's page for the item. A shortcut opens what it points at, which
+    /// is what opening it in Finder does too.
+    public func browserURL(for path: String) async throws -> URL? {
+        let found = try await node(at: path)
+        return URL(string: found.isFolder
+            ? "https://drive.google.com/drive/folders/\(found.contentID)"
+            : "https://drive.google.com/file/d/\(found.contentID)/view")
+    }
+
     // MARK: - Transfers
 
     public func downloadFile(at path: String, to localURL: URL, progress: TransferProgress?) async throws {

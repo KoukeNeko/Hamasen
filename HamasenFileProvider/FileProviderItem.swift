@@ -96,10 +96,18 @@ final class ServerFolderItem: NSObject, NSFileProviderItem, NSFileProviderItemDe
         config.isPaused ? [.paused] : nil
     }
 
+    var userInfo: [AnyHashable: Any]? {
+        [RemoteFileItem.protocolUserInfoKey: config.transferProtocol.rawValue]
+    }
+
+    /// Bumped whenever this class changes what it reports, for the same
+    /// reason as `RemoteFileItem.metadataRevision`.
+    private static let metadataRevision = "2"
+
     var itemVersion: NSFileProviderItemVersion {
         // Derived from the name so a rename in the app propagates to Finder,
         // and from the storage mode so a change of mode does too.
-        let versionToken = Data(config.finderItemToken.utf8)
+        let versionToken = Data("\(config.finderItemToken)-\(Self.metadataRevision)".utf8)
         return NSFileProviderItemVersion(contentVersion: versionToken, metadataVersion: versionToken)
     }
 }
@@ -109,6 +117,9 @@ final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDeco
     /// The key the Info.plist activation rules read to decide whether to
     /// offer "keep on this Mac" or "stop keeping".
     static let pinnedUserInfoKey = "isPinned"
+    /// The server's protocol, which decides the entries that need one: a
+    /// browser for WebDAV, S3 and cloud drives, a terminal for SFTP.
+    static let protocolUserInfoKey = "protocol"
 
     /// Bumped whenever this class changes what it reports about an item.
     ///
@@ -118,7 +129,7 @@ final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDeco
     /// reaches items already in the replica, because nothing about the file
     /// itself moved. Only the metadata version carries it: putting it in the
     /// content version would re-download every file.
-    private static let metadataRevision = "3"
+    private static let metadataRevision = "4"
 
     private let serverID: UUID
     private let remoteItem: RemoteItem
@@ -163,7 +174,9 @@ final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDeco
     }
 
     var userInfo: [AnyHashable: Any]? {
-        [Self.pinnedUserInfoKey: isPinned]
+        var info: [AnyHashable: Any] = [Self.pinnedUserInfoKey: isPinned]
+        info[Self.protocolUserInfoKey] = ServerProtocols.transferProtocol(of: serverID)?.rawValue
+        return info
     }
 
     var decorations: [NSFileProviderItemDecorationIdentifier]? {
