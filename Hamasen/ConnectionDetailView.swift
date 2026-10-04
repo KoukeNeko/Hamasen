@@ -78,6 +78,7 @@ struct ConnectionDetailView: View {
                 hasStoredPassword: hasStoredPassword, hasStoredKey: hasStoredKey, hasStoredToken: hasStoredToken)
             SyncSection(draft: $draft)
             LocalCopySection(draft: $draft, usage: model.cache.usage[server.id] ?? CacheUsage(pinnedBytes: 0, evictableBytes: 0))
+            FinderAppearanceSection(draft: $draft)
             AdvancedConnectionSection(draft: $draft, server: server)
             Section {
                 Button("刪除這組連線…", role: .destructive) { isConfirmingDelete = true }

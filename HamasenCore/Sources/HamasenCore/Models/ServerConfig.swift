@@ -188,6 +188,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
     /// How often the app asks the server what changed, in seconds; 0 is
     /// never and nil the protocol's default.
     public var remoteChangeIntervalSeconds: Int?
+    /// How the server's folder looks in Finder.
+    public var finderAppearance: FinderAppearance
 
     /// The interval actually in force.
     public var effectiveRemoteChangeIntervalSeconds: Int {
@@ -209,7 +211,8 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         s3AddressingStyle: S3AddressingStyle = .automatic,
         indexesInBackground: Bool = true,
         isPaused: Bool = false,
-        remoteChangeIntervalSeconds: Int? = nil
+        remoteChangeIntervalSeconds: Int? = nil,
+        finderAppearance: FinderAppearance = FinderAppearance()
     ) {
         self.id = id
         self.name = name
@@ -226,6 +229,7 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.indexesInBackground = indexesInBackground
         self.isPaused = isPaused
         self.remoteChangeIntervalSeconds = remoteChangeIntervalSeconds
+        self.finderAppearance = finderAppearance
     }
 
     /// Configurations written before key authentication existed have no
@@ -275,6 +279,11 @@ public struct ServerConfig: Codable, Identifiable, Hashable, Sendable {
         self.isPaused = try container.decodeIfPresent(Bool.self, forKey: .isPaused) ?? false
         self.remoteChangeIntervalSeconds = try container.decodeIfPresent(
             Int.self, forKey: .remoteChangeIntervalSeconds)
+        // Added with folder customization; earlier servers kept Finder's look.
+        // Only cosmetic, so one that cannot be read falls back to Finder's
+        // look rather than taking the whole server list down with it.
+        self.finderAppearance = (try? container.decodeIfPresent(
+            FinderAppearance.self, forKey: .finderAppearance)) ?? FinderAppearance()
     }
 
     /// What makes two entries the same connection.

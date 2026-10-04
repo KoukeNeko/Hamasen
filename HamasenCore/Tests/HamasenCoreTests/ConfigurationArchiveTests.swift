@@ -170,6 +170,7 @@ struct ConfigurationArchiveTests {
                 "s3AddressingStyle",
                 "indexesInBackground",
                 "isPaused",
+                "finderAppearance",
             ]
         )
     }
@@ -210,6 +211,7 @@ struct ConfigurationArchiveTests {
                 "indexesInBackground",
                 "isPaused",
                 "remoteChangeIntervalSeconds",
+                "finderAppearance",
             ]
         )
     }

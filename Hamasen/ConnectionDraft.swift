@@ -52,6 +52,7 @@ struct ConnectionDraft {
     var indexesInBackground: Bool
     var remoteChangeInterval: RemoteChangeInterval
     var isPaused: Bool
+    var finderAppearance: FinderAppearance
 
     init(kind: ServiceKind) {
         let transferProtocol = kind.defaultProtocol
@@ -72,6 +73,7 @@ struct ConnectionDraft {
         indexesInBackground = transferProtocol != .s3
         remoteChangeInterval = RemoteChangeInterval(seconds: transferProtocol.defaultRemoteChangeIntervalSeconds)
         isPaused = false
+        finderAppearance = FinderAppearance()
     }
 
     init(server: ServerConfig) {
@@ -97,6 +99,7 @@ struct ConnectionDraft {
         indexesInBackground = server.indexesInBackground
         remoteChangeInterval = RemoteChangeInterval(seconds: server.effectiveRemoteChangeIntervalSeconds)
         isPaused = server.isPaused
+        finderAppearance = server.finderAppearance
     }
 
     /// Fills in what an SSH configuration says about one of its hosts,
@@ -196,8 +199,22 @@ struct ConnectionDraft {
             indexesInBackground: indexesInBackground,
             isPaused: isPaused,
             remoteChangeIntervalSeconds: remoteChangeInterval.rawValue
-                == protocolValue.defaultRemoteChangeIntervalSeconds ? nil : remoteChangeInterval.rawValue
+                == protocolValue.defaultRemoteChangeIntervalSeconds ? nil : remoteChangeInterval.rawValue,
+            finderAppearance: normalizedAppearance
         )
+    }
+
+    /// Blank text is no choice, so a cleared field reads as unset rather
+    /// than as an empty name or emoji.
+    private var normalizedAppearance: FinderAppearance {
+        var appearance = finderAppearance
+        let name = appearance.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        appearance.name = name.isEmpty ? nil : name
+        if case .emoji(let character) = appearance.icon {
+            let trimmed = character.trimmingCharacters(in: .whitespacesAndNewlines)
+            appearance.icon = trimmed.isEmpty ? nil : .emoji(String(trimmed.prefix(1)))
+        }
+        return appearance
     }
 
     /// The secrets typed or signed in to; empty fields leave what is stored.

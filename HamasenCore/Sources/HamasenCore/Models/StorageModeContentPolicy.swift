@@ -52,6 +52,13 @@ extension ServerConfig {
     /// Pausing is in it so the folder's badge follows, and only when paused,
     /// so a running server keeps the token it had before pausing existed.
     public var finderItemToken: String {
-        "\(name)|\(storageMode.versionToken)" + (isPaused ? "|paused" : "")
+        "\(name)|\(storageMode.versionToken)" + (isPaused ? "|paused" : "") + finderAppearance.versionToken
+    }
+
+    /// The server folder's name in Finder: the one chosen for Finder, or
+    /// the connection's own.
+    public var finderFolderName: String {
+        let chosen = finderAppearance.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return chosen.isEmpty ? name : chosen
     }
 }

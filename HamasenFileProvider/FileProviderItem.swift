@@ -77,7 +77,7 @@ final class ServerFolderItem: NSObject, NSFileProviderItem, NSFileProviderItemDe
     }
 
     var parentItemIdentifier: NSFileProviderItemIdentifier { .rootContainer }
-    var filename: String { config.name }
+    var filename: String { config.finderFolderName }
     var contentType: UTType { .folder }
 
     var capabilities: NSFileProviderItemCapabilities {
@@ -98,6 +98,18 @@ final class ServerFolderItem: NSObject, NSFileProviderItem, NSFileProviderItemDe
 
     var userInfo: [AnyHashable: Any]? {
         [RemoteFileItem.protocolUserInfoKey: config.transferProtocol.rawValue]
+    }
+
+    /// The color chosen in the app, as a Finder tag.
+    var tagData: Data? {
+        config.finderAppearance.tagData
+    }
+
+    /// The symbol or emoji chosen in the app, in the attribute Finder's
+    /// Customize Folder writes.
+    var extendedAttributes: [String: Data] {
+        guard let icon = config.finderAppearance.iconAttribute else { return [:] }
+        return [FinderAppearance.iconAttributeName: icon]
     }
 
     /// Bumped whenever this class changes what it reports, for the same
