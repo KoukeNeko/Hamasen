@@ -1,0 +1,5 @@
+#!/bin/sh
+# listening <port>
+# Succeeds when a server listens on the TCP port. Unlike connecting to it,
+# this leaves nothing in the server's log, so healthchecks can run it often.
+netstat -tln | grep -q ":$1 "

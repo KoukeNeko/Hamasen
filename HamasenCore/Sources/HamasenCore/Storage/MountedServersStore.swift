@@ -16,9 +16,13 @@ import Foundation
 
 /// Persists which servers are currently shown in Finder (mounted), separate
 /// from the server configurations so no Codable migration is needed.
-/// Written by the app, read by the File Provider extension.
+/// Written by the app and by the File Provider extension (unmounting from
+/// Finder), so every mutation is a read-modify-write under a cross-process
+/// lock, and callers change the set by delta rather than writing back a copy
+/// they read earlier.
 public struct MountedServersStore: Sendable {
     private let fileURL: URL
+    private let lock: FileLock
 
     /// Standard initializer backed by the App Group container.
     public init(appGroupIdentifier: String = SharedConstants.appGroupIdentifier) throws {
@@ -27,23 +31,40 @@ public struct MountedServersStore: Sendable {
         ) else {
             throw ServerConfigStore.StoreError.appGroupContainerUnavailable(groupIdentifier: appGroupIdentifier)
         }
-        self.fileURL = containerURL.appendingPathComponent(SharedConstants.mountedServersFileName)
+        self.init(fileURL: containerURL.appendingPathComponent(SharedConstants.mountedServersFileName))
     }
 
     /// Test initializer: uses an arbitrary file location.
     public init(fileURL: URL) {
         self.fileURL = fileURL
+        self.lock = FileLock(lockURL: fileURL.appendingPathExtension("lock"))
     }
 
+    /// Not locked: a write replaces the file atomically, so a read sees the
+    /// set before or after it and never half of one.
     public func loadMountedServerIDs() throws -> Set<UUID> {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
-        let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(Set<UUID>.self, from: data)
+        try load()
     }
 
+    /// Replaces the whole set. For a caller that owns it outright; one that
+    /// only means to mount or unmount a server uses `addMountedServers` or
+    /// `removeMountedServer`, which cannot undo the other process's change.
     public func saveMountedServerIDs(_ serverIDs: Set<UUID>) throws {
-        let data = try JSONEncoder().encode(serverIDs)
-        try data.write(to: fileURL, options: .atomic)
+        try lock.withLock { try save(serverIDs) }
+    }
+
+    /// Adds servers to the mounted set and returns the resulting set.
+    @discardableResult
+    public func addMountedServers(_ serverIDs: some Sequence<UUID>) throws -> Set<UUID> {
+        try lock.withLock {
+            var mountedServerIDs = try load()
+            let before = mountedServerIDs
+            mountedServerIDs.formUnion(serverIDs)
+            if mountedServerIDs != before {
+                try save(mountedServerIDs)
+            }
+            return mountedServerIDs
+        }
     }
 
     /// Takes one server out of the mounted set and returns what remains.
@@ -52,9 +73,20 @@ public struct MountedServersStore: Sendable {
     /// read-modify-write lives here rather than in each of them.
     @discardableResult
     public func removeMountedServer(_ serverID: UUID) throws -> Set<UUID> {
-        var mountedServerIDs = try loadMountedServerIDs()
-        guard mountedServerIDs.remove(serverID) != nil else { return mountedServerIDs }
-        try saveMountedServerIDs(mountedServerIDs)
-        return mountedServerIDs
+        try lock.withLock {
+            var mountedServerIDs = try load()
+            guard mountedServerIDs.remove(serverID) != nil else { return mountedServerIDs }
+            try save(mountedServerIDs)
+            return mountedServerIDs
+        }
+    }
+
+    private func load() throws -> Set<UUID> {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
+        return try JSONDecoder().decode(Set<UUID>.self, from: Data(contentsOf: fileURL))
+    }
+
+    private func save(_ serverIDs: Set<UUID>) throws {
+        try JSONEncoder().encode(serverIDs).write(to: fileURL, options: .atomic)
     }
 }

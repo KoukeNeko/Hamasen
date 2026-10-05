@@ -36,4 +36,31 @@ public enum FinderAction: String, CaseIterable, Sendable {
     case keepOnMac = "dev.hamasen.action.keepOnMac"
     /// Lets the cache allowance drop the selection again.
     case stopKeepingOnMac = "dev.hamasen.action.stopKeepingOnMac"
+    /// Puts the item's URL on the clipboard: its address on the server, or
+    /// its web page on a cloud drive.
+    case copyURL = "dev.hamasen.action.copyURL"
+    /// Opens the item's web page; only on protocols that have one.
+    case openInBrowser = "dev.hamasen.action.openInBrowser"
+    /// Opens an SSH session to the server in Terminal; SFTP only.
+    case openInTerminal = "dev.hamasen.action.openInTerminal"
+    /// Brings the app forward on the item's connection.
+    case showInHamasen = "dev.hamasen.action.showInHamasen"
+}
+
+/// The `hamasen://` links the app answers, so the extension, which cannot
+/// show a window, can ask it to.
+public enum AppLink {
+    public static let scheme = "hamasen"
+    private static let connectionHost = "connection"
+
+    /// Opens the app on one connection's settings.
+    public static func connection(_ serverID: UUID) -> URL {
+        URL(string: "\(scheme)://\(connectionHost)/\(serverID.uuidString)")!
+    }
+
+    /// The connection a link names, or nil for any other link.
+    public static func connectionID(in url: URL) -> UUID? {
+        guard url.scheme == scheme, url.host() == connectionHost else { return nil }
+        return UUID(uuidString: url.lastPathComponent)
+    }
 }

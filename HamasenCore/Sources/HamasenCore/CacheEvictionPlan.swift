@@ -19,16 +19,27 @@ public struct CachedItem: Equatable, Sendable {
     public let identifier: String
     public let serverID: UUID
     public let byteCount: Int64
-    /// Used to choose what goes first. The system does not tell a provider
-    /// when an item was last read, so the newest content is kept and the
-    /// stalest is dropped.
+    /// When the content last changed on the server.
     public let modifiedAt: Date?
+    /// When the file was last opened, downloaded, or first seen on this Mac,
+    /// whichever is latest — the best answer there is to "when was this last
+    /// wanted". See `ItemUsageStore`.
+    public let lastUsedAt: Date?
 
-    public init(identifier: String, serverID: UUID, byteCount: Int64, modifiedAt: Date?) {
+    public init(
+        identifier: String, serverID: UUID, byteCount: Int64, modifiedAt: Date?, lastUsedAt: Date? = nil
+    ) {
         self.identifier = identifier
         self.serverID = serverID
         self.byteCount = byteCount
         self.modifiedAt = modifiedAt
+        self.lastUsedAt = lastUsedAt
+    }
+
+    /// What decides which item goes first: when it was last wanted, or, for
+    /// an item with no record of that, when it last changed.
+    var staleness: Date {
+        lastUsedAt ?? modifiedAt ?? .distantPast
     }
 }
 
@@ -71,9 +82,7 @@ public enum CacheEvictionPlan {
             // since nothing suggests it is still wanted.
             let owned = items
                 .filter { $0.serverID == serverID && !pinned.contains($0.identifier) }
-                .sorted { lhs, rhs in
-                    (lhs.modifiedAt ?? .distantPast) < (rhs.modifiedAt ?? .distantPast)
-                }
+                .sorted { $0.staleness < $1.staleness }
 
             switch policy {
             case .unlimited:
@@ -204,6 +213,117 @@ public enum CacheAllowance: Int64, CaseIterable, Sendable, Identifiable {
 
     public init(bytes: Int64?) {
         self = Self.allCases.first { $0.rawValue == bytes } ?? .unlimited
+    }
+
+    public var bytes: Int64? { self == .unlimited ? nil : rawValue }
+
+    public var displayName: String {
+        guard let bytes else { return String(localized: "不限制", bundle: .module) }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+// MARK: - Automatic cleaning
+
+/// The policy every mounted server shares: drop local copies nobody has
+/// used for a while, and keep the total under a ceiling.
+///
+/// It sits on top of each server's own storage mode and allowance, which
+/// still apply; whichever asks for more to go wins.
+public struct AutoCleanPolicy: Equatable, Sendable {
+    /// Days without use after which a copy goes.
+    public let unusedDays: Int
+    /// The most all servers together may hold; nil for no ceiling.
+    public let totalLimitBytes: Int64?
+
+    public init(unusedDays: Int, totalLimitBytes: Int64?) {
+        self.unusedDays = unusedDays
+        self.totalLimitBytes = totalLimitBytes
+    }
+}
+
+extension CacheEvictionPlan {
+    /// What the shared policy drops: everything unused for longer than it
+    /// allows, then, stalest first, whatever still keeps the total over the
+    /// ceiling. Pinned items are neither dropped nor, since nothing can be
+    /// done about them, a reason to drop more than the rest.
+    ///
+    /// An item with no record of use is never dropped for age: a date of
+    /// last change on the server says nothing about whether it was opened
+    /// here yesterday.
+    public static func itemsToClean(
+        from items: [CachedItem],
+        policy: AutoCleanPolicy,
+        pinned: Set<String> = [],
+        now: Date = Date(),
+        limit: Int
+    ) -> [String] {
+        guard limit > 0 else { return [] }
+        let cutoff = now.addingTimeInterval(-TimeInterval(policy.unusedDays) * 86_400)
+        let candidates = items
+            .filter { !pinned.contains($0.identifier) }
+            .sorted { $0.staleness < $1.staleness }
+
+        var planned: [String] = []
+        var dropped = Set<String>()
+        for item in candidates {
+            guard let lastUsedAt = item.lastUsedAt, lastUsedAt < cutoff else { continue }
+            planned.append(item.identifier)
+            dropped.insert(item.identifier)
+        }
+
+        if let ceiling = policy.totalLimitBytes {
+            var total = items
+                .filter { !dropped.contains($0.identifier) }
+                .reduce(Int64(0)) { $0 + $1.byteCount }
+            for item in candidates where total > ceiling && !dropped.contains(item.identifier) {
+                planned.append(item.identifier)
+                total -= item.byteCount
+            }
+        }
+        return Array(planned.prefix(limit))
+    }
+
+    /// Every evictable item, for "remove all downloads".
+    public static func allEvictable(from items: [CachedItem], pinned: Set<String>) -> [String] {
+        items.filter { !pinned.contains($0.identifier) }.map(\.identifier)
+    }
+}
+
+/// The idle periods Settings offers.
+public enum AutoCleanUnusedDays: Int, CaseIterable, Sendable, Identifiable {
+    case oneDay = 1
+    case threeDays = 3
+    case sevenDays = 7
+    case fourteenDays = 14
+    case thirtyDays = 30
+    case ninetyDays = 90
+
+    public var id: Int { rawValue }
+
+    public init(days: Int) {
+        self = Self(rawValue: days) ?? .sevenDays
+    }
+
+    public var displayName: String {
+        Duration.seconds(rawValue * 86_400).formatted(.units(allowed: [.days], width: .wide))
+    }
+}
+
+/// The ceilings Settings offers for everything the mounted servers hold.
+public enum AutoCleanTotalLimit: Int64, CaseIterable, Sendable, Identifiable {
+    case unlimited = 0
+    case oneGigabyte = 1_000_000_000
+    case fiveGigabytes = 5_000_000_000
+    case tenGigabytes = 10_000_000_000
+    case twentyGigabytes = 20_000_000_000
+    case fiftyGigabytes = 50_000_000_000
+    case hundredGigabytes = 100_000_000_000
+
+    public var id: Int64 { rawValue }
+
+    public init(bytes: Int64?) {
+        self = Self.allCases.first { $0.rawValue == bytes ?? 0 } ?? .tenGigabytes
     }
 
     public var bytes: Int64? { self == .unlimited ? nil : rawValue }

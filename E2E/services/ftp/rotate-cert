@@ -1,0 +1,8 @@
+#!/bin/sh
+# rotate-cert
+# Issues a new server certificate from the same CA and restarts vsftpd, which
+# reads it only at startup.
+set -eu
+
+issue-server-cert /e2e-certs /tls
+restart-server

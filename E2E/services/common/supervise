@@ -1,0 +1,18 @@
+#!/bin/sh
+# supervise <command> [args...]
+# Runs a server in the foreground and starts it again whenever it exits, so
+# restart-server can make it pick up a new password, certificate or host key
+# without the container stopping.
+
+pidfile=/run/server.pid
+
+trap 'kill -TERM "$pid" 2>/dev/null; wait "$pid"; exit 0' TERM INT
+
+while :; do
+    "$@" &
+    pid=$!
+    echo "$pid" > "$pidfile"
+    wait "$pid"
+    echo "supervise: $1 exited with status $?, starting it again" >&2
+    sleep 0.2
+done

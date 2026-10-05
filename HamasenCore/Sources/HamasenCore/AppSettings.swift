@@ -29,10 +29,51 @@ public enum AppSettings {
         /// Whether the user has been told that content stored before the
         /// online-only mode existed can only be freed by remounting.
         public static let hasShownRemountForOnlineOnly = "hasShownRemountForOnlineOnly"
+        public static let s3MultipartThresholdBytes = "s3MultipartThresholdBytes"
+        public static let s3PartSizeBytes = "s3PartSizeBytes"
+        /// Which set of domain capabilities the registered domain was created
+        /// with. See `FinderDomain.capabilityGeneration`.
+        public static let domainCapabilityGeneration = "domainCapabilityGeneration"
+        public static let indexingDepth = "indexingDepth"
+        public static let indexingDirectoryLimit = "indexingDirectoryLimit"
+        public static let indexingItemLimit = "indexingItemLimit"
+        public static let remoteChangePollSeconds = "remoteChangePollSeconds"
+        /// Whether local copies nobody has used for a while are dropped, and
+        /// the two bounds that decide what "a while" and "too much" are.
+        public static let autoCleanEnabled = "autoCleanEnabled"
+        public static let autoCleanUnusedDays = "autoCleanUnusedDays"
+        public static let autoCleanTotalLimitBytes = "autoCleanTotalLimitBytes"
+
+        /// Where the client entered in Settings for a cloud drive is kept.
+        public static func oauthClient(_ provider: OAuthProvider) -> (id: String, secret: String) {
+            ("oauth.\(provider.rawValue).clientID", "oauth.\(provider.rawValue).clientSecret")
+        }
     }
 
     public static let defaultConnectTimeoutSeconds = 30
     public static let connectTimeoutRange = 5...300
+
+    private static let bytesPerMebibyte = 1024 * 1024
+
+    /// Above this an upload is sent in parts. Below it a single request is
+    /// fewer round trips and cannot leave an unfinished upload behind.
+    public static let defaultS3MultipartThresholdBytes = 100 * bytesPerMebibyte
+    public static let s3MultipartThresholdRange =
+        (5 * bytesPerMebibyte)...(5 * 1024 * bytesPerMebibyte)
+
+    public static let defaultS3PartSizeBytes = 16 * bytesPerMebibyte
+    /// S3's own bounds: no part below 5 MiB except the last, none above 5 GiB.
+    public static let s3PartSizeRange = (5 * bytesPerMebibyte)...(5 * 1024 * bytesPerMebibyte)
+
+    /// The largest file that can be uploaded at the given part size, because
+    /// one upload is capped at this many parts. Shown next to the setting:
+    /// a smaller part size silently lowers this ceiling, and the failure it
+    /// eventually causes says nothing about why.
+    public static let s3MaximumParts = 10_000
+
+    public static func s3LargestUploadableBytes(partSizeBytes: Int) -> Int {
+        partSizeBytes * s3MaximumParts
+    }
 
     /// The shared store; falls back to standard defaults when the App Group
     /// container is unavailable (e.g. in unit tests without entitlements).
@@ -58,6 +99,202 @@ public enum AppSettings {
 
     public static func isDebugLoggingEnabled(from store: UserDefaults = sharedStore) -> Bool {
         store.bool(forKey: Keys.debugLoggingEnabled)
+    }
+
+    /// How far down the background walk goes, and how many directories and
+    /// items it lists per server in one walk. Each directory is a request —
+    /// billed on S3, load on anything else — and each item is a placeholder
+    /// this Mac has to create, so all three are bounded and all can be set.
+    public static let defaultIndexingDepth = WorkingSetWalk.Limits.default.maximumDepth
+    public static let indexingDepthRange = 1...20
+    public static let defaultIndexingDirectoryLimit = WorkingSetWalk.Limits.default.maximumDirectories
+    public static let indexingDirectoryLimitRange = 50...50_000
+    public static let defaultIndexingItemLimit = WorkingSetWalk.Limits.default.maximumItems
+    public static let indexingItemLimitRange = 1_000...500_000
+
+    /// How often the app re-lists the directories somebody has open, to
+    /// notice what changed on the server.
+    ///
+    /// Off by default. Nothing here has a change feed, so noticing means
+    /// asking, and asking costs a listing request per directory — billed on
+    /// S3. Nextcloud polls every sixty seconds against a server that is
+    /// usually somebody's own; this is pointed at buckets that charge, so the
+    /// person paying decides.
+    public static let remoteChangePollOff = 0
+    public static let remoteChangePollRange = 30...3_600
+    public static let defaultRemoteChangePollSeconds = remoteChangePollOff
+
+    /// nil when polling is off.
+    public static func remoteChangePollInterval(from store: UserDefaults = sharedStore) -> TimeInterval? {
+        let seconds = store.integer(forKey: Keys.remoteChangePollSeconds)
+        guard remoteChangePollRange.contains(seconds) else { return nil }
+        return TimeInterval(seconds)
+    }
+
+    /// Local copies are cleaned by default: a mount that fills the disk
+    /// with every file ever opened is a worse surprise than one that has to
+    /// download a file again after a week.
+    public static let defaultAutoCleanUnusedDays = 7
+    public static let defaultAutoCleanTotalLimitBytes: Int64 = 10_000_000_000
+
+    /// The policy in force, or nil when automatic cleaning is off.
+    public static func autoCleanPolicy(from store: UserDefaults = sharedStore) -> AutoCleanPolicy? {
+        let isEnabled = store.object(forKey: Keys.autoCleanEnabled) as? Bool ?? true
+        guard isEnabled else { return nil }
+        let days = store.object(forKey: Keys.autoCleanUnusedDays) as? Int ?? defaultAutoCleanUnusedDays
+        let limit = store.object(forKey: Keys.autoCleanTotalLimitBytes) as? Int64
+            ?? defaultAutoCleanTotalLimitBytes
+        return AutoCleanPolicy(
+            unusedDays: AutoCleanUnusedDays(days: days).rawValue,
+            totalLimitBytes: AutoCleanTotalLimit(bytes: limit).bytes)
+    }
+
+    public static func indexingLimits(from store: UserDefaults = sharedStore) -> WorkingSetWalk.Limits {
+        let depth = store.integer(forKey: Keys.indexingDepth)
+        let directories = store.integer(forKey: Keys.indexingDirectoryLimit)
+        let items = store.integer(forKey: Keys.indexingItemLimit)
+        return WorkingSetWalk.Limits(
+            maximumDepth: indexingDepthRange.contains(depth) ? depth : defaultIndexingDepth,
+            maximumDirectories: indexingDirectoryLimitRange.contains(directories)
+                ? directories : defaultIndexingDirectoryLimit,
+            maximumItems: indexingItemLimitRange.contains(items) ? items : defaultIndexingItemLimit)
+    }
+
+    public static func s3PartSizeBytes(from store: UserDefaults = sharedStore) -> Int {
+        let storedValue = store.integer(forKey: Keys.s3PartSizeBytes)
+        guard s3PartSizeRange.contains(storedValue) else { return defaultS3PartSizeBytes }
+        return storedValue
+    }
+
+    /// Never below the part size: a threshold under one part would send a
+    /// single-part multipart upload, which is more requests for no gain.
+    public static func s3MultipartThresholdBytes(from store: UserDefaults = sharedStore) -> Int {
+        let partSize = s3PartSizeBytes(from: store)
+        let storedValue = store.integer(forKey: Keys.s3MultipartThresholdBytes)
+        guard s3MultipartThresholdRange.contains(storedValue) else {
+            return max(defaultS3MultipartThresholdBytes, partSize)
+        }
+        return max(storedValue, partSize)
+    }
+}
+
+/// How often Settings offers to ask a server what changed.
+public enum RemoteChangePollInterval: Int, CaseIterable, Sendable, Identifiable {
+    case oneMinute = 60
+    case fiveMinutes = 300
+    case fifteenMinutes = 900
+    case oneHour = 3_600
+
+    public var id: Int { rawValue }
+
+    public init(seconds: Int) {
+        self = Self.allCases.first { $0.rawValue == seconds } ?? .fiveMinutes
+    }
+
+    public var displayName: String {
+        Duration.seconds(rawValue).formatted(.units(allowed: [.hours, .minutes], width: .wide))
+    }
+}
+
+/// The directory budgets Settings offers for the background walk.
+///
+/// A stepper over 50…50 000 is no way to choose a number, and a free field
+/// needs validation for a bound nobody can be expected to know. A handful of
+/// round figures says what the choice is about: how much of a server to
+/// index before stopping.
+public enum IndexingDirectoryLimit: Int, CaseIterable, Sendable, Identifiable {
+    case twoHundred = 200
+    case fiveHundred = 500
+    case twoThousand = 2_000
+    case fiveThousand = 5_000
+    case twentyThousand = 20_000
+
+    public var id: Int { rawValue }
+
+    public init(directories: Int) {
+        self = Self.allCases.first { $0.rawValue == directories }
+            ?? Self(rawValue: AppSettings.defaultIndexingDirectoryLimit)
+            ?? .twoThousand
+    }
+
+    public var displayName: String {
+        rawValue.formatted(.number)
+    }
+}
+
+/// The per-server item budgets Settings offers for the background walk.
+public enum IndexingItemLimit: Int, CaseIterable, Sendable, Identifiable {
+    case fiveThousand = 5_000
+    case twentyThousand = 20_000
+    case fiftyThousand = 50_000
+    case twoHundredThousand = 200_000
+
+    public var id: Int { rawValue }
+
+    public init(items: Int) {
+        self = Self.allCases.first { $0.rawValue == items }
+            ?? Self(rawValue: AppSettings.defaultIndexingItemLimit)
+            ?? .twentyThousand
+    }
+
+    public var displayName: String {
+        rawValue.formatted(.number)
+    }
+}
+
+/// The part sizes Settings offers.
+///
+/// A free number field would need its own validation for bounds nobody can
+/// be expected to know — S3 refuses a part under 5 MiB except the last, and
+/// one upload is capped at ten thousand parts.
+public enum S3PartSize: Int, CaseIterable, Sendable, Identifiable {
+    case fiveMebibytes = 5_242_880
+    case eightMebibytes = 8_388_608
+    case sixteenMebibytes = 16_777_216
+    case thirtyTwoMebibytes = 33_554_432
+    case sixtyFourMebibytes = 67_108_864
+    case oneHundredTwentyEightMebibytes = 134_217_728
+
+    public var id: Int { rawValue }
+
+    public init(bytes: Int) {
+        self = Self.allCases.first { $0.rawValue == bytes }
+            ?? Self(rawValue: AppSettings.defaultS3PartSizeBytes)
+            ?? .sixteenMebibytes
+    }
+
+    public var displayName: String {
+        ByteCountFormatter.string(fromByteCount: Int64(rawValue), countStyle: .binary)
+    }
+
+    /// The largest file this part size can upload, since one upload is
+    /// capped at ten thousand parts. Shrinking the part size lowers it, and
+    /// the failure that eventually causes explains nothing.
+    public var largestUploadDisplayName: String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(AppSettings.s3LargestUploadableBytes(partSizeBytes: rawValue)),
+            countStyle: .binary)
+    }
+}
+
+/// The sizes above which Settings offers to switch to a multipart upload.
+public enum S3MultipartThreshold: Int, CaseIterable, Sendable, Identifiable {
+    case sixteenMebibytes = 16_777_216
+    case fiftyMebibytes = 52_428_800
+    case oneHundredMebibytes = 104_857_600
+    case fiveHundredMebibytes = 524_288_000
+    case oneGibibyte = 1_073_741_824
+
+    public var id: Int { rawValue }
+
+    public init(bytes: Int) {
+        self = Self.allCases.first { $0.rawValue == bytes }
+            ?? Self(rawValue: AppSettings.defaultS3MultipartThresholdBytes)
+            ?? .oneHundredMebibytes
+    }
+
+    public var displayName: String {
+        ByteCountFormatter.string(fromByteCount: Int64(rawValue), countStyle: .binary)
     }
 }
 

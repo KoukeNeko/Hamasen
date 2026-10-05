@@ -7,11 +7,13 @@ name: Verify
 # Deliberately not filtered by path: a required check that is skipped never
 # reports, and a pull request waiting on a check that will never arrive can
 # never be merged.
+# Once per change, not twice: pushing beta and then opening a pull request
+# from it used to run this on the same commit both ways.
 on:
   push:
-    branches: [dev, beta]
+    branches: [dev]
   pull_request:
-    branches: [dev, beta, main]
+    branches: [beta, main]
 
 concurrency:
   group: verify-${{ github.ref }}
@@ -29,6 +31,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Nothing after checkout talks to git over the network, so the
+          # token is not left behind in .git/config for the build to see.
+          persist-credentials: false
 
       - uses: ./.github/actions/pin-xcode
 

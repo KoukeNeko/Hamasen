@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "hamasen-e2e",
+      "credentials": [
+        {"accessKey": "hamasen-e2e", "secretKey": "hamasen-e2e-secret"}
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

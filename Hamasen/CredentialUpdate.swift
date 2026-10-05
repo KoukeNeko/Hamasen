@@ -23,6 +23,9 @@ struct CredentialUpdate {
     /// The contents of a newly imported key file; nil when unchanged.
     var privateKey: String?
     var keyPassphrase: String = ""
+    /// A cloud drive's token from a sign-in just completed; nil when the
+    /// stored one stays.
+    var oauthToken: OAuthToken?
 
     /// Writes the entered secrets, leaving untouched fields as they are.
     func apply(to serverID: UUID, using store: KeychainCredentialStore) throws {
@@ -34,6 +37,9 @@ struct CredentialUpdate {
         }
         if !keyPassphrase.isEmpty {
             try store.save(keyPassphrase, kind: .keyPassphrase, for: serverID)
+        }
+        if let oauthToken {
+            try store.saveOAuthToken(oauthToken, for: serverID)
         }
     }
 
@@ -55,6 +61,8 @@ struct CredentialUpdate {
                 ? try? store.load(kind: .keyPassphrase, for: config.id)
                 : keyPassphrase
             return .privateKey(openSSHKey: key, passphrase: passphrase)
+        case .oauth:
+            return .oauth(try oauthToken ?? store.loadOAuthToken(for: config.id))
         }
     }
 }

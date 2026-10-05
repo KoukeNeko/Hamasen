@@ -178,7 +178,12 @@ extension ServerConfig {
             authenticationMethod: authenticationMethod,
             remotePath: remotePath,
             storageMode: storageMode,
-            cacheLimitBytes: cacheLimitBytes
+            cacheLimitBytes: cacheLimitBytes,
+            s3Region: s3Region,
+            s3AddressingStyle: s3AddressingStyle,
+            indexesInBackground: indexesInBackground,
+            isPaused: isPaused,
+            remoteChangeIntervalSeconds: remoteChangeIntervalSeconds
         )
     }
 }

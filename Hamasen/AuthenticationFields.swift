@@ -22,6 +22,8 @@ struct AuthenticationFields: View {
     @Binding var password: String
     @Binding var importedKey: PrivateKeyImporter.ImportedKey?
     @Binding var keyPassphrase: String
+    /// A key an imported SSH configuration names, which the key panel opens on.
+    var suggestedKeyPath: String?
 
     /// Whether a key is already stored, so the form can say so instead of
     /// asking for one again.
@@ -30,6 +32,10 @@ struct AuthenticationFields: View {
     let allowsBlankPassword: Bool
     /// Only SSH-based protocols can authenticate with a key.
     let allowsPrivateKey: Bool
+    /// What the secret is called where this protocol is used. S3 issues an
+    /// access key, and calling it a password sends people looking for the
+    /// wrong string in their provider's console.
+    var secretLabel: LocalizedStringKey = "密碼"
 
     @State private var importError: String?
     /// Remembers a key selection while a password-only protocol is chosen.
@@ -39,7 +45,7 @@ struct AuthenticationFields: View {
         Section("登入") {
             if allowsPrivateKey {
                 Picker("認證方式", selection: $method) {
-                    ForEach(ServerConfig.AuthenticationMethod.allCases, id: \.self) { method in
+                    ForEach([ServerConfig.AuthenticationMethod.password, .privateKey], id: \.self) { method in
                         Text(method.displayName).tag(method)
                     }
                 }
@@ -49,11 +55,11 @@ struct AuthenticationFields: View {
             switch method {
             case .password:
                 SecureField(
-                    "密碼",
+                    secretLabel,
                     text: $password,
                     prompt: allowsBlankPassword ? Text("留空表示不變更") : nil
                 )
-            case .privateKey:
+            case .privateKey, .oauth:
                 keyRow
                 if importedKey?.info.isEncrypted ?? true {
                     SecureField(
@@ -112,7 +118,7 @@ struct AuthenticationFields: View {
 
     private func importKey() {
         do {
-            if let key = try PrivateKeyImporter.promptForKey() {
+            if let key = try PrivateKeyImporter.promptForKey(suggestedPath: suggestedKeyPath) {
                 importedKey = key
                 importError = nil
             }

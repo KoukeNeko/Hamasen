@@ -1,0 +1,7 @@
+#!/bin/sh
+# rotate-hostkey
+# Replaces the host keys and restarts sshd; open sessions keep running.
+set -eu
+
+generate-hostkeys
+restart-server

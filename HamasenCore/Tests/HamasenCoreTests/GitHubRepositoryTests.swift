@@ -82,3 +82,37 @@ struct GitHubRepositoryTests {
         #expect(GitHubRepository.privacyPolicyURL.absoluteString.hasSuffix("/blob/main/PRIVACY.md"))
     }
 }
+
+@Suite("Update check")
+struct UpdateCheckTests {
+    @Test("版本逐段比較數字")
+    func comparesVersions() {
+        #expect(AppVersion.isNewer("1.10", than: "1.9"))
+        #expect(!AppVersion.isNewer("1.2.0", than: "1.2"))
+        #expect(AppVersion.isNewer("2.0", than: "1.99.9"))
+        #expect(!AppVersion.isNewer("1.0", than: "1.0.1"))
+        #expect(!AppVersion.isNewer("1.1-beta", than: "1.1"))
+    }
+
+    @Test("讀出最新版本與磁碟映像檔")
+    func readsTheLatestRelease() throws {
+        let json = """
+        {"tag_name":"v1.2.0","html_url":"https://github.com/KoukeNeko/Hamasen/releases/tag/v1.2.0",
+         "assets":[{"name":"Hamasen.zip","browser_download_url":"https://example.com/Hamasen.zip"},
+                   {"name":"Hamasen.dmg","browser_download_url":"https://example.com/Hamasen.dmg"}]}
+        """
+        let release = try #require(try GitHubRepository.latestRelease(from: Data(json.utf8), statusCode: 200))
+        #expect(release.version == "1.2.0")
+        #expect(release.downloadURL == URL(string: "https://example.com/Hamasen.dmg"))
+    }
+
+    @Test("還沒有發布任何版本時不算錯誤")
+    func noReleaseYetIsNotAnError() throws {
+        // What GitHub answers for a repository with no published release.
+        let notFound = Data(#"{"message":"Not Found","status":"404"}"#.utf8)
+        #expect(try GitHubRepository.latestRelease(from: notFound, statusCode: 404) == nil)
+        #expect(throws: URLError.self) {
+            try GitHubRepository.latestRelease(from: Data(#"{"message":"API rate limit exceeded"}"#.utf8), statusCode: 403)
+        }
+    }
+}

@@ -153,9 +153,13 @@ public enum CyberduckBookmark {
 
     // MARK: - Fields
 
-    /// The protocols Hamasen can mount. Anything else — S3, the OAuth
-    /// drives — is named back to the user rather than imported as something
+    /// The protocols Hamasen can mount. Anything else — the OAuth drives,
+    /// Azure — is named back to the user rather than imported as something
     /// it is not.
+    ///
+    /// Every S3-compatible provider is one identifier: Cyberduck's own
+    /// profiles for R2, Wasabi and MinIO all declare `s3` and differ only in
+    /// the hostname they default to.
     private static func transferProtocol(
         for identifier: String
     ) -> ServerConfig.TransferProtocol? {
@@ -165,6 +169,7 @@ public enum CyberduckBookmark {
         case "davs": return .webdavs
         case "ftp": return .ftp
         case "ftps": return .ftps
+        case "s3": return .s3
         default: return nil
         }
     }

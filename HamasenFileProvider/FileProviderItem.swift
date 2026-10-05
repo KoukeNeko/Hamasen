@@ -36,9 +36,36 @@ final class RootItem: NSObject, NSFileProviderItem {
     }
 }
 
+/// The domain's trash. Nothing ever goes in it — items do not allow
+/// trashing, so Finder deletes outright — but the system keeps one per
+/// domain on disk and has to be able to ask about it. Answering "no such
+/// item" left the system's copy dataless and its import of the domain
+/// failing on that one folder, retried for hours; and while a domain is
+/// importing, the system downloads nothing in the background, so a pinned
+/// file stayed a placeholder for days.
+final class TrashItem: NSObject, NSFileProviderItem {
+    private static let name = ".Trash"
+
+    var itemIdentifier: NSFileProviderItemIdentifier { .trashContainer }
+    var parentItemIdentifier: NSFileProviderItemIdentifier { .trashContainer }
+    var filename: String { Self.name }
+    var contentType: UTType { .folder }
+
+    var capabilities: NSFileProviderItemCapabilities {
+        [.allowsReading, .allowsContentEnumerating]
+    }
+
+    var itemVersion: NSFileProviderItemVersion {
+        NSFileProviderItemVersion(
+            contentVersion: Data("trash".utf8),
+            metadataVersion: Data("trash".utf8)
+        )
+    }
+}
+
 /// A server's top-level folder (named after the server). Managed from the
 /// app, so Finder cannot rename, move, or delete it.
-final class ServerFolderItem: NSObject, NSFileProviderItem {
+final class ServerFolderItem: NSObject, NSFileProviderItem, NSFileProviderItemDecorating {
     private let config: ServerConfig
 
     init(config: ServerConfig) {
@@ -63,19 +90,48 @@ final class ServerFolderItem: NSObject, NSFileProviderItem {
         config.storageMode.contentPolicy
     }
 
+    /// "Paused" beside the folder's name, so a server whose files stopped
+    /// syncing says so where they are.
+    var decorations: [NSFileProviderItemDecorationIdentifier]? {
+        config.isPaused ? [.paused] : nil
+    }
+
+    var userInfo: [AnyHashable: Any]? {
+        [RemoteFileItem.protocolUserInfoKey: config.transferProtocol.rawValue]
+    }
+
+    /// The color chosen in the app, as a Finder tag.
+    var tagData: Data? {
+        config.finderAppearance.tagData
+    }
+
+    /// The symbol or emoji chosen in the app, in the attribute Finder's
+    /// Customize Folder writes.
+    var extendedAttributes: [String: Data] {
+        guard let icon = config.finderAppearance.iconAttribute else { return [:] }
+        return [FinderAppearance.iconAttributeName: icon]
+    }
+
+    /// Bumped whenever this class changes what it reports, for the same
+    /// reason as `RemoteFileItem.metadataRevision`.
+    private static let metadataRevision = "2"
+
     var itemVersion: NSFileProviderItemVersion {
         // Derived from the name so a rename in the app propagates to Finder,
         // and from the storage mode so a change of mode does too.
-        let versionToken = Data(config.finderItemToken.utf8)
+        let versionToken = Data("\(config.finderItemToken)-\(Self.metadataRevision)".utf8)
         return NSFileProviderItemVersion(contentVersion: versionToken, metadataVersion: versionToken)
     }
 }
 
 /// A file or directory inside a server, adapted from a RemoteItem.
-final class RemoteFileItem: NSObject, NSFileProviderItem {
+final class RemoteFileItem: NSObject, NSFileProviderItem, NSFileProviderItemDecorating {
     /// The key the Info.plist activation rules read to decide whether to
     /// offer "keep on this Mac" or "stop keeping".
     static let pinnedUserInfoKey = "isPinned"
+    /// The server's protocol, which decides the entries that need one: a
+    /// browser for WebDAV, S3 and cloud drives, a terminal for SFTP.
+    static let protocolUserInfoKey = "protocol"
 
     /// Bumped whenever this class changes what it reports about an item.
     ///
@@ -85,7 +141,7 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
     /// reaches items already in the replica, because nothing about the file
     /// itself moved. Only the metadata version carries it: putting it in the
     /// content version would re-download every file.
-    private static let metadataRevision = "2"
+    private static let metadataRevision = "4"
 
     private let serverID: UUID
     private let remoteItem: RemoteItem
@@ -130,7 +186,13 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
     }
 
     var userInfo: [AnyHashable: Any]? {
-        [Self.pinnedUserInfoKey: isPinned]
+        var info: [AnyHashable: Any] = [Self.pinnedUserInfoKey: isPinned]
+        info[Self.protocolUserInfoKey] = ServerProtocols.transferProtocol(of: serverID)?.rawValue
+        return info
+    }
+
+    var decorations: [NSFileProviderItemDecorationIdentifier]? {
+        isPinned ? [.pinned] : nil
     }
 
     /// A pinned item is downloaded and kept; everything else inherits its
@@ -148,14 +210,12 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
     }
 
     var itemVersion: NSFileProviderItemVersion {
-        // Version derived from size + mtime: enough for the system to detect
-        // remote content changes between enumerations.
-        let modificationEpoch = remoteItem.modificationDate?.timeIntervalSince1970 ?? 0
-        let contentToken = Data("\(remoteItem.size)-\(modificationEpoch)".utf8)
+        let contentVersion = remoteItem.contentVersionToken
+        let contentToken = Data(contentVersion.utf8)
         // The pin travels in the metadata version, or the system keeps the
         // old policy and the old menu entry after the user pins an item.
         let metadataToken = Data(
-            "\(remoteItem.size)-\(modificationEpoch)-\(Self.metadataRevision)-\(isPinned)".utf8
+            "\(contentVersion)-\(Self.metadataRevision)-\(isPinned)".utf8
         )
         return NSFileProviderItemVersion(contentVersion: contentToken, metadataVersion: metadataToken)
     }
@@ -172,7 +232,7 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
                 .allowsDeleting,
             ]
         case .file, .symlink:
-            return [
+            var capabilities: NSFileProviderItemCapabilities = [
                 .allowsReading,
                 .allowsWriting,
                 .allowsRenaming,
@@ -180,6 +240,19 @@ final class RemoteFileItem: NSObject, NSFileProviderItem {
                 .allowsDeleting,
                 .legacyEvictionPermission,
             ]
+            // A file the server says cannot be written — a Google document
+            // exported as Office, a read-only file on a share — opens as a
+            // locked document instead of failing on save.
+            if let permissions = remoteItem.permissions, permissions & 0o222 == 0 {
+                capabilities.remove(.allowsWriting)
+            }
+            return capabilities
         }
     }
+}
+
+/// The badges declared in the extension's Info.plist, by identifier.
+extension NSFileProviderItemDecorationIdentifier {
+    static let pinned = NSFileProviderItemDecorationIdentifier("dev.hamasen.decoration.pinned")
+    static let paused = NSFileProviderItemDecorationIdentifier("dev.hamasen.decoration.paused")
 }

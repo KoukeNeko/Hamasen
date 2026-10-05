@@ -1,0 +1,20 @@
+#!/bin/sh
+# restart-server
+# Stops the server supervise runs and waits until its successor listens on
+# $E2E_PORT, so the harness's next request reaches it.
+set -eu
+
+pidfile=/run/server.pid
+
+old=$(cat "$pidfile")
+kill "$old"
+
+tries=0
+until [ "$(cat "$pidfile")" != "$old" ] && listening "$E2E_PORT"; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 150 ]; then
+        echo "restart-server: server is not accepting connections again" >&2
+        exit 1
+    fi
+    sleep 0.1
+done

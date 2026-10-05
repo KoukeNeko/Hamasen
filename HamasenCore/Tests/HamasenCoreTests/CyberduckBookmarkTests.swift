@@ -55,6 +55,44 @@ struct CyberduckBookmarkTests {
         ].merging(extraEntries) { _, override in override })
     }
 
+    /// Every S3-compatible provider is one Cyberduck identifier. R2, Wasabi
+    /// and MinIO ship profiles that all declare `s3` and differ only in the
+    /// hostname, so mapping the one identifier reaches all of them.
+    @Test("S3 書籤帶進來，bucket 留在遠端路徑的第一段")
+    func readsAnS3Bookmark() throws {
+        let summary = CyberduckBookmark.read([Self.file([
+            "Protocol": "s3",
+            "Nickname": "R2 備份",
+            "Hostname": "abc123.r2.cloudflarestorage.com",
+            "Username": "AKIAIOSFODNN7EXAMPLE",
+            "Path": "/backups/nightly",
+        ])])
+
+        let imported = try #require(summary.servers.first)
+        #expect(imported.config.transferProtocol == .s3)
+        #expect(imported.config.host == "abc123.r2.cloudflarestorage.com")
+        #expect(imported.config.username == "AKIAIOSFODNN7EXAMPLE")
+        #expect(imported.config.remotePath == "/backups/nightly")
+        // Unset on import: the endpoint is guessed from the hostname, and
+        // both of these exist only to override that guess.
+        #expect(imported.config.s3Region == nil)
+        #expect(imported.config.s3AddressingStyle == .automatic)
+        #expect(summary.unsupportedProtocols.isEmpty)
+    }
+
+    /// A bookmark with no port takes the protocol's own default, and S3's is
+    /// the HTTPS one rather than SFTP's.
+    @Test("S3 書籤沒寫連接埠時用 443")
+    func anS3BookmarkWithoutAPortUses443() throws {
+        let summary = CyberduckBookmark.read([Self.file([
+            "Protocol": "s3",
+            "Hostname": "s3.eu-west-2.amazonaws.com",
+            "Username": "AKIA",
+            "Path": "/bucket",
+        ])])
+        #expect(try #require(summary.servers.first).config.port == 443)
+    }
+
     @Test("SFTP 書籤的每個欄位都帶進來")
     func readsAnSFTPBookmark() {
         let summary = CyberduckBookmark.read([Self.sftpBookmark()])
@@ -104,14 +142,15 @@ struct CyberduckBookmarkTests {
 
     @Test("尚未支援的協定會被列出而不是匯入")
     func namesUnsupportedProtocols() {
+        // Azure and the OAuth drives, since S3 stopped belonging here.
         let summary = CyberduckBookmark.read([
-            Self.file(["Protocol": "s3", "Hostname": "s3.amazonaws.com"]),
+            Self.file(["Protocol": "azure", "Hostname": "x.blob.core.windows.net"]),
             Self.file(["Protocol": "googledrive", "Hostname": "drive.google.com"]),
-            Self.file(["Protocol": "s3", "Hostname": "other.example.com"]),
+            Self.file(["Protocol": "azure", "Hostname": "y.blob.core.windows.net"]),
         ])
 
         #expect(summary.servers.isEmpty)
-        #expect(summary.unsupportedProtocols == ["s3", "googledrive"])
+        #expect(summary.unsupportedProtocols == ["azure", "googledrive"])
     }
 
     @Test("FTP 與 FTPS 書籤也匯入")

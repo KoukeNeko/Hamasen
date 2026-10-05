@@ -27,6 +27,8 @@ public enum PropfindResponseParser {
         /// nil when the server did not report a usable length.
         public let contentLength: Int64?
         public let lastModified: Date?
+        /// The entity tag, already normalised; see `HTTPTransfer.normalizedETag`.
+        public let contentTag: String?
     }
 
     public enum ParseError: Error, Equatable {
@@ -42,6 +44,20 @@ public enum PropfindResponseParser {
         guard parser.parse() else { throw ParseError.notXML }
         guard !delegate.entries.isEmpty else { throw ParseError.noResponses }
         return delegate.entries
+    }
+
+    /// The non-2xx status codes a multistatus body reports for its members.
+    ///
+    /// A 207 to DELETE or MOVE is the only place a server says *why* part of
+    /// the operation failed, and the reason decides whether the user is told
+    /// about permissions or about something else.
+    public static func failureStatuses(in data: Data) -> [Int] {
+        let delegate = StatusCodeDelegate()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldProcessNamespaces = true
+        _ = parser.parse()
+        return delegate.codes.filter { !(200...299).contains($0) }
     }
 
     /// Decodes an href into a path: WebDAV hrefs are percent-encoded and may
@@ -69,6 +85,7 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
     private var isCollection = false
     private var contentLength: Int64?
     private var lastModified: Date?
+    private var contentTag: String?
 
     /// Every HTTP-date form: RFC 1123 is what WebDAV mandates, but RFC 850
     /// and asctime are still emitted by older servers. A date that fails to
@@ -108,6 +125,7 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
             isCollection = false
             contentLength = nil
             lastModified = nil
+            contentTag = nil
         case "collection":
             isCollection = true
         default:
@@ -142,6 +160,10 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
             contentLength = Int64(trimmed).flatMap { $0 >= 0 ? $0 : nil }
         case "getlastmodified":
             lastModified = Self.parseModificationDate(trimmed)
+        case "getetag":
+            // A second propstat listing the property as not found carries it
+            // empty, which must not erase the value the first one gave.
+            if let tag = HTTPTransfer.normalizedETag(trimmed) { contentTag = tag }
         case "response":
             if let href, !href.isEmpty {
                 entries.append(
@@ -149,12 +171,41 @@ private final class MultiStatusDelegate: NSObject, XMLParserDelegate {
                         href: href,
                         isCollection: isCollection,
                         contentLength: contentLength,
-                        lastModified: lastModified
+                        lastModified: lastModified,
+                        contentTag: contentTag
                     )
                 )
             }
         default:
             break
+        }
+        text = ""
+    }
+}
+
+/// Collects the code of every `<status>` line, e.g. `HTTP/1.1 423 Locked`.
+private final class StatusCodeDelegate: NSObject, XMLParserDelegate {
+    private(set) var codes: [Int] = []
+    private var text = ""
+
+    func parser(
+        _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+        qualifiedName: String?, attributes: [String: String]
+    ) {
+        text = ""
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        text += string
+    }
+
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+        qualifiedName: String?
+    ) {
+        if elementName.lowercased() == "status" {
+            let fields = text.split(separator: " ")
+            if fields.count >= 2, let code = Int(fields[1]) { codes.append(code) }
         }
         text = ""
     }

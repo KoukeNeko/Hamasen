@@ -23,71 +23,161 @@ actor ConnectionRegistry {
         case serverConfigurationMissing(UUID)
     }
 
+    /// One cached connection attempt. The identity is what lets a caller that
+    /// resumes after an `await` tell whether the entry it looked at is still
+    /// the one in the cache: another caller may have replaced it meanwhile,
+    /// and clearing or overwriting that newer entry would leak its live
+    /// session and open a second one for the same server.
+    private struct Connection {
+        let id = UUID()
+        /// The settings the service was made from. A service keeps what it
+        /// was given — an S3 endpoint, a host — so one made before the
+        /// server was edited would go on using the old settings.
+        let config: ServerConfig
+        let task: Task<any RemoteFileService, Error>
+    }
+
+    /// A service together with the cached session it came from, so a caller
+    /// that found the session dead can discard exactly that one and not a
+    /// replacement someone else has since made.
+    struct Lease {
+        let serverID: UUID
+        let id: UUID
+        let service: any RemoteFileService
+    }
+
     /// The in-flight or completed connection per server. Storing the task
     /// rather than the service closes the window where two callers each build
     /// and connect their own service and the loser is dropped without being
     /// disconnected, leaking its session and credentials.
-    private var connections: [UUID: Task<any RemoteFileService, Error>] = [:]
+    private var connections: [UUID: Connection] = [:]
+
+    private let recovery = ServerRecovery()
 
     /// Returns a connected service for the server, creating one on first use
     /// and replacing one whose session has since died.
     func service(for serverID: UUID) async throws -> any RemoteFileService {
-        if let live = try await liveService(for: serverID) {
-            return live
+        try await lease(for: serverID).service
+    }
+
+    func lease(for serverID: UUID) async throws -> Lease {
+        // A session that has gone away — an idle connection the server
+        // closed, a sleep, a network change — fails every operation with the
+        // same error from then on. Cached, it would keep the server broken
+        // until the extension restarts, which is what makes Finder report the
+        // same failure however many times the user retries. So the cached
+        // entry is checked, and looked up again after each suspension, since
+        // what was cached when the wait began may not be what is cached now.
+        let config = try Self.config(for: serverID)
+        if config.isPaused {
+            // A paused server keeps no session open behind the user's back.
+            if let cached = connections[serverID], let service = try? await cached.task.value {
+                retire(serverID: serverID, id: cached.id, service: service)
+            }
+            throw RemoteFileServiceError.paused(serverName: config.name)
+        }
+        while let cached = connections[serverID] {
+            if cached.config != config {
+                if let stale = try? await cached.task.value {
+                    retire(serverID: serverID, id: cached.id, service: stale)
+                } else if connections[serverID]?.id == cached.id {
+                    connections[serverID] = nil
+                }
+                continue
+            }
+            let service: any RemoteFileService
+            do {
+                service = try await cached.task.value
+            } catch {
+                // A failed attempt must not be cached, or the server would
+                // stay broken until the extension restarts.
+                if connections[serverID]?.id == cached.id { connections[serverID] = nil }
+                throw error
+            }
+            if await service.isConnected {
+                return Lease(serverID: serverID, id: cached.id, service: service)
+            }
+            retire(serverID: serverID, id: cached.id, service: service)
         }
 
-        let connection = Task { () throws -> any RemoteFileService in
-            let config = try Self.config(for: serverID)
+        let connection = Connection(config: config, task: Task { () throws -> any RemoteFileService in
             let credentials = try KeychainCredentialStore().loadCredentials(for: config)
-            let service = RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
-            try await service.connect()
+            let service = try RemoteFileServiceFactory.makeService(for: config, credentials: credentials)
+            do {
+                try await service.connect()
+            } catch let error where FileProviderErrorMapper.isConnectionFailure(error) {
+                if await LocalNetworkAccess.isDenied(host: config.host, port: config.port) {
+                    throw LocalNetworkAccess.DeniedError()
+                }
+                throw error
+            }
             return service
-        }
+        })
         connections[serverID] = connection
 
         do {
-            return try await connection.value
+            let service = try await connection.task.value
+            return Lease(serverID: serverID, id: connection.id, service: service)
         } catch {
-            connections[serverID] = nil
+            if connections[serverID]?.id == connection.id { connections[serverID] = nil }
             throw error
         }
     }
 
-    /// The cached service, if there is one and it is still usable.
-    ///
-    /// A session that has gone away — an idle connection the server closed,
-    /// a sleep, a network change — fails every operation with the same error
-    /// from then on. Cached, it would keep the server broken until the
-    /// extension restarts, which is what makes Finder report the same
-    /// failure however many times the user retries.
-    private func liveService(for serverID: UUID) async throws -> (any RemoteFileService)? {
-        guard let existing = connections[serverID] else { return nil }
+    /// Drops a session an operation found dead, so the next `lease` connects
+    /// afresh. A no-op when the cache has already moved on to another session.
+    func discard(_ lease: Lease) {
+        retire(serverID: lease.serverID, id: lease.id, service: lease.service)
+    }
 
-        let service: any RemoteFileService
-        do {
-            service = try await existing.value
-        } catch {
-            // A failed attempt must not be cached, or the server would
-            // stay broken until the extension restarts.
-            connections[serverID] = nil
-            throw error
-        }
-
-        if await service.isConnected { return service }
+    private func retire(serverID: UUID, id: UUID, service: any RemoteFileService) {
+        // Whoever removes the entry tears the session down, so it happens once.
+        guard connections[serverID]?.id == id else { return }
         connections[serverID] = nil
         // Not awaited: the session is already gone, so its teardown has
         // nothing left to do for this caller, and the registry has to stay
         // answerable to every other server while it happens.
         Task { try? await service.disconnect() }
-        return nil
     }
 
     func shutdownAll() async {
+        await recovery.stop()
         let pending = connections.values
         connections.removeAll()
         for connection in pending {
-            guard let service = try? await connection.value else { continue }
+            guard let service = try? await connection.task.value else { continue }
             try? await service.disconnect()
+        }
+    }
+
+    /// Records that an operation on the server failed to reach it. The system
+    /// answers `.serverUnreachable` by waiting until it is told the error is
+    /// resolved, so something has to notice when the server is back.
+    func reportUnreachable(_ serverID: UUID) async {
+        await recovery.reportUnreachable(serverID) { [self] in
+            try await probe(serverID)
+        }
+    }
+
+    /// Records that an operation on the server succeeded.
+    func reportReachable(_ serverID: UUID) async {
+        await recovery.reportReachable(serverID)
+    }
+
+    /// Throws only while the server still cannot be reached. Any other
+    /// failure — refused credentials, a missing root — means it answered,
+    /// and the operations that follow report their own errors.
+    private func probe(_ serverID: UUID) async throws {
+        do {
+            let leased = try await lease(for: serverID)
+            do {
+                try await leased.service.checkReachable()
+            } catch {
+                if FileProviderErrorMapper.isConnectionFailure(error) { discard(leased) }
+                throw error
+            }
+        } catch {
+            if FileProviderErrorMapper.isConnectionFailure(error) || error is CancellationError { throw error }
         }
     }
 
@@ -105,38 +195,113 @@ actor ConnectionRegistry {
     }
 }
 
-/// Maps service-layer errors to NSFileProviderError values the system
-/// understands.
+/// Maps service-layer errors to errors the system accepts.
+///
+/// Which code an error gets decides how much of the domain it stops. The
+/// header has `.serverUnreachable`, `.notAuthenticated` and
+/// `.cannotSynchronize` make the system back off "until the next time it is
+/// signalled", for everything in the domain, so they are reserved for
+/// states that really are domain-wide. Every server shares this one domain,
+/// so one server out of reach or refusing its password pauses all of them:
+/// only a write takes that price, since the system drops a transient
+/// failure after a few retries and a change would never reach the server.
+/// A read is retried for its item alone. Any other error is too.
 enum FileProviderErrorMapper {
-    static func map(_ error: Error) -> Error {
+    /// What the system was doing, which decides how a refusal reads: the
+    /// header has no code for "permission denied", so the Cocoa ones stand in.
+    enum Operation {
+        case read
+        case write
+    }
+
+    static func map(_ error: Error, during operation: Operation = .read) -> Error {
         switch error {
-        case RemoteFileServiceError.itemNotFound:
-            return NSFileProviderError(.noSuchItem)
-        case RemoteFileServiceError.authenticationFailed:
-            return NSFileProviderError(.notAuthenticated)
-        case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected:
+        case is CancellationError:
+            return CocoaError(.userCancelled)
+        case is LocalNetworkAccess.DeniedError where operation == .read:
+            // Retried, the read would keep Finder loading for as long as the
+            // access stays off; failed outright, Finder says why.
+            return CocoaError(.fileReadNoPermission, userInfo: [
+                NSLocalizedDescriptionKey: error.localizedDescription, NSUnderlyingErrorKey: error,
+            ])
+        case is LocalNetworkAccess.DeniedError:
             return NSFileProviderError(.serverUnreachable)
-        case is KeychainCredentialStore.KeychainError,
+        case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected:
+            // A read is asked for again when it is needed. Paused instead, it
+            // would hold up every other server for as long as this one stays
+            // out of reach — a NAS on another network can be, for days.
+            return operation == .read ? retriedForTheItem(error) : NSFileProviderError(.serverUnreachable)
+        case RemoteFileServiceError.itemNotFound,
+             ConnectionRegistry.RegistryError.serverConfigurationMissing:
+            return NSFileProviderError(.noSuchItem)
+        case RemoteFileServiceError.alreadyExists:
+            return NSFileProviderError(.filenameCollision)
+        case RemoteFileServiceError.paused:
+            // Pausing one server must leave every other one working.
+            return retriedForTheItem(error)
+        case RemoteFileServiceError.permissionDenied:
+            return CocoaError(operation == .read ? .fileReadNoPermission : .fileWriteNoPermission)
+        case _ where isAuthenticationFailure(error):
+            // As above. The app asks for the credentials either way.
+            return operation == .read ? retriedForTheItem(error) : NSFileProviderError(.notAuthenticated)
+        default:
+            let domain = (error as NSError).domain
+            if domain == NSCocoaErrorDomain || domain == NSFileProviderErrorDomain {
+                return error
+            }
+            // The system rejects any other error domain outright. This code
+            // is the one it treats as transient, retried for the item alone.
+            return CocoaError(.xpcConnectionReplyInvalid, userInfo: [NSUnderlyingErrorKey: error])
+        }
+    }
+
+    /// The system's transient error, carrying the reason so Finder can show
+    /// it. The only domain it accepts besides its own is Cocoa's.
+    private static func retriedForTheItem(_ error: Error) -> Error {
+        CocoaError(.xpcConnectionReplyInvalid, userInfo: [
+            NSLocalizedDescriptionKey: error.localizedDescription, NSUnderlyingErrorKey: error,
+        ])
+    }
+
+    /// How the server answered, as the app shows it; nil when the outcome
+    /// says nothing about the server — a cancellation, a missing file.
+    static func health(after error: Error) -> ServerHealth? {
+        if isConnectionFailure(error) {
+            return ServerHealth(state: .unreachable, message: error.localizedDescription)
+        }
+        if isAuthenticationFailure(error) {
+            return ServerHealth(state: .signInRequired, message: error.localizedDescription)
+        }
+        return nil
+    }
+
+    /// The stored credential or identity cannot be used, and retrying will
+    /// not help until the person acts in the app. A changed host key counts:
+    /// only clearing it there lets the connection through.
+    static func isAuthenticationFailure(_ error: Error) -> Bool {
+        switch error {
+        case RemoteFileServiceError.authenticationFailed,
+             is KeychainCredentialStore.KeychainError,
              RemoteFileServiceError.unsupportedCredentials,
              RemoteFileServiceError.privateKeyPassphraseRequired,
-             RemoteFileServiceError.privateKeyUnreadable:
-            // All of these mean "the stored credential cannot be used", which
-            // is the state that makes Finder offer a sign-in affordance.
-            return NSFileProviderError(.notAuthenticated)
-        case ConnectionRegistry.RegistryError.serverConfigurationMissing:
-            return NSFileProviderError(.noSuchItem)
-        case RemoteFileServiceError.operationFailed:
-            // Most often a session that died under the operation. Reporting
-            // it as unreachable is what makes the system retry — on the
-            // replacement connection — rather than treat the item as broken.
-            return NSFileProviderError(.serverUnreachable)
-        case is NSFileProviderError, is CocoaError:
-            return error
+             RemoteFileServiceError.privateKeyUnreadable,
+             RemoteFileServiceError.hostKeyChanged:
+            return true
         default:
-            // The system rejects any other error domain outright and shows
-            // "an error occurred, the items may be out of date" with no way
-            // forward, so nothing may leave here unmapped.
-            return NSFileProviderError(.cannotSynchronize)
+            return false
+        }
+    }
+
+    /// Whether the connection itself failed, as opposed to the server
+    /// answering with a refusal. A Local Network denial counts: the probe
+    /// keeps checking, so access turned on later brings the server back.
+    static func isConnectionFailure(_ error: Error) -> Bool {
+        switch error {
+        case RemoteFileServiceError.connectionFailed, RemoteFileServiceError.notConnected,
+             is LocalNetworkAccess.DeniedError:
+            return true
+        default:
+            return false
         }
     }
 }

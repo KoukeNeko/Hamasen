@@ -60,6 +60,45 @@
 				<key>NSExtensionFileProviderActionActivationRule</key>
 				<string>fileproviderItems.@count == 1</string>
 			</dict>
+			<!-- One item on a server, any protocol: a cloud drive answers with
+			     the item's web page instead of an address. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.copyURL</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_COPY_URL</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "srv:").@count == 1</string>
+			</dict>
+			<!-- Protocols with a web page, read from the protocol each item
+			     reports in its userInfo. An S3 folder is a prefix, which no
+			     browser can open. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.openInBrowser</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_OPEN_IN_BROWSER</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "srv:" AND $item.userInfo.protocol IN {"webdav", "webdavs", "s3", "googleDrive", "oneDrive", "dropbox"} AND ($item.userInfo.protocol != "s3" OR $item.isFolder == NO)).@count == 1</string>
+			</dict>
+			<!-- SFTP servers only: the one protocol that comes with a shell. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.openInTerminal</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_OPEN_IN_TERMINAL</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "srv:" AND $item.userInfo.protocol == "sftp").@count == 1</string>
+			</dict>
+			<!-- One item on a server, which names the connection to show. -->
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>dev.hamasen.action.showInHamasen</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>ACTION_SHOW_IN_HAMASEN</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>fileproviderItems.@count == 1 AND SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "srv:").@count == 1</string>
+			</dict>
 			<!-- Any selection, the Hamasen root included. -->
 			<dict>
 				<key>NSExtensionFileProviderActionIdentifier</key>
@@ -106,6 +145,41 @@
 				<string>ACTION_FREE_LOCAL_SPACE</string>
 				<key>NSExtensionFileProviderActionActivationRule</key>
 				<string>SUBQUERY(fileproviderItems, $item, $item.isFolder == YES OR $item.isDownloaded == YES).@count &gt; 0</string>
+			</dict>
+		</array>
+		<!-- Badges Finder draws on an item's icon when the item names them in
+		     its `decorations` (NSFileProviderItemDecorating). The image is the
+		     icon of the UTI under BadgeImageType; the system's own badge UTIs
+		     ship with icons, so nothing has to be drawn here. The label is a
+		     key into Localizable.xcstrings, like the action names. -->
+		<key>NSFileProviderDecorations</key>
+		<array>
+			<dict>
+				<key>Identifier</key>
+				<string>dev.hamasen.decoration.pinned</string>
+				<key>BadgeImageType</key>
+				<string>com.apple.icon-decoration.badge.pinned</string>
+				<key>Category</key>
+				<string>Badge</string>
+				<key>Label</key>
+				<dict>
+					<key>NSStringFormat</key>
+					<string>DECORATION_PINNED</string>
+				</dict>
+			</dict>
+			<!-- A label beside the server folder's name rather than a badge:
+			     the system has no paused badge, and a warning one would read
+			     as something having gone wrong. -->
+			<dict>
+				<key>Identifier</key>
+				<string>dev.hamasen.decoration.paused</string>
+				<key>Category</key>
+				<string>Sharing</string>
+				<key>Label</key>
+				<dict>
+					<key>NSStringFormat</key>
+					<string>DECORATION_PAUSED</string>
+				</dict>
 			</dict>
 		</array>
 	</dict>

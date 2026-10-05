@@ -1,0 +1,7 @@
+#!/bin/sh
+# count-temp
+# Prints how many entries under the data root are upload temporaries, which
+# the client names .hamasen-upload-* and removes once an upload finishes.
+set -eu -o pipefail
+
+find "$E2E_DATA_ROOT" -name '.hamasen-upload-*' | wc -l | tr -d ' '

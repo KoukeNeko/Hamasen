@@ -6,6 +6,8 @@ xcuserdata/
 
 # Swift Package Manager
 .build/
+# Schemes SwiftPM regenerates whenever the package is built from the CLI.
+.swiftpm/
 .omx/
 
 # Local scratch: notes and packaged builds that belong to one machine.

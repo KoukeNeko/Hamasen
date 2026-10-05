@@ -20,6 +20,18 @@
             "state": "translated",
             "value": "%lld 個項目無法釋放本機空間：%@"
           }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld개 항목의 로컬 공간을 확보하지 못했습니다: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 个项目无法释放本地空间：%2$@"
+          }
         }
       }
     },
@@ -43,6 +55,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "複製本機路徑"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 경로 복사"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝本地路径"
           }
         }
       }
@@ -68,6 +92,54 @@
             "state": "translated",
             "value": "複製遠端路徑"
           }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 경로 복사"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝远程路径"
+          }
+        }
+      }
+    },
+    "ACTION_COPY_URL": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy URL"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URLをコピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL 복사"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷贝 URL"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製 URL"
+          }
         }
       }
     },
@@ -91,6 +163,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "釋放本機空間"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 공간 확보"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "释放本地空间"
           }
         }
       }
@@ -116,6 +200,90 @@
             "state": "translated",
             "value": "保留在這台 Mac"
           }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에 보관"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留在这台 Mac"
+          }
+        }
+      }
+    },
+    "ACTION_OPEN_IN_BROWSER": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Browser"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウザで開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브라우저에서 열기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在浏览器中打开"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在瀏覽器中開啟"
+          }
+        }
+      }
+    },
+    "ACTION_OPEN_IN_TERMINAL": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Terminal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルで開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널에서 열기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在终端中打开"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在終端機中開啟"
+          }
         }
       }
     },
@@ -139,6 +307,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新整理"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 고침"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新"
+          }
+        }
+      }
+    },
+    "ACTION_SHOW_IN_HAMASEN": {
+      "comment": "Finder context menu: NSExtensionFileProviderActionName key in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Hamasen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hamasenで表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hamasen에서 보기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在哈玛星中显示"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在哈瑪星中顯示"
           }
         }
       }
@@ -164,6 +380,18 @@
             "state": "translated",
             "value": "取消保留在這台 Mac"
           }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에 보관 해제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消保留在这台 Mac"
+          }
         }
       }
     },
@@ -180,13 +408,97 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このサーバをFinderから取り出す"
+            "value": "このサーバをFinderからマウント解除"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "從 Finder 卸載此伺服器"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder에서 이 서버 마운트 해제"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从“访达”卸载此服务器"
+          }
+        }
+      }
+    },
+    "DECORATION_PAUSED": {
+      "comment": "Label beside a paused server's folder in Finder: NSFileProviderDecorations in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暫停"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂停"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시 정지됨"
+          }
+        }
+      }
+    },
+    "DECORATION_PINNED": {
+      "comment": "Badge label (mouse over, VoiceOver): NSFileProviderDecorations in Config/HamasenFileProviderInfo.plist",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kept on This Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このMacに保持中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留在這台 Mac"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에 보관됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留在这台 Mac"
           }
         }
       }
@@ -210,6 +522,18 @@
             "state": "translated",
             "value": "不支援的動作：%@"
           }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지원되지 않는 동작: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不支持的操作：%@"
+          }
         }
       }
     },
@@ -224,13 +548,93 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーバのフォルダからのみ取り出せます"
+            "value": "サーバのフォルダからのみマウント解除できます"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "只能從伺服器資料夾卸載"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버 폴더에서만 마운트 해제할 수 있습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只能从服务器文件夹卸载"
+          }
+        }
+      }
+    },
+    "沒有「本地網路」權限，無法連線到區域網路上的伺服器。到「系統設定」>「隱私權與安全性」>「本地網路」開啟 HamasenFileProvider。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Without Local Network access, servers on your local network can’t be reached. Turn on HamasenFileProvider in System Settings > Privacy & Security > Local Network."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「ローカルネットワーク」へのアクセスが許可されていないため、ローカルネットワーク上のサーバに接続できません。「システム設定」>「プライバシーとセキュリティ」>「ローカルネットワーク」で HamasenFileProvider をオンにしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 네트워크 접근 권한이 없어 로컬 네트워크의 서버에 연결할 수 없습니다. 시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크에서 HamasenFileProvider를 켜십시오."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有“本地网络”权限，无法连接到局域网中的服务器。请前往“系统设置”>“隐私与安全性”>“本地网络”开启 HamasenFileProvider。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有「本地網路」權限，無法連線到區域網路上的伺服器。到「系統設定」>「隱私權與安全性」>「本地網路」開啟 HamasenFileProvider。"
+          }
+        }
+      }
+    },
+    "沒有可以開啟 %@ 連結的 App": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No app can open %@ links"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ リンクを開けるAppがありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 링크를 열 수 있는 앱이 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可以打开 %@ 链接的 App"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有可以開啟 %@ 連結的 App"
           }
         }
       }
@@ -254,6 +658,18 @@
             "state": "translated",
             "value": "無法寫入剪貼簿"
           }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클립보드에 쓸 수 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法写入剪贴板"
+          }
         }
       }
     },
@@ -275,6 +691,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "這個項目不屬於 Hamasen 掛載"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목은 Hamasen 마운트에 속하지 않습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个项目不属于 Hamasen 挂载"
+          }
+        }
+      }
+    },
+    "這個項目沒有網頁": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This item has no web page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目にはWebページがありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목에는 웹 페이지가 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目没有网页"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個項目沒有網頁"
           }
         }
       }

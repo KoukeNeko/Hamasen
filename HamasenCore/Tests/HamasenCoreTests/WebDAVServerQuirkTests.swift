@@ -200,6 +200,60 @@ struct WebDAVServerQuirkTests {
         try await server.stop()
     }
 
+    @Test("建立已存在的資料夾時回報名稱已存在", arguments: [false, true])
+    func reportsExistingFolder(createsExistingCollection: Bool) async throws {
+        var behaviour = TestWebDAVServer.Behaviour.wellBehaved
+        behaviour.createsExistingCollection = createsExistingCollection
+        let server = try await TestWebDAVServer.start(behaviour: behaviour)
+        try FileManager.default.createDirectory(
+            at: server.rootDirectory.appendingPathComponent("taken"), withIntermediateDirectories: false)
+
+        let service = Self.makeService(port: server.port)
+        try await service.connect()
+        await #expect(throws: RemoteFileServiceError.alreadyExists(path: "/taken")) {
+            try await service.createDirectory(at: "/taken")
+        }
+
+        try await service.disconnect()
+        try await server.stop()
+    }
+
+    // MARK: - Nextcloud and ownCloud
+
+    /// The node a test server file lives in, which stands in for Nextcloud's
+    /// file id: a PUT keeps it, a MOVE over the name replaces it.
+    private static func fileID(of url: URL) throws -> Int? {
+        (try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? NSNumber)?.intValue
+    }
+
+    /// Their MOVE over a file deletes it first, and with it the file id that
+    /// its versions, shares, links, comments and tags belong to.
+    @Test("Nextcloud 上覆寫檔案時保留原本的檔案")
+    func keepsTheFileOnNextcloud() async throws {
+        let server = try await TestWebDAVServer.start(behaviour: .init(behavesLikeNextcloud: true))
+        let target = server.rootDirectory.appendingPathComponent("doc.txt")
+        try Data("old contents".utf8).write(to: target)
+        let fileID = try #require(try Self.fileID(of: target))
+
+        let service = Self.makeService(port: server.port)
+        try await service.connect()
+
+        let localURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nextcloud-\(UUID().uuidString).txt")
+        try Data("new contents".utf8).write(to: localURL)
+        defer { try? FileManager.default.removeItem(at: localURL) }
+
+        try await service.uploadFile(from: localURL, to: "/doc.txt")
+
+        #expect(try Data(contentsOf: target) == Data("new contents".utf8))
+        #expect(try Self.fileID(of: target) == fileID)
+        // Told apart by the connect probe, not by a request per upload.
+        #expect(server.requestCount(method: "PROPFIND") == 1)
+
+        try await service.disconnect()
+        try await server.stop()
+    }
+
     // MARK: - Missing metadata
 
     @Test("伺服器不回報檔案大小時視為未知")

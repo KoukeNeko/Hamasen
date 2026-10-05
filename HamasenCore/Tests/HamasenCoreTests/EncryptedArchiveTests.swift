@@ -100,6 +100,22 @@ struct EncryptedArchiveTests {
         #expect(try sealed.opened(passphrase: "p") == Self.payload)
     }
 
+    /// The count is read from the file; one that would take hours to derive
+    /// is refused before any work starts.
+    @Test("迭代次數超出範圍的檔案會被拒絕，不會先跑完推導")
+    func refusesAnUnreasonableWorkFactor() throws {
+        let sealed = try EncryptedArchive.sealForTesting(
+            Self.payload, passphrase: "p", salt: Data(repeating: 7, count: 16), iterations: 1_000)
+        for iterations in [0, -1, 2_000_000_000] {
+            let crafted = EncryptedArchive(
+                keyDerivation: sealed.keyDerivation, iterations: iterations,
+                salt: sealed.salt, cipher: sealed.cipher, sealed: sealed.sealed)
+            #expect(throws: EncryptedArchive.ArchiveError.unsupportedFormat) {
+                _ = try crafted.opened(passphrase: "p")
+            }
+        }
+    }
+
     @Test("明文不會出現在封裝後的位元組裡")
     func leavesNoPlaintextBehind() throws {
         let sealed = try EncryptedArchive.seal(Self.payload, passphrase: "correct horse")

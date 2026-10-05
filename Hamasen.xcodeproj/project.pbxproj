@@ -159,6 +159,8 @@
 			knownRegions = (
 				en,
 				ja,
+				ko,
+				"zh-Hans",
 				"zh-Hant",
 				Base,
 			);
@@ -361,10 +363,12 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/HamasenInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Hamasen;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSAppTransportSecurity = "{NSAllowsLocalNetworking = YES;}";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Used to connect to servers on your local network";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hamasen.mac;
@@ -394,10 +398,12 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/HamasenInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Hamasen;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSAppTransportSecurity = "{NSAllowsLocalNetworking = YES;}";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Used to connect to servers on your local network";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hamasen.mac;
@@ -424,6 +430,7 @@
 				INFOPLIST_FILE = Config/HamasenFileProviderInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hamasen File Provider";
 				INFOPLIST_KEY_NSAppTransportSecurity = "{NSAllowsLocalNetworking = YES;}";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Used to connect to servers on your local network";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
@@ -453,6 +460,7 @@
 				INFOPLIST_FILE = Config/HamasenFileProviderInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hamasen File Provider";
 				INFOPLIST_KEY_NSAppTransportSecurity = "{NSAllowsLocalNetworking = YES;}";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Used to connect to servers on your local network";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
