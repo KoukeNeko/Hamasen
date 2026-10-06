@@ -38,6 +38,11 @@ jobs:
 
       - uses: ./.github/actions/pin-xcode
 
+      # Found broken here rather than when a tag is pushed, after the release
+      # has already been built.
+      - name: Check the release notes
+        run: swift scripts/release-notes.swift check
+
       # A runner has no signing identity and must not mint one: automatic
       # signing would issue a fresh certificate on every run.
       - name: Run the verification harness
