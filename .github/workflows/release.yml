@@ -1,0 +1,182 @@
+name: Release
+
+# A version tag publishes that version outside the App Store: a Developer ID
+# copy, notarized by Apple, on a GitHub release whose description comes from
+# ReleaseNotes/<version>/github.md. The app's update check finds the release
+# by its tag and downloads the .dmg on it. The same run writes the version's
+# App Store notes into App Store Connect, so both places say the same thing.
+#
+# The App Store build itself still comes from App Store release, on the
+# merge to main that the tag points at.
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ARCHIVE_PATH: ${{ github.workspace }}/build/Hamasen.xcarchive
+  EXPORT_DIR: ${{ github.workspace }}/build/export
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      # Publishing the release is the only write this workflow makes.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The build number is the commit count, as App Store release counts it.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The tag names the version; the project must agree, or the app would
+      # report itself as an older version than the release it came from and
+      # offer itself as an update forever.
+      - name: Resolve the version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          project_version="$(sed -n 's/.*MARKETING_VERSION = \(.*\);/\1/p' Hamasen.xcodeproj/project.pbxproj | sort -u)"
+          if [[ "${version%%-*}" != "${project_version}" ]]; then
+              echo "error: tag ${GITHUB_REF_NAME} does not match MARKETING_VERSION ${project_version}" >&2
+              exit 1
+          fi
+          prerelease=false
+          [[ "${version}" == *-* ]] && prerelease=true
+          {
+              echo "VERSION=${version}"
+              echo "PRERELEASE=${prerelease}"
+              echo "BUILD_NUMBER=$(git rev-list --count HEAD)"
+          } >> "${GITHUB_ENV}"
+
+      - uses: ./.github/actions/pin-xcode
+
+      # Before anything is built or signed: a release without its notes is
+      # not published at all.
+      - name: Check the release notes
+        run: swift scripts/release-notes.swift check "${VERSION}"
+
+      - name: Run the verification harness
+        env:
+          HAMASEN_UNSIGNED_BUILD: "1"
+        run: scripts/verify.sh
+
+      - name: Install the App Store Connect API key
+        env:
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p "${HOME}/private_keys"
+          key="${HOME}/private_keys/AuthKey_${KEY_ID}.p8"
+          printf '%s' "${KEY_P8_BASE64}" | base64 --decode > "${key}"
+          chmod 600 "${key}"
+          echo "ASC_KEY_PATH=${key}" >> "${GITHUB_ENV}"
+
+      # Cloud-managed signing, as for the App Store build: the Developer ID
+      # certificate and profiles come from Apple on each run, which needs the
+      # API key to have the Admin role.
+      - name: Archive
+        env:
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+              -project Hamasen.xcodeproj \
+              -scheme Hamasen \
+              -configuration Release \
+              -destination 'generic/platform=macOS' \
+              -archivePath "${ARCHIVE_PATH}" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "${ASC_KEY_PATH}" \
+              -authenticationKeyID "${KEY_ID}" \
+              -authenticationKeyIssuerID "${ISSUER_ID}" \
+              CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
+
+      - name: Export a Developer ID copy
+        env:
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > "${RUNNER_TEMP}/ExportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>developer-id</string>
+              <key>teamID</key>
+              <string>33832Z66QU</string>
+              <key>signingStyle</key>
+              <string>automatic</string>
+              <key>destination</key>
+              <string>export</string>
+              <key>manageAppVersionAndBuildNumber</key>
+              <false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+              -archivePath "${ARCHIVE_PATH}" \
+              -exportPath "${EXPORT_DIR}" \
+              -exportOptionsPlist "${RUNNER_TEMP}/ExportOptions.plist" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "${ASC_KEY_PATH}" \
+              -authenticationKeyID "${KEY_ID}" \
+              -authenticationKeyIssuerID "${ISSUER_ID}"
+
+      # Gatekeeper opens a downloaded app only when Apple has notarized it.
+      # The app is stapled before it goes in the disk image, so it opens
+      # offline once copied out; the image is notarized and stapled too, so
+      # opening the download itself raises no warning.
+      - name: Notarize and package
+        env:
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          notarize() {
+              xcrun notarytool submit "$1" --wait \
+                  --key "${ASC_KEY_PATH}" --key-id "${KEY_ID}" --issuer "${ISSUER_ID}"
+              xcrun stapler staple "$2"
+          }
+          app="${EXPORT_DIR}/Hamasen.app"
+          ditto -c -k --keepParent "${app}" "${RUNNER_TEMP}/Hamasen.zip"
+          notarize "${RUNNER_TEMP}/Hamasen.zip" "${app}"
+
+          staging="${RUNNER_TEMP}/dmg"
+          mkdir -p "${staging}"
+          ditto "${app}" "${staging}/Hamasen.app"
+          ln -s /Applications "${staging}/Applications"
+          dmg="${{ github.workspace }}/build/Hamasen-${VERSION}.dmg"
+          hdiutil create -volname Hamasen -srcfolder "${staging}" -format UDZO -ov "${dmg}"
+          notarize "${dmg}" "${dmg}"
+          spctl --assess --type open --context context:primary-signature --verbose "${dmg}"
+          echo "DMG=${dmg}" >> "${GITHUB_ENV}"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          [[ "${PRERELEASE}" == true ]] && flags+=(--prerelease)
+          gh release create "${GITHUB_REF_NAME}" "${DMG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "Hamasen ${VERSION}" \
+              --notes-file "ReleaseNotes/${VERSION}/github.md" \
+              --verify-tag \
+              "${flags[@]}"
+
+      # A pre-release goes to GitHub only; the App Store has no such thing.
+      - name: Send the App Store notes
+        if: env.PRERELEASE == 'false'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: swift scripts/release-notes.swift whats-new "${VERSION}"

@@ -321,6 +321,18 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
             return Self.answered()
         }
 
+        if itemTemplate.parentItemIdentifier == .rootContainer, isDirectory,
+           let config = Self.mountedServer(namedLike: filename) {
+            // The system rebuilds its database from what is on disk after a
+            // reimport, and then offers each server folder it finds there as
+            // a folder created on this Mac. It is the server's own folder:
+            // answering with it links the two. Refused, every item under the
+            // server waited forever for its parent, and Finder never loaded.
+            Self.log.notice("createItem \(filename) matched to server \(config.id)")
+            completionHandler(ServerFolderItem(config: config), [], false, nil)
+            return Self.answered()
+        }
+
         let container = Self.containerLocation(of: itemTemplate.parentItemIdentifier)
         return performing(
             "createItem \(filename)",
@@ -849,6 +861,14 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension,
 
     /// Resolves a container identifier to the directory items are created in
     /// or moved to. Returns nil for the domain root, which accepts none.
+    /// The mounted server whose Finder folder has this name, compared the
+    /// way the Mac's file system compares names.
+    private static func mountedServer(namedLike name: String) -> ServerConfig? {
+        (try? ConnectionRegistry.mountedConfigs())?.first {
+            $0.name.compare(name, options: [.caseInsensitive]) == .orderedSame
+        }
+    }
+
     private static func containerLocation(
         of identifier: NSFileProviderItemIdentifier
     ) -> ItemLocation? {
