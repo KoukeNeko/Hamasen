@@ -3,9 +3,12 @@ name: Linux package
 # Builds the .deb. The package carries the contributor list as of this run,
 # fetched here with the workflow token, so the installed app never asks GitHub
 # for it; only a source checkout does.
+#
+# A linux-v* tag publishes it. The tag has its own prefix because a v* tag
+# starts the macOS release, which would reject a Linux version number.
 on:
   push:
-    tags: ['v*']
+    tags: ['linux-v*']
   pull_request:
     paths: ['Linux/**', '.github/workflows/linux.yml']
   workflow_dispatch:
@@ -27,6 +30,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # The tag names the version; the app reports the one in core.py, so the
+      # two must agree and the release notes must exist.
+      - name: Check the tag
+        if: startsWith(github.ref, 'refs/tags/linux-v')
+        run: |
+          version="${GITHUB_REF_NAME#linux-v}"
+          [[ "${version}" == "$(sed -n 's/^VERSION = "\(.*\)"/\1/p' Linux/core.py)" ]] \
+              || { echo "error: tag ${GITHUB_REF_NAME} does not match VERSION in Linux/core.py" >&2; exit 1; }
+          [[ -f "Linux/release-notes/${version}.md" ]] \
+              || { echo "error: Linux/release-notes/${version}.md is missing" >&2; exit 1; }
+
       - name: Build the package
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -37,3 +51,32 @@ jobs:
           name: hamasen-deb
           path: Linux/packaging/*.deb
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/linux-v')
+    needs: deb
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Publishing the release is the only write this workflow makes.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: hamasen-deb
+
+      # Never the "latest" release: the macOS app's update check reads that one.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#linux-v}"
+          gh release create "${GITHUB_REF_NAME}" ./*.deb \
+              --title "Hamasen for Linux ${version}" \
+              --notes-file "Linux/release-notes/${version}.md" \
+              --prerelease --latest=false --verify-tag
