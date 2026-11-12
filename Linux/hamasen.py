@@ -8,10 +8,13 @@ Servers mount through GIO, so each one appears in the file manager sidebar
 asked for by GTK's mount dialog and kept by the desktop keyring, never in
 this app's config file.
 """
+import http.client
 import json
 import os
 import shutil
+import socket
 import sys
+import threading
 import uuid
 from urllib.parse import quote, unquote, urlsplit
 
@@ -107,6 +110,37 @@ def set_bookmark(s, present):
     os.makedirs(os.path.dirname(BOOKMARKS), exist_ok=True)
     with open(BOOKMARKS, "w", encoding="utf-8") as f:
         f.write("\n".join(lines + ([line] if present else [])) + "\n")
+
+
+def rc_socket(s):
+    return os.path.join(GLib.get_user_runtime_dir(), f"hamasen-{s['id'][:8]}.sock")
+
+
+class _UnixConnection(http.client.HTTPConnection):
+    def __init__(self, path):
+        super().__init__("localhost", timeout=2)
+        self.path = path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.path)
+
+
+def pending_uploads(s):
+    """Files rclone has accepted but not yet sent to Drive; 0 if it can't be asked."""
+    try:  # a local socket answers at once, so this does not wait on the network
+        conn = _UnixConnection(rc_socket(s))
+        conn.request("POST", "/vfs/stats", body="{}", headers={"Content-Type": "application/json"})
+        cache = json.loads(conn.getresponse().read())["diskCache"]
+        return cache["uploadsQueued"] + cache["uploadsInProgress"]
+    except (OSError, ValueError, KeyError):
+        return 0
+
+
+def pending_uploads_async(s, done):
+    """pending_uploads off the main loop: rclone answers slowly while it is busy listing."""
+    threading.Thread(target=lambda: GLib.idle_add(done, pending_uploads(s)), daemon=True).start()
 
 
 def run(argv, done):
@@ -274,7 +308,23 @@ class Window(Adw.ApplicationWindow):
         for sig in ("mount-added", "mount-removed"):
             monitor.connect(sig, lambda *_: self.rebuild())
         self.connect("close-request", self.hide_to_tray)
+        self.uploads = {}  # server id -> files rclone still has to upload
+        self.polling = set()
+        GLib.timeout_add_seconds(3, self.poll_uploads)
         self.rebuild()
+
+    def poll_uploads(self):
+        for s in self.servers:
+            if is_gdrive(s) and is_mounted(s) and s["id"] not in self.polling:
+                self.polling.add(s["id"])
+                pending_uploads_async(s, lambda n, id=s["id"]: self.polled(id, n))
+        return True
+
+    def polled(self, server_id, count):
+        self.polling.discard(server_id)
+        if self.uploads.get(server_id, 0) != count:
+            self.uploads[server_id] = count
+            self.rebuild()
 
     def hide_to_tray(self, *_):
         self.set_visible(False)
@@ -306,7 +356,8 @@ class Window(Adw.ApplicationWindow):
     def subtitle(self, s, mounted):
         if not is_gdrive(s):
             return GLib.markup_escape_text(server_uri(s))
-        return "Google Drive"
+        pending = self.uploads.get(s["id"], 0) if mounted else 0
+        return f"Google Drive · 上傳中 {pending}" if pending else "Google Drive"
 
     def row(self, s):
         mounted = is_mounted(s)
@@ -404,7 +455,7 @@ class Window(Adw.ApplicationWindow):
         try:  # --daemon returns once the folder is mounted
             process = run([RCLONE, "mount", "--daemon", "--vfs-cache-mode", "writes",
                            "--dir-cache-time", "1h", "--attr-timeout", "1h",
-                           server["remote"] + ":", path], done)
+                           "--rc", f"--rc-addr=unix://{rc_socket(server)}", server["remote"] + ":", path], done)
         except GLib.Error as e:
             done(False, e.message)
             return
@@ -432,7 +483,21 @@ class Window(Adw.ApplicationWindow):
                 else:
                     self.toast(err)
                 self.rebuild()
-            run(["fusermount3", "-u", mount_path(server)], gone)
+
+            def eject():
+                run(["fusermount3", "-u", mount_path(server)], gone)
+
+            def checked(pending):
+                if not pending:
+                    eject()
+                    return
+                dialog = Adw.AlertDialog(heading=f"卸載「{server['name']}」？",
+                                         body=f"{pending} 個檔案尚未上傳至 Google Drive。")
+                dialog.add_response("cancel", "取消")
+                dialog.add_response("unmount", "仍要卸載")
+                dialog.set_response_appearance("unmount", Adw.ResponseAppearance.DESTRUCTIVE)
+                dialog.choose(self, None, lambda d, r: d.choose_finish(r) == "unmount" and eject())
+            pending_uploads_async(server, checked)
             return
         m = enclosing_mount(server_uri(server))
         if not m:
