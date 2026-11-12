@@ -14,11 +14,18 @@ from urllib.parse import quote
 
 import gi
 
+import contributors
+
 gi.require_version("Gtk", "4.0")
 gi.require_version("Secret", "1")
 from gi.repository import Gio, GLib, Gtk, Secret  # noqa: E402
 
 APP_ID = "app.hamasen.Hamasen"
+VERSION = "0.1.0"
+REPO_URL = f"https://github.com/{contributors.OWNER}/{contributors.NAME}"
+HERE = os.path.dirname(os.path.abspath(__file__))
+# Written by the packaging step. A checkout has none and asks GitHub instead.
+CONTRIBUTORS_SNAPSHOT = os.path.join(HERE, "contributors.json")
 CONFIG = os.path.join(GLib.get_user_config_dir(), "hamasen", "servers.json")
 AUTOSTART = os.path.join(GLib.get_user_config_dir(), "autostart", f"{APP_ID}.desktop")
 BOOKMARKS = os.path.join(GLib.get_user_config_dir(), "gtk-3.0", "bookmarks")
@@ -211,6 +218,22 @@ def run(argv, done, env=None):
         done(p.get_successful(), (err or "").strip())
     process.communicate_utf8_async(None, None, finished)
     return process
+
+
+def load_contributors(done):
+    """done(list of contributors); empty when GitHub could not be reached."""
+    if os.path.exists(CONTRIBUTORS_SNAPSHOT):
+        with open(CONTRIBUTORS_SNAPSHOT, encoding="utf-8") as f:
+            done(json.load(f))
+        return
+
+    def fetch():
+        try:
+            people = contributors.fetch()
+        except (OSError, ValueError, KeyError):
+            people = []  # the About page links to GitHub's own list instead
+        GLib.idle_add(done, people)
+    threading.Thread(target=fetch, daemon=True).start()
 
 
 # --- SSH config and autostart ----------------------------------------------

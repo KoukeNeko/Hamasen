@@ -11,10 +11,10 @@ from urllib.parse import unquote, urlsplit
 import gi
 
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from core import (APP_ID, MOUNT_ROOT, PROTOCOLS, RCLONE, autostart_enabled, enclosing_mount,  # noqa: E402
-                  get_password, is_mounted, is_rclone, load_servers, mount_operation, mount_path,
+from core import (APP_ID, HERE, MOUNT_ROOT, PROTOCOLS, RCLONE, REPO_URL, VERSION, autostart_enabled, enclosing_mount,  # noqa: E402
+                  get_password, is_mounted, is_rclone, load_contributors, load_servers, mount_operation, mount_path,
                   pending_uploads_async, protocol_of, rc_socket, rclone_env, rclone_remote, run,
                   save_servers, server_uri, set_autostart, set_bookmark, set_password,
                   ssh_config_hosts)
@@ -22,6 +22,24 @@ from i18n import _, save_language, saved_language  # noqa: E402
 from tray import Tray  # noqa: E402
 
 GUIDE_URL = "https://console.cloud.google.com/apis/credentials"
+# A checkout carries its own icon; a package installs it into the system theme.
+ICON_DIR = os.path.join(HERE, "data", "icons")
+
+
+def about_dialog():
+    about = Adw.AboutDialog(
+        application_icon=APP_ID, application_name=_("Hamasen"), developer_name="KoukeNeko", version=VERSION,
+        comments=_("Mount servers and cloud drives in the file manager"), website=REPO_URL,
+        issue_url=f"{REPO_URL}/issues", support_url=f"{REPO_URL}/blob/main/SUPPORT.md",
+        copyright="© 2026 KoukeNeko", license_type=Gtk.License.APACHE_2_0)
+    about.add_link(_("Privacy Policy"), f"{REPO_URL}/blob/main/PRIVACY.md")
+    about.add_link(_("Contributors"), f"{REPO_URL}/graphs/contributors")
+    about.add_legal_section(_("Trademarks"), None, Gtk.License.CUSTOM, _(
+        "Google Drive is a trademark of Google LLC. OneDrive is a trademark of the Microsoft group of "
+        "companies. Dropbox is a trademark of Dropbox, Inc. Other names are trademarks of their respective "
+        "owners. Hamasen is not affiliated with or endorsed by the companies above."))
+    load_contributors(lambda people: about.set_developers([f"{p['login']} {p['url']}" for p in people]))
+    return about
 
 
 def language_menu():
@@ -36,6 +54,7 @@ def menubar():
     server = Gio.Menu()
     server.append(_("Add Server"), "win.add-server")
     server.append(_("Import from SSH Config"), "win.import-ssh")
+    server.append(_("About Hamasen"), "win.about")
     server.append(_("Quit"), "app.quit")
     settings = Gio.Menu()
     settings.append(_("Start at Login"), "win.autostart")
@@ -247,10 +266,14 @@ class Window(Adw.ApplicationWindow):
         menu.append(_("Import from SSH Config"), "win.import-ssh")
         menu.append(_("Start at Login"), "win.autostart")
         menu.append_submenu(_("Language"), language_menu())
+        menu.append(_("About Hamasen"), "win.about")
         header = Adw.HeaderBar()
         header.pack_start(add)
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu))
 
+        about = Gio.SimpleAction.new("about", None)
+        about.connect("activate", lambda *_: about_dialog().present(self))
+        self.add_action(about)
         add_server = Gio.SimpleAction.new("add-server", None)
         add_server.connect("activate", lambda *_: self.edit(None))
         self.add_action(add_server)
@@ -559,6 +582,8 @@ class App(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
+        if os.path.isdir(ICON_DIR):
+            Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(ICON_DIR)
         self.hold()  # stays alive in the tray after the window is closed
         quit_action = Gio.SimpleAction.new("quit", None)
         quit_action.connect("activate", lambda *_: self.quit())

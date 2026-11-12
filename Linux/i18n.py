@@ -69,6 +69,16 @@ TRADITIONAL_CHINESE = {
     "{count} files have not been uploaded yet.": "{count} 個檔案尚未上傳。",
     "Unmount Anyway": "仍要卸載",
     "Language": "語言",
+    "About Hamasen": "關於 Hamasen",
+    "Mount servers and cloud drives in the file manager": "把 NAS、伺服器和雲端硬碟放進檔案管理員",
+    "Privacy Policy": "隱私權政策",
+    "Contributors": "貢獻者",
+    "Trademarks": "商標",
+    "Google Drive is a trademark of Google LLC. OneDrive is a trademark of the Microsoft group of "
+    "companies. Dropbox is a trademark of Dropbox, Inc. Other names are trademarks of their respective "
+    "owners. Hamasen is not affiliated with or endorsed by the companies above.":
+        "Google 雲端硬碟是 Google LLC 的商標。OneDrive 是 Microsoft 集團的商標。Dropbox 是 Dropbox, Inc. 的商標。"
+        "其他名稱為各自所有者的商標。Hamasen 與上述公司無關，也未獲其背書。",
     "Settings": "設定",
     "Automatic": "自動",
     "Restart Hamasen to apply the language": "重新啟動 Hamasen 以套用語言",
