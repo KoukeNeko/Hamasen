@@ -8,14 +8,17 @@ waybar...) speaks are implemented here directly.
 """
 import os
 
-from gi.repository import Gio, GLib
+import gi
+
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf, Gio, GLib
 
 ITEM_PATH, MENU_PATH = "/StatusNotifierItem", "/Menu"
 
 ITEM_XML = """<node><interface name="org.kde.StatusNotifierItem">
  <property name="Category" type="s" access="read"/><property name="Id" type="s" access="read"/>
  <property name="Title" type="s" access="read"/><property name="Status" type="s" access="read"/>
- <property name="IconName" type="s" access="read"/><property name="IconThemePath" type="s" access="read"/><property name="ItemIsMenu" type="b" access="read"/>
+ <property name="IconName" type="s" access="read"/><property name="IconPixmap" type="a(iiay)" access="read"/><property name="ItemIsMenu" type="b" access="read"/>
  <property name="Menu" type="o" access="read"/>
  <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
  <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
@@ -43,14 +46,28 @@ class Tray:
     """`entries()` returns the menu as (label, checked, callback) tuples, where
     checked is None for a plain item and label None for a separator."""
 
-    def __init__(self, entries, on_activate, icon_name, icon_theme_path=""):
-        self.entries, self.on_activate, self.icon_name = entries, on_activate, icon_name
-        self.icon_theme_path = icon_theme_path  # lets the tray host find an icon that is not installed
+    def __init__(self, entries, on_activate, icon_file):
+        self.entries, self.on_activate = entries, on_activate
+        self.pixmaps = self._pixmaps(icon_file)
         self.revision = 0
         self.current = []
         self.bus = None
         Gio.bus_own_name(Gio.BusType.SESSION, f"org.kde.StatusNotifierItem-{os.getpid()}-1",
                          Gio.BusNameOwnerFlags.NONE, self._bus_acquired, self._name_acquired, None)
+
+    @staticmethod
+    def _pixmaps(icon_file, sizes=(22, 32, 48, 64)):
+        """The icon as pixels: a tray host resolves an icon name against its own theme and cache,
+        which is not where an app's own icon is guaranteed to be."""
+        result = []
+        for size in sizes:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_file, size, size).add_alpha(False, 0, 0, 0)
+            rgba, n = pixbuf.get_pixels(), pixbuf.get_n_channels()
+            argb = bytearray()
+            for i in range(0, len(rgba), n):  # StatusNotifierItem wants ARGB, most significant byte first
+                argb += bytes((rgba[i + 3], rgba[i], rgba[i + 1], rgba[i + 2]))
+            result.append((pixbuf.get_width(), pixbuf.get_height(), bytes(argb)))
+        return result
 
     def _bus_acquired(self, bus, name):
         self.bus = bus
@@ -67,7 +84,7 @@ class Tray:
 
     def _item_prop(self, bus, sender, path, iface, prop):
         values = {"Category": ("s", "ApplicationStatus"), "Id": ("s", "hamasen"), "Title": ("s", "Hamasen"),
-                  "Status": ("s", "Active"), "IconName": ("s", self.icon_name), "IconThemePath": ("s", self.icon_theme_path),
+                  "Status": ("s", "Active"), "IconName": ("s", ""), "IconPixmap": ("a(iiay)", self.pixmaps),
                   "ItemIsMenu": ("b", False), "Menu": ("o", MENU_PATH)}
         kind, value = values[prop]
         return GLib.Variant(kind, value)

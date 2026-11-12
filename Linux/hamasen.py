@@ -24,6 +24,8 @@ from tray import Tray  # noqa: E402
 GUIDE_URL = "https://console.cloud.google.com/apis/credentials"
 # A checkout carries its own icon; a package installs it into the system theme.
 ICON_DIR = os.path.join(HERE, "data", "icons")
+ICON_FILE = next(f for f in (os.path.join(ICON_DIR, "hicolor/512x512/apps", APP_ID + ".png"),
+                       f"/usr/share/icons/hicolor/512x512/apps/{APP_ID}.png") if os.path.exists(f))
 
 
 def about_dialog():
@@ -591,8 +593,7 @@ class App(Adw.Application):
         self.set_accels_for_action("app.quit", ["<Control>q"])
         self.set_accels_for_action("win.add-server", ["<Control>n"])
         self.set_menubar(menubar())
-        self.tray = Tray(lambda: self.window.tray_entries(), lambda: self.window.present(), APP_ID,
-                         ICON_DIR if os.path.isdir(ICON_DIR) else "")
+        self.tray = Tray(lambda: self.window.tray_entries(), lambda: self.window.present(), ICON_FILE)
         self.window = Window(self)
         GLib.timeout_add_seconds(2, self.mount_at_login)
 
