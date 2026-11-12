@@ -189,6 +189,32 @@ The mount survives quitting the app: the system keeps it up. The app needs to
 be running for the space limits, auto-clean, change checks and notifications,
 which it carries out as it runs.
 
+## Hamasen on Linux
+
+A GTK 4 / libadwaita version lives in [`Linux/`](Linux). Linux has no File
+Provider, so it mounts each server as a real folder instead: SFTP, FTP, SMB,
+WebDAV and NFS through GVfs, and Google Drive, OneDrive, Dropbox and
+S3-compatible storage through [rclone](https://rclone.org). Mounted servers show
+up in the file manager sidebar and in every GTK file chooser, and a tray icon
+keeps them one click away.
+
+<p align="center">
+  <img src="Docs/linux_home.png" width="48%" alt="The server list on Linux, with two servers mounted">
+  <img src="Docs/linux_add.png" width="48%" alt="Adding an SFTP server on Linux">
+</p>
+
+Install the `.deb` from the
+[latest Linux release](https://github.com/KoukeNeko/Hamasen/releases?q=linux-v):
+
+```bash
+sudo apt install ./hamasen_0.1.0_all.deb
+```
+
+Passwords stay in the desktop keyring. Servers can mount at login, import from
+`~/.ssh/config`, and raise desktop notifications; the interface is in English
+and 繁體中文. Unlike on macOS there is no local copy, per-file sync state or
+right-click menu: a mount is a live view of the server.
+
 ## Compatibility
 
 - macOS 15.6 or later, Apple silicon and Intel
