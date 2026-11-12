@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Hamasen
+Comment=Mount SFTP, FTP, SMB and WebDAV servers in the file manager
+Exec=/usr/bin/python3 HAMASEN_DIR/hamasen.py
+Icon=network-server
+Categories=Network;FileTransfer;GTK;
+StartupNotify=true
