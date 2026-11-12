@@ -69,6 +69,7 @@ TRADITIONAL_CHINESE = {
     "{count} files have not been uploaded yet.": "{count} 個檔案尚未上傳。",
     "Unmount Anyway": "仍要卸載",
     "Language": "語言",
+    "Settings": "設定",
     "Automatic": "自動",
     "Restart Hamasen to apply the language": "重新啟動 Hamasen 以套用語言",
 }

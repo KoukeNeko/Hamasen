@@ -24,6 +24,28 @@ from tray import Tray  # noqa: E402
 GUIDE_URL = "https://console.cloud.google.com/apis/credentials"
 
 
+def language_menu():
+    menu = Gio.Menu()
+    for code, label in (("auto", _("Automatic")), ("en", "English"), ("zh_TW", "繁體中文")):
+        menu.append(label, f"win.language('{code}')")
+    return menu
+
+
+def menubar():
+    """Exported to the desktop's global menu; libadwaita never draws it in the window itself."""
+    server = Gio.Menu()
+    server.append(_("Add Server"), "win.add-server")
+    server.append(_("Import from SSH Config"), "win.import-ssh")
+    server.append(_("Quit"), "app.quit")
+    settings = Gio.Menu()
+    settings.append(_("Start at Login"), "win.autostart")
+    settings.append_submenu(_("Language"), language_menu())
+    bar = Gio.Menu()
+    bar.append_submenu(_("Server"), server)
+    bar.append_submenu(_("Settings"), settings)
+    return bar
+
+
 class ServerDialog(Adw.Dialog):
     def __init__(self, server, on_save):
         super().__init__(title=_("Server") if server else _("Add Server"), content_width=420)
@@ -224,14 +246,14 @@ class Window(Adw.ApplicationWindow):
         menu = Gio.Menu()
         menu.append(_("Import from SSH Config"), "win.import-ssh")
         menu.append(_("Start at Login"), "win.autostart")
-        languages = Gio.Menu()
-        for code, label in (("auto", _("Automatic")), ("en", "English"), ("zh_TW", "繁體中文")):
-            languages.append(label, f"win.language('{code}')")
-        menu.append_submenu(_("Language"), languages)
+        menu.append_submenu(_("Language"), language_menu())
         header = Adw.HeaderBar()
         header.pack_start(add)
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu))
 
+        add_server = Gio.SimpleAction.new("add-server", None)
+        add_server.connect("activate", lambda *_: self.edit(None))
+        self.add_action(add_server)
         import_ssh = Gio.SimpleAction.new("import-ssh", None)
         import_ssh.connect("activate", lambda *_: self.import_ssh())
         autostart = Gio.SimpleAction.new_stateful("autostart", None, GLib.Variant.new_boolean(autostart_enabled()))
@@ -538,6 +560,12 @@ class App(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         self.hold()  # stays alive in the tray after the window is closed
+        quit_action = Gio.SimpleAction.new("quit", None)
+        quit_action.connect("activate", lambda *_: self.quit())
+        self.add_action(quit_action)
+        self.set_accels_for_action("app.quit", ["<Control>q"])
+        self.set_accels_for_action("win.add-server", ["<Control>n"])
+        self.set_menubar(menubar())
         self.tray = Tray(lambda: self.window.tray_entries(), lambda: self.window.present(), "network-server-symbolic")
         self.window = Window(self)
         GLib.timeout_add_seconds(2, self.mount_at_login)
