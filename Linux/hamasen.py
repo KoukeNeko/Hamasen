@@ -301,7 +301,7 @@ class ServerDialog(Adw.Dialog):
                 return
         if scheme == "smb" and not path.strip("/"):  # GVfs mounts shares, not a bare SMB host
             self.path.add_css_class("error")
-            self.path.set_title("路徑（SMB 需填共用資料夾）")
+            self.path.set_title("路徑（SMB 須指定共用資料夾）")
             return
         self.server.update(
             id=self.server.get("id") or str(uuid.uuid4()),
@@ -498,9 +498,9 @@ class Window(Adw.ApplicationWindow):
 
     def mount_hint(self, server, error):
         if error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.ALREADY_MOUNTED) and server["scheme"] == "smb":
-            return "請在伺服器的路徑填入共用資料夾名稱。"
+            return "請於「路徑」欄位指定共用資料夾名稱。"
         if error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.TIMED_OUT):
-            return "主機沒有回應。請確認主機、連接埠與網路。"
+            return "主機未回應。請確認主機、連接埠與網路連線。"
         return ""
 
     def show_error(self, server, message, hint=""):
