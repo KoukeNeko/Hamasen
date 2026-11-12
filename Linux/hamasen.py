@@ -191,10 +191,31 @@ class ServerDialog(Adw.Dialog):
         for row in (self.name, self.protocol) + self.remote_rows:
             group.add(row)
 
+        # Google Drive: rclone's shared client ID is retiring, so offer the user's own.
+        self.own_client = Adw.SwitchRow(title="使用自己的用戶端 ID")
+        self.client_id = Adw.EntryRow(title="用戶端 ID")
+        self.client_secret = Adw.PasswordEntryRow(title="用戶端密鑰")
+        guide = Gtk.Label(wrap=True, xalign=0, selectable=True, margin_top=6, margin_bottom=6, label=(
+            "1. 於 Google Cloud Console 建立專案。\n"
+            "2. 「API 和服務」→「程式庫」，啟用 Google Drive API。\n"
+            "3. 設定「OAuth 同意畫面」，並將所使用的帳戶加入測試使用者。\n"
+            "4. 於「憑證」建立「OAuth 用戶端 ID」，應用程式類型選擇「電腦版應用程式」。\n"
+            "5. 將用戶端 ID 與密鑰填入上方欄位。"))
+        console = Gtk.LinkButton(uri="https://console.cloud.google.com/apis/credentials",
+                                 label="開啟 Google Cloud Console", halign=Gtk.Align.START)
+        self.guide_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=12, margin_end=12)
+        self.guide_box.append(guide)
+        self.guide_box.append(console)
+        self.drive_group = Adw.PreferencesGroup()
+        for row in (self.own_client, self.client_id, self.client_secret):
+            self.drive_group.add(row)
+        self.drive_group.add(self.guide_box)
+        self.own_client.connect("notify::active", self.protocol_changed)
         self.protocol.connect("notify::selected", self.protocol_changed)
         self.protocol_changed()
         page = Adw.PreferencesPage()
         page.add(group)
+        page.add(self.drive_group)
 
         cancel = Gtk.Button(label="取消")
         cancel.connect("clicked", lambda *_: self.close())
@@ -213,6 +234,10 @@ class ServerDialog(Adw.Dialog):
         gdrive = PROTOCOLS[self.protocol.get_selected()][1] == "gdrive"
         for row in self.remote_rows:
             row.set_visible(not gdrive)
+        self.drive_group.set_visible(gdrive and not self.server.get("remote"))
+        own = self.own_client.get_active()
+        for row in (self.client_id, self.client_secret, self.guide_box):
+            row.set_visible(own)
 
     def save_gdrive(self):
         name = self.name.get_text().strip() or "Google Drive"
@@ -222,6 +247,15 @@ class ServerDialog(Adw.Dialog):
             self.close()
             return
         remote = "hamasen-" + self.server["id"][:8]
+        options = []
+        if self.own_client.get_active():
+            client_id, secret = self.client_id.get_text().strip(), self.client_secret.get_text().strip()
+            if not client_id or not secret:
+                for row, text in ((self.client_id, client_id), (self.client_secret, secret)):
+                    if not text:
+                        row.add_css_class("error")
+                return
+            options = ["client_id", client_id, "client_secret", secret]
 
         def authorized(ok, err):
             self.authorizing = None
@@ -239,7 +273,7 @@ class ServerDialog(Adw.Dialog):
         self.save_button.set_sensitive(False)
         self.save_button.set_label("授權中")
         try:  # opens the browser for Google's sign-in and waits for it
-            self.authorizing = run([RCLONE, "config", "create", remote, "drive"], authorized)
+            self.authorizing = run([RCLONE, "config", "create", remote, "drive", *options], authorized)
         except GLib.Error as e:
             authorized(False, e.message)
 
