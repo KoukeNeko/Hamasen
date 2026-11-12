@@ -3,26 +3,22 @@
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(dirname "$here")
-version=${1:-0.1.0}
+# core.py needs GTK to import, which a CI runner may lack, so read the line instead.
+version=${1:-$(sed -n 's/^VERSION = "\(.*\)"/\1/p' "$src/core.py")}
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 
 install -d "$root/usr/lib/hamasen" "$root/usr/bin" "$root/usr/share/applications" \
     "$root/usr/share/icons/hicolor/512x512/apps" "$root/DEBIAN"
-install -m 644 "$src/hamasen.py" "$src/core.py" "$src/i18n.py" "$src/tray.py" "$root/usr/lib/hamasen/"
+install -m 644 "$src/hamasen.py" "$src/core.py" "$src/contributors.py" "$src/i18n.py" "$src/tray.py" "$root/usr/lib/hamasen/"
+# A package lists its contributors as of the build instead of asking GitHub on every launch.
+/usr/bin/python3 "$src/contributors.py" "$root/usr/lib/hamasen/contributors.json"
 chmod 755 "$root/usr/lib/hamasen/hamasen.py"
 printf '#!/bin/sh\nexec /usr/bin/python3 /usr/lib/hamasen/hamasen.py "$@"\n' > "$root/usr/bin/hamasen"
 chmod 755 "$root/usr/bin/hamasen"
 sed -e "s|@EXEC@|hamasen|" -e "s|@ICON@|app.hamasen.Hamasen|" "$src/app.hamasen.Hamasen.desktop" \
     > "$root/usr/share/applications/app.hamasen.Hamasen.desktop"
-# The app icon is 1024px; the hicolor theme tops out at 512.
-/usr/bin/python3 - "$src/../Docs/app-icon.png" "$root/usr/share/icons/hicolor/512x512/apps/app.hamasen.Hamasen.png" <<'PY'
-import sys
-import gi
-gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import GdkPixbuf
-GdkPixbuf.Pixbuf.new_from_file_at_size(sys.argv[1], 512, 512).savev(sys.argv[2], "png", [], [])
-PY
+install -m 644 "$src/data/icons/hicolor/512x512/apps/app.hamasen.Hamasen.png" "$root/usr/share/icons/hicolor/512x512/apps/"
 
 cat > "$root/DEBIAN/control" <<CONTROL
 Package: hamasen

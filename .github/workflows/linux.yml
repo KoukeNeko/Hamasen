@@ -1,0 +1,39 @@
+name: Linux package
+
+# Builds the .deb. The package carries the contributor list as of this run,
+# fetched here with the workflow token, so the installed app never asks GitHub
+# for it; only a source checkout does.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['Linux/**', '.github/workflows/linux.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build the package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: Linux/packaging/build-deb.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hamasen-deb
+          path: Linux/packaging/*.deb
+          if-no-files-found: error
