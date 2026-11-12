@@ -15,7 +15,7 @@ ITEM_PATH, MENU_PATH = "/StatusNotifierItem", "/Menu"
 ITEM_XML = """<node><interface name="org.kde.StatusNotifierItem">
  <property name="Category" type="s" access="read"/><property name="Id" type="s" access="read"/>
  <property name="Title" type="s" access="read"/><property name="Status" type="s" access="read"/>
- <property name="IconName" type="s" access="read"/><property name="ItemIsMenu" type="b" access="read"/>
+ <property name="IconName" type="s" access="read"/><property name="IconThemePath" type="s" access="read"/><property name="ItemIsMenu" type="b" access="read"/>
  <property name="Menu" type="o" access="read"/>
  <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
  <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
@@ -43,8 +43,9 @@ class Tray:
     """`entries()` returns the menu as (label, checked, callback) tuples, where
     checked is None for a plain item and label None for a separator."""
 
-    def __init__(self, entries, on_activate, icon_name):
+    def __init__(self, entries, on_activate, icon_name, icon_theme_path=""):
         self.entries, self.on_activate, self.icon_name = entries, on_activate, icon_name
+        self.icon_theme_path = icon_theme_path  # lets the tray host find an icon that is not installed
         self.revision = 0
         self.current = []
         self.bus = None
@@ -66,7 +67,7 @@ class Tray:
 
     def _item_prop(self, bus, sender, path, iface, prop):
         values = {"Category": ("s", "ApplicationStatus"), "Id": ("s", "hamasen"), "Title": ("s", "Hamasen"),
-                  "Status": ("s", "Active"), "IconName": ("s", self.icon_name),
+                  "Status": ("s", "Active"), "IconName": ("s", self.icon_name), "IconThemePath": ("s", self.icon_theme_path),
                   "ItemIsMenu": ("b", False), "Menu": ("o", MENU_PATH)}
         kind, value = values[prop]
         return GLib.Variant(kind, value)

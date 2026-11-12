@@ -292,7 +292,7 @@ class Window(Adw.ApplicationWindow):
                                 margin_top=12, margin_bottom=12, margin_start=12, margin_end=12, valign=Gtk.Align.START)
         add_first = Gtk.Button(label=_("Add Server"), halign=Gtk.Align.CENTER, css_classes=["suggested-action", "pill"])
         add_first.connect("clicked", lambda *_: self.edit(None))
-        self.empty = Adw.StatusPage(icon_name="network-server-symbolic", title=_("No Servers"), child=add_first)
+        self.empty = Adw.StatusPage(icon_name=APP_ID, title=_("No Servers"), child=add_first)
         self.stack = Gtk.Stack()
         self.stack.add_named(self.empty, "empty")
         self.stack.add_named(Gtk.ScrolledWindow(child=Adw.Clamp(child=self.list)), "list")
@@ -591,7 +591,8 @@ class App(Adw.Application):
         self.set_accels_for_action("app.quit", ["<Control>q"])
         self.set_accels_for_action("win.add-server", ["<Control>n"])
         self.set_menubar(menubar())
-        self.tray = Tray(lambda: self.window.tray_entries(), lambda: self.window.present(), "network-server-symbolic")
+        self.tray = Tray(lambda: self.window.tray_entries(), lambda: self.window.present(), APP_ID,
+                         ICON_DIR if os.path.isdir(ICON_DIR) else "")
         self.window = Window(self)
         GLib.timeout_add_seconds(2, self.mount_at_login)
 
