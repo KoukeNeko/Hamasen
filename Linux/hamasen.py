@@ -10,6 +10,7 @@ this app's config file.
 """
 import json
 import os
+import shutil
 import sys
 import uuid
 from urllib.parse import quote, unquote, urlsplit
@@ -27,7 +28,11 @@ APP_ID = "app.hamasen.Hamasen"
 CONFIG = os.path.join(GLib.get_user_config_dir(), "hamasen", "servers.json")
 # label, GVfs scheme, default port
 PROTOCOLS = [("SFTP", "sftp", 22), ("FTP", "ftp", 21), ("SMB", "smb", 445),
-             ("WebDAV", "dav", 80), ("WebDAV (HTTPS)", "davs", 443)]
+             ("WebDAV", "dav", 80), ("WebDAV (HTTPS)", "davs", 443), ("Google Drive", "gdrive", 0)]
+# Google Drive has no GVfs backend here, so rclone mounts it as a FUSE folder.
+RCLONE = shutil.which("rclone") or "/home/linuxbrew/.linuxbrew/bin/rclone"
+MOUNT_ROOT = os.path.expanduser("~/Hamasen")
+BOOKMARKS = os.path.join(GLib.get_user_config_dir(), "gtk-3.0", "bookmarks")
 
 
 SECRET_SCHEMA = Secret.Schema.new(APP_ID, Secret.SchemaFlags.NONE, {"server": Secret.SchemaAttributeType.STRING})
@@ -77,7 +82,47 @@ def save_servers(servers):
         json.dump(servers, f, indent=2, ensure_ascii=False)
 
 
+def is_gdrive(s):
+    return s["scheme"] == "gdrive"
+
+
+def mount_path(s):
+    return os.path.join(MOUNT_ROOT, s["name"].replace("/", "_"))
+
+
+def is_mounted(s):
+    if is_gdrive(s):
+        return os.path.ismount(mount_path(s))
+    return enclosing_mount(server_uri(s)) is not None
+
+
+def set_bookmark(s, present):
+    """A bookmark is what puts a plain folder in the file manager's sidebar."""
+    line = f"{Gio.File.new_for_path(mount_path(s)).get_uri()} {s['name']}"
+    try:
+        with open(BOOKMARKS, encoding="utf-8") as f:
+            lines = [l for l in f.read().splitlines() if l != line]
+    except FileNotFoundError:
+        lines = []
+    os.makedirs(os.path.dirname(BOOKMARKS), exist_ok=True)
+    with open(BOOKMARKS, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines + ([line] if present else [])) + "\n")
+
+
+def run(argv, done):
+    """Runs a command without blocking the window; done(success, stderr)."""
+    process = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDERR_PIPE)
+
+    def finished(p, result):
+        _, _, err = p.communicate_utf8_finish(result)
+        done(p.get_successful(), (err or "").strip())
+    process.communicate_utf8_async(None, None, finished)
+    return process
+
+
 def server_uri(s):
+    if is_gdrive(s):
+        return Gio.File.new_for_path(mount_path(s)).get_uri()
     default_port = next(p for _, scheme, p in PROTOCOLS if scheme == s["scheme"])
     user = quote(s["user"], safe="") + "@" if s.get("user") else ""
     port = f":{s['port']}" if s.get("port") and s["port"] != default_port else ""
@@ -108,15 +153,21 @@ class ServerDialog(Adw.Dialog):
         self.path = Adw.EntryRow(title="路徑", text=s.get("path", ""))
 
         group = Adw.PreferencesGroup()
-        for row in (self.name, self.protocol, self.host, self.port, self.user, self.password, self.path):
+        self.remote_rows = (self.host, self.port, self.user, self.password, self.path)
+        for row in (self.name, self.protocol) + self.remote_rows:
             group.add(row)
+
+        self.protocol.connect("notify::selected", self.protocol_changed)
+        self.protocol_changed()
         page = Adw.PreferencesPage()
         page.add(group)
 
         cancel = Gtk.Button(label="取消")
         cancel.connect("clicked", lambda *_: self.close())
-        save = Gtk.Button(label="儲存", css_classes=["suggested-action"])
+        self.save_button = save = Gtk.Button(label="儲存", css_classes=["suggested-action"])
         save.connect("clicked", self.save)
+        self.authorizing = None
+        self.connect("closed", lambda *_: self.authorizing and self.authorizing.force_exit())
         header = Adw.HeaderBar(show_end_title_buttons=False, show_start_title_buttons=False)
         header.pack_start(cancel)
         header.pack_end(save)
@@ -124,7 +175,44 @@ class ServerDialog(Adw.Dialog):
         view.add_top_bar(header)
         self.set_child(view)
 
+    def protocol_changed(self, *_):
+        gdrive = PROTOCOLS[self.protocol.get_selected()][1] == "gdrive"
+        for row in self.remote_rows:
+            row.set_visible(not gdrive)
+
+    def save_gdrive(self):
+        name = self.name.get_text().strip() or "Google Drive"
+        self.server.update(id=self.server.get("id") or str(uuid.uuid4()), name=name, scheme="gdrive")
+        if self.server.get("remote"):
+            self.on_save(self.server)
+            self.close()
+            return
+        remote = "hamasen-" + self.server["id"][:8]
+
+        def authorized(ok, err):
+            self.authorizing = None
+            if not ok:
+                self.save_button.set_sensitive(True)
+                self.save_button.set_label("儲存")
+                if err:  # empty when the dialog was closed and rclone was stopped
+                    alert = Adw.AlertDialog(heading="無法授權 Google Drive", body=err)
+                    alert.add_response("close", "關閉")
+                    alert.present(self)
+                return
+            self.server["remote"] = remote
+            self.on_save(self.server)
+            self.close()
+        self.save_button.set_sensitive(False)
+        self.save_button.set_label("授權中")
+        try:  # opens the browser for Google's sign-in and waits for it
+            self.authorizing = run([RCLONE, "config", "create", remote, "drive"], authorized)
+        except GLib.Error as e:
+            authorized(False, e.message)
+
     def save(self, *_):
+        if PROTOCOLS[self.protocol.get_selected()][1] == "gdrive":
+            self.save_gdrive()
+            return
         host = self.host.get_text().strip()
         if not host:
             self.host.add_css_class("error")
@@ -193,14 +281,14 @@ class Window(Adw.ApplicationWindow):
         return True
 
     def tray_entries(self):
-        entries = [(s["name"], enclosing_mount(server_uri(s)) is not None, lambda s=s: self.toggle(s))
+        entries = [(s["name"], is_mounted(s), lambda s=s: self.toggle(s))
                    for s in self.servers]
         if entries:
             entries.append((None, None, None))
         return entries + [("開啟 Hamasen", None, self.present), ("結束", None, self.get_application().quit)]
 
     def toggle(self, server):
-        if enclosing_mount(server_uri(server)):
+        if is_mounted(server):
             self.unmount(server)
         elif server["id"] not in self.connecting:
             self.mount(server)
@@ -215,10 +303,16 @@ class Window(Adw.ApplicationWindow):
         self.stack.set_visible_child_name("list" if self.servers else "empty")
         self.get_application().tray.refresh()
 
+    def subtitle(self, s, mounted):
+        if not is_gdrive(s):
+            return GLib.markup_escape_text(server_uri(s))
+        return "Google Drive"
+
     def row(self, s):
-        mounted = enclosing_mount(server_uri(s)) is not None
+        mounted = is_mounted(s)
         row = Adw.ActionRow(title=GLib.markup_escape_text(s["name"]),
-                            subtitle=GLib.markup_escape_text(server_uri(s)), activatable=False)
+                            subtitle=self.subtitle(s, mounted),
+                            activatable=False)
         if s["id"] not in self.connecting:
             row.add_prefix(Gtk.Image(icon_name="folder-remote-symbolic" if mounted else "network-server-symbolic"))
         for icon, tip, cb in (("document-edit-symbolic", "編輯", lambda *_: self.edit(s)),
@@ -263,6 +357,11 @@ class Window(Adw.ApplicationWindow):
             if d.choose_finish(result) == "delete":
                 self.servers.remove(server)
                 set_password(server["id"], None)
+                if is_gdrive(server):
+                    if is_mounted(server):
+                        self.unmount(server)
+                    if server.get("remote"):
+                        run([RCLONE, "config", "delete", server["remote"]], lambda *_: None)
                 save_servers(self.servers)
                 self.rebuild()
         dialog.choose(self, None, answered)
@@ -270,37 +369,71 @@ class Window(Adw.ApplicationWindow):
     def mount(self, server):
         cancellable = Gio.Cancellable()
         self.connecting[server["id"]] = cancellable
+        if is_gdrive(server):
+            self.mount_gdrive(server, cancellable)
+            return
 
         def done(f, result):
             del self.connecting[server["id"]]
             try:
                 f.mount_enclosing_volume_finish(result)
             except GLib.Error as e:
-                if e.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED):
+                # Cancelled, or the user dismissed the password dialog.
+                if e.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED) \
+                        or e.matches(Gio.io_error_quark(), Gio.IOErrorEnum.FAILED_HANDLED):
                     pass
                 elif e.matches(Gio.io_error_quark(), Gio.IOErrorEnum.ALREADY_MOUNTED) and enclosing_mount(server_uri(server)):
                     pass
                 else:
-                    self.show_error(server, e)
+                    self.show_error(server, e.message, self.mount_hint(server, e))
             self.rebuild()
         Gio.File.new_for_uri(server_uri(server)).mount_enclosing_volume(
             Gio.MountMountFlags.NONE, mount_operation(self, server), cancellable, done)
         self.rebuild()
 
-    def show_error(self, server, error):
-        hint = ""
+    def mount_gdrive(self, server, cancellable):
+        def done(ok, err):
+            del self.connecting[server["id"]]
+            if ok:
+                set_bookmark(server, True)
+            elif not cancellable.is_cancelled():
+                self.show_error(server, err)
+            self.rebuild()
+        path = mount_path(server)
+        os.makedirs(path, exist_ok=True)
+        try:  # --daemon returns once the folder is mounted
+            process = run([RCLONE, "mount", "--daemon", "--vfs-cache-mode", "writes",
+                           "--dir-cache-time", "1h", "--attr-timeout", "1h",
+                           server["remote"] + ":", path], done)
+        except GLib.Error as e:
+            done(False, e.message)
+            return
+        cancellable.connect(process.force_exit)
+        self.rebuild()
+
+    def mount_hint(self, server, error):
         if error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.ALREADY_MOUNTED) and server["scheme"] == "smb":
-            hint = "請在伺服器的路徑填入共用資料夾名稱。"
-        elif error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.TIMED_OUT):
-            hint = "主機沒有回應。請確認主機、連接埠與網路。"
-        elif error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.FAILED_HANDLED):
-            return  # the user dismissed the password dialog
+            return "請在伺服器的路徑填入共用資料夾名稱。"
+        if error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.TIMED_OUT):
+            return "主機沒有回應。請確認主機、連接埠與網路。"
+        return ""
+
+    def show_error(self, server, message, hint=""):
         dialog = Adw.AlertDialog(heading=f"無法連線「{server['name']}」",
-                                 body="\n".join(filter(None, [hint, error.message])))
+                                 body="\n".join(filter(None, [hint, message])))
         dialog.add_response("close", "關閉")
         dialog.present(self)
 
     def unmount(self, server):
+        if is_gdrive(server):
+            def gone(ok, err):
+                if ok:
+                    set_bookmark(server, False)
+                else:
+                    self.toast(err)
+                self.rebuild()
+            run(["fusermount3", "-u", mount_path(server)], gone)
+            return
         m = enclosing_mount(server_uri(server))
         if not m:
             return
