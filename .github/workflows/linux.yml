@@ -70,13 +70,16 @@ jobs:
         with:
           name: hamasen-deb
 
-      # Never the "latest" release: the macOS app's update check reads that one.
+      # Never marked "latest": the macOS app's update check reads that one.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#linux-v}"
+          # A version with a hyphen (1.1.0-beta.1) is a pre-release.
+          prerelease=""
+          [[ "${version}" == *-* ]] && prerelease="--prerelease"
           gh release create "${GITHUB_REF_NAME}" ./*.deb \
               --title "Hamasen for Linux ${version}" \
               --notes-file "Linux/release-notes/${version}.md" \
-              --prerelease --latest=false --verify-tag
+              ${prerelease} --latest=false --verify-tag

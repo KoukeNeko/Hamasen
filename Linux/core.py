@@ -21,7 +21,7 @@ gi.require_version("Secret", "1")
 from gi.repository import Gio, GLib, Gtk, Secret  # noqa: E402
 
 APP_ID = "app.hamasen.Hamasen"
-VERSION = "0.1.0"
+VERSION = "1.0.0"
 REPO_URL = f"https://github.com/{contributors.OWNER}/{contributors.NAME}"
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Written by the packaging step. A checkout has none and asks GitHub instead.

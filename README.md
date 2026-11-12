@@ -207,8 +207,13 @@ Install the `.deb` from the
 [latest Linux release](https://github.com/KoukeNeko/Hamasen/releases?q=linux-v):
 
 ```bash
-sudo apt install ./hamasen_0.1.0_all.deb
+sudo apt install ./hamasen_1.0.0_all.deb
 ```
+
+It needs GTK 4, libadwaita 1.5 or later and GVfs; the package recommends
+`rclone` and `fuse3` for the cloud drives and S3. SFTP, SMB and Google Drive
+have been used on Ubuntu 26.10 (GNOME 51); the other services are implemented
+but not yet tried against real servers.
 
 Passwords stay in the desktop keyring. Servers can mount at login, import from
 `~/.ssh/config`, and raise desktop notifications; the interface is in English
