@@ -266,5 +266,5 @@ def set_autostart(enabled, script, python):
     os.makedirs(os.path.dirname(AUTOSTART), exist_ok=True)
     with open(AUTOSTART, "w", encoding="utf-8") as f:
         f.write("[Desktop Entry]\nType=Application\nName=Hamasen\n"
-                f"Exec={python} {script} --background\nIcon=network-server\n"
+                f"Exec={python} {script} --background\nIcon={APP_ID}\n"
                 "X-GNOME-Autostart-enabled=true\n")

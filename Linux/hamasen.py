@@ -22,6 +22,7 @@ from i18n import _, save_language, saved_language  # noqa: E402
 from tray import Tray  # noqa: E402
 
 GUIDE_URL = "https://console.cloud.google.com/apis/credentials"
+LOGIN_ATTEMPTS, LOGIN_RETRY_SECONDS = 20, 15
 # A checkout carries its own icon; a package installs it into the system theme.
 ICON_DIR = os.path.join(HERE, "data", "icons")
 ICON_FILE = next(f for f in (os.path.join(ICON_DIR, "hicolor/512x512/apps", APP_ID + ".png"),
@@ -461,11 +462,12 @@ class Window(Adw.ApplicationWindow):
 
     # --- mounting -------------------------------------------------------------
 
-    def mount(self, server):
+    def mount(self, server, quiet=False):
+        """quiet: a failure is not reported, because the caller will try again."""
         cancellable = Gio.Cancellable()
         self.connecting[server["id"]] = cancellable
         if is_rclone(server):
-            self.mount_rclone(server, cancellable)
+            self.mount_rclone(server, cancellable, quiet)
             return
 
         def done(f, result):
@@ -480,18 +482,19 @@ class Window(Adw.ApplicationWindow):
                 elif e.matches(Gio.io_error_quark(), Gio.IOErrorEnum.ALREADY_MOUNTED) and enclosing_mount(server_uri(server)):
                     pass
                 else:
-                    self.show_error(server, e.message, self.mount_hint(server, e))
+                    if not quiet:
+                        self.show_error(server, e.message, self.mount_hint(server, e))
             self.rebuild()
         Gio.File.new_for_uri(server_uri(server)).mount_enclosing_volume(
             Gio.MountMountFlags.NONE, mount_operation(self, server), cancellable, done)
         self.rebuild()
 
-    def mount_rclone(self, server, cancellable):
+    def mount_rclone(self, server, cancellable, quiet):
         def done(ok, err):
             del self.connecting[server["id"]]
             if ok:
                 set_bookmark(server, True)
-            elif not cancellable.is_cancelled():
+            elif not cancellable.is_cancelled() and not quiet:
                 self.show_error(server, err)
             self.rebuild()
         path = mount_path(server)
@@ -595,12 +598,19 @@ class App(Adw.Application):
         self.set_menubar(menubar())
         self.tray = Tray(lambda: self.window.tray_entries(), lambda: self.window.present(), ICON_FILE)
         self.window = Window(self)
+        self.login_attempts = 0
         GLib.timeout_add_seconds(2, self.mount_at_login)
 
     def mount_at_login(self):
-        for s in self.window.servers:
-            if s.get("auto_mount") and not is_mounted(s):
-                self.window.mount(s)
+        """At login the network, VPN and keyring may not be up yet, so keep trying for a few minutes."""
+        self.login_attempts += 1
+        last = self.login_attempts >= LOGIN_ATTEMPTS
+        waiting = [s for s in self.window.servers if s.get("auto_mount") and not is_mounted(s)]
+        for s in waiting:
+            if s["id"] not in self.window.connecting:
+                self.window.mount(s, quiet=not last)
+        if waiting and not last:
+            GLib.timeout_add_seconds(LOGIN_RETRY_SECONDS, self.mount_at_login)
         return False
 
     def do_activate(self):
