@@ -207,7 +207,7 @@ Install the `.deb` from the
 [latest Linux release](https://github.com/KoukeNeko/Hamasen/releases?q=linux-v):
 
 ```bash
-sudo apt install ./hamasen_1.0.0_all.deb
+sudo apt install ./hamasen_1.0.1_all.deb
 ```
 
 It needs GTK 4, libadwaita 1.5 or later and GVfs; the package recommends
